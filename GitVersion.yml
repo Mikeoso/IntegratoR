@@ -1,0 +1,14 @@
+# GitVersion Configuration
+
+# Define Assembly-Version schema (Major.Minor.Patch.0)
+assembly-versioning-scheme: MajorMinorPatch
+assembly-file-versioning-scheme: MajorMinorPatch
+
+mode: ContinuousDelivery
+
+branches:
+  main:
+    tag: ''
+
+ignore:
+  sha: []
