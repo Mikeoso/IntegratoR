@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "INW.SimpleODataClient.SampleFunction": {
+      "commandName": "Project",
+      "commandLineArgs": "--port 7098",
+      "launchBrowser": false,
+      "environmentVariables": {
+        "DOTNET_ENVIRONMENT": "Development"
+      }
+    }
+  }
+}
