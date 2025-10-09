@@ -10,5 +10,5 @@ public interface IContext
     /// Gets a dictionary of context properties for logging.
     /// </summary>
     /// <returns>A dictionary of key-value pairs to be added to the logging scope.</returns>
-    IReadOnlyDictionary<string, object> GetContextForLogging();
+    IReadOnlyDictionary<string, object> GetLoggingContext();
 }
