@@ -1,4 +1,6 @@
 ﻿using IntegratoR.Abstractions.Interfaces.Entity;
+using IntegratoR.Abstractions.Interfaces.Telemetry;
+using System.Reflection;
 
 namespace IntegratoR.Abstractions.Domain.Entities;
 
@@ -13,7 +15,7 @@ namespace IntegratoR.Abstractions.Domain.Entities;
 /// helps decouple the core domain model from the data persistence layer,
 /// promoting a cleaner and more maintainable architecture.
 /// </remarks>
-public abstract class BaseEntity<TKey> : IEntity<TKey>
+public abstract class BaseEntity<TKey> : IEntity<TKey>, IContext
 {
     /// <summary>
     /// Gets or sets the unique identifier for this entity.
@@ -24,4 +26,24 @@ public abstract class BaseEntity<TKey> : IEntity<TKey>
     /// handle a composite key or a key that requires specific formatting before being set.
     /// </remarks>
     public virtual TKey Id { get; set; }
+
+    /// <summary>
+    /// Creates a read-only dictionary that captures the entity's state for logging purposes.
+    /// </summary>
+    /// <returns>
+    /// An <see cref="IReadOnlyDictionary{TKey, TValue}"/> containing the public instance properties of the entity and their values.
+    /// </returns>
+    /// <remarks>
+    /// This method uses reflection to iterate over all public, readable instance properties of the derived class.
+    /// It is particularly useful for structured logging, where an object's state is captured as key-value pairs.
+    /// Properties whose value is <see langword="null"/> are replaced with a new <see cref="object"/> to avoid null reference issues in logging contexts.
+    /// Indexed properties are excluded from the output.
+    /// </remarks>
+    public virtual IReadOnlyDictionary<string, object> GetLoggingContext()
+    {
+        return this.GetType()
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .Where(p => p.CanRead && p.GetIndexParameters().Length == 0)
+            .ToDictionary(p => p.Name, p => p.GetValue(this) ?? new object());
+    }
 }

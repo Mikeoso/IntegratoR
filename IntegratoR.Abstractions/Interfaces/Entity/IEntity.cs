@@ -23,4 +23,6 @@ public interface IEntity<TKey>
     /// string-based natural key (e.g., SalesOrderNumber) or a long for RecId-based keys.
     /// </remarks>
     TKey Id { get; set; }
+
+    IReadOnlyDictionary<string, object> GetLoggingContext();
 }
