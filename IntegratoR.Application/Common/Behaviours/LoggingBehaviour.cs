@@ -56,7 +56,7 @@ public class LoggingBehaviour<TRequest, TResponse> : IPipelineBehavior<TRequest,
     /// <returns>The response from the next handler in the pipeline.</returns>
     public async Task<TResponse> Handle(TRequest request, RequestHandlerDelegate<TResponse> next, CancellationToken cancellationToken)
     {
-        var contextDictionary = request.GetContextForLogging();
+        var contextDictionary = request.GetLoggingContext();
 
         using (_logger.BeginScope(contextDictionary))
         {
