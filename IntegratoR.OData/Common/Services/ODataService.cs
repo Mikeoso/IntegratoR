@@ -422,8 +422,7 @@ public class ODataService<TEntity, TKey> : IODataService<TEntity, TKey>, IODataB
     private Dictionary<string, object> CreatePayload(TEntity entity, bool isCreateOperation)
     {
         var payload = new Dictionary<string, object>();
-        // Use GetType() to get the actual runtime type of the entity.
-        // This supports polymorphism, allowing properties of derived classes to be included.
+
         var properties = entity.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance);
 
         foreach (var property in properties)

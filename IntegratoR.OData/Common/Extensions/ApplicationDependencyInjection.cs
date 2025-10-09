@@ -44,29 +44,20 @@ public static class ApplicationDependencyInjection
     /// </remarks>
     public static IServiceCollection AddODataClient(this IServiceCollection services, IConfiguration configuration)
     {
-        // Bind the "ODataSettings" section from appsettings.json (or other sources)
-        // to the ODataSettings class, making it available via IOptions<ODataSettings>.
         services.Configure<ODataSettings>(configuration.GetSection("ODataSettings"));
 
-        // Register the custom authentication handler. It's transient because HttpMessageHandler lifetimes
-        // are managed by the HttpClientFactory.
+        // Register the custom authentication handler
         services.AddTransient<ODataAuthenticationHandler>();
 
         // Configure a named HttpClient specifically for our OData client.
-        // Using IHttpClientFactory is a best practice for managing HttpClient instances.
-        // Crucially, we add our authentication handler to its pipeline.
         services.AddHttpClient("ODataClient")
             .AddHttpMessageHandler<ODataAuthenticationHandler>();
 
-        // Register the Simple.OData.Client as a singleton. A single, thread-safe instance
-        // is reused throughout the application's lifetime for performance.
+        // Register the Simple.OData.Client
         services.AddSingleton<IODataClient>(serviceProvider =>
         {
-            // Resolve the strongly-typed settings.
             var settings = serviceProvider.GetRequiredService<IOptions<ODataSettings>>().Value;
 
-            // Create an HttpClient instance from the factory. This instance will have the
-            // ODataAuthenticationHandler already configured in its pipeline.
             var oDataHttpClient = serviceProvider.GetRequiredService<IHttpClientFactory>().CreateClient("ODataClient");
             oDataHttpClient.Timeout = TimeSpan.FromSeconds(settings.Timeout);
 
@@ -79,9 +70,7 @@ public static class ApplicationDependencyInjection
             return new ODataClient(odataClientSettings);
         });
 
-        // Finally, register our generic ODataService as the concrete implementation for the
-        // IService and other data access abstractions. When a handler requests IService<Customer, string>,
-        // the DI container will provide an instance of ODataService<Customer, string>.
+        // Register Services
         services.AddScoped(typeof(IService<,>), typeof(ODataService<,>));
         services.AddScoped(typeof(IODataService<,>), typeof(ODataService<,>));
         services.AddScoped(typeof(IODataBatchService<,>), typeof(ODataService<,>));
