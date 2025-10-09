@@ -19,7 +19,7 @@ namespace IntegratoR.Abstractions.Common.CQRS;
 /// </remarks>
 public record GetByIdQuery<TEntity, TKey>(TKey Id) : IQuery<Result<TEntity>> where TEntity : class, IEntity<TKey>
 {
-    public IReadOnlyDictionary<string, object> GetContextForLogging()
+    public IReadOnlyDictionary<string, object> GetLoggingContext()
     {
         return new Dictionary<string, object>
         {

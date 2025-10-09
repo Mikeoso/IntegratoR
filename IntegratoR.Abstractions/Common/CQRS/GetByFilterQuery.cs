@@ -1,5 +1,6 @@
 ﻿using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.Abstractions.Interfaces.Queries;
+using IntegratoR.Abstractions.Interfaces.Telemetry;
 using System.Linq.Expressions;
 
 namespace IntegratoR.Abstractions.Common.CQRS;
@@ -19,7 +20,7 @@ namespace IntegratoR.Abstractions.Common.CQRS;
 /// </remarks>
 public record GetByFilterQuery<TEntity>(Expression<Func<TEntity, bool>> Filter) : IQuery<Result<IEnumerable<TEntity>>> where TEntity : class
 {
-    public IReadOnlyDictionary<string, object> GetContextForLogging()
+    public virtual IReadOnlyDictionary<string, object> GetLoggingContext()
     {
         return new Dictionary<string, object>
         {

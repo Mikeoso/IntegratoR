@@ -1,7 +1,9 @@
 ﻿using IntegratoR.Abstractions.Common.Results;
+using IntegratoR.Abstractions.Interfaces;
 using IntegratoR.Abstractions.Interfaces.Entity;
 using IntegratoR.Abstractions.Interfaces.Queries;
 using System.Collections.Generic;
+using System.Text.Json;
 
 namespace IntegratoR.Abstractions.Common.CQRS;
 
@@ -32,12 +34,12 @@ namespace IntegratoR.Abstractions.Common.CQRS;
 /// </remarks>
 public record GetByKeyQuery<TEntity, TKey>(object keyValues) : IQuery<Result<TEntity>> where TEntity : class, IEntity<TKey>
 {
-    public IReadOnlyDictionary<string, object> GetContextForLogging()
+    public IReadOnlyDictionary<string, object> GetLoggingContext()
     {
         return new Dictionary<string, object>
         {
             { "EntityType", typeof(TEntity).Name },
-            { "KeyValues", keyValues?.ToString() ?? "null" }
+            { "KeyValues", keyValues is not null ? JsonSerializer.Serialize(keyValues) : "null" }
         };
     }
 }
