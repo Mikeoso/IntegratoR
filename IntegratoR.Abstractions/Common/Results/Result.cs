@@ -1,7 +1,5 @@
-﻿using IntegratoR.Abstractions.Common.Result;
-using IntegratoR.Abstractions.Interfaces.Results;
+﻿using IntegratoR.Abstractions.Interfaces.Results;
 using System.Diagnostics.CodeAnalysis;
-using System.Text.Json.Serialization;
 
 namespace IntegratoR.Abstractions.Common.Results;
 

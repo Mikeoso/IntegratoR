@@ -1,4 +1,6 @@
-﻿namespace IntegratoR.OData.FO.Common.Extensions;
+﻿using IntegratoR.OData.FO.Domain.Enums.Dimensions;
+
+namespace IntegratoR.OData.FO.Common.Extensions;
 
 public static class DimensionSegmentDelimiterExtensions
 {
