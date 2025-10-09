@@ -1,4 +1,5 @@
 ﻿using IntegratoR.Abstractions.Domain.Entities;
+using IntegratoR.OData.FO.Domain.Enums.Dimensions;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Text.Json.Serialization;
