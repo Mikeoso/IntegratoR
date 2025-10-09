@@ -55,16 +55,18 @@ public class GetByIdQueryHandler<TEntity, TKey> : IRequestHandler<GetByIdQuery<T
 
         var result = await _service.GetByIdAsync(request.Id, cancellationToken);
 
-        if (result.IsFailure)
-        {
-            _logger.LogWarning("Failed to retrieve entity {EntityType} with ID: {Id}. Error: {ErrorCode} - {ErrorMessage}",
-                typeof(TEntity).Name, request.Id, result.Error?.Code, result.Error?.Message);
+        return result.Match(
+            onSuccess: entity =>
+            {
+                _logger.LogDebug("Entity {EntityType} with ID: {Id} retrieved successfully.", typeof(TEntity).Name, request.Id);
+                return Result<TEntity>.Ok(entity);
+            },
+            onFailure: _ =>
+            {
+                _logger.LogWarning("Failed to retrieve entity {EntityType} with ID: {Id}. Error: {ErrorCode} - {ErrorMessage}",
+                    typeof(TEntity).Name, request.Id, result.Error?.Code, result.Error?.Message);
 
-            // Propagate the failure result from the service layer.
-            return Result<TEntity>.Fail(result.Error!);
-        }
-
-        _logger.LogDebug("Successfully retrieved entity {EntityType} with ID: {Id}", typeof(TEntity).Name, request.Id);
-        return Result<TEntity>.Ok(result.Value!);
+                return Result<TEntity>.Fail(result);
+            });
     }
 }

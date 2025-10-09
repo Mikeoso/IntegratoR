@@ -56,14 +56,12 @@ public class GetByKeyQueryHandler<TEntity, TKey> : IRequestHandler<GetByKeyQuery
 
         var entityResult = await _service.GetByKeyAsync(request.keyValues, cancellationToken);
 
-        if (entityResult.IsFailure)
-        {
-            // Propagate the failure result from the service layer.
-            return Result<TEntity>.Fail(entityResult.Error!);
-        }
-
-        _logger.LogDebug("Successfully retrieved {Entity} with key values: {@KeyValues}", typeof(TEntity).Name, request.keyValues);
-
-        return Result<TEntity>.Ok(entityResult.Value!);
+        return entityResult.Match(
+            onSuccess: entity =>
+            {
+                _logger.LogDebug("Successfully retrieved {Entity} with key values: {@KeyValues}", typeof(TEntity).Name, request.keyValues);
+                return Result<TEntity>.Ok(entity);
+            },
+            onFailure: _ => Result<TEntity>.Fail(entityResult));
     }
 }

@@ -64,15 +64,16 @@ public class GetByFilterQueryHandler<TEntity, TKey> : IRequestHandler<GetByFilte
 
         var entitiesResult = await _service.FindAsync(request.Filter, cancellationToken);
 
-        if (entitiesResult.IsFailure)
-        {
-            // Propagate the failure result from the service layer.
-            return Result<IEnumerable<TEntity>>.Fail(entitiesResult.Error!);
-        }
+        return entitiesResult.Match(
+            onSuccess: entity =>
+            {
+                _logger.LogDebug("Retrieved {Count} entities of type {EntityType}", entitiesResult.Value?.Count() ?? 0, typeof(TEntity).Name);
 
-        var entities = entitiesResult.Value;
-        _logger.LogDebug("Retrieved {Count} entities of type {EntityType}", entities?.Count() ?? 0, typeof(TEntity).Name);
-
-        return Result<IEnumerable<TEntity>>.Ok(entities!);
+                return Result<IEnumerable<TEntity>>.Ok(entity);
+            },
+            onFailure: _ =>
+            {
+                return Result<IEnumerable<TEntity>>.Fail(entitiesResult);
+            });
     }
 }
