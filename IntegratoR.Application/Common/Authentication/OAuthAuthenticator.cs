@@ -1,5 +1,4 @@
-﻿using IntegratoR.Abstractions.Common.Result;
-using IntegratoR.Abstractions.Common.Results;
+﻿using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.Abstractions.Interfaces.Authentication;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Identity.Client;
