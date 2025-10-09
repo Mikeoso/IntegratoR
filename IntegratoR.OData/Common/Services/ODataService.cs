@@ -1,5 +1,4 @@
-﻿using IntegratoR.Abstractions.Common.Result;
-using IntegratoR.Abstractions.Common.Results;
+﻿using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.Abstractions.Interfaces.Entity;
 using IntegratoR.OData.Common.Annotations;
 using IntegratoR.OData.Interfaces.Services;
@@ -411,7 +410,10 @@ public class ODataService<TEntity, TKey> : IODataService<TEntity, TKey>, IODataB
     /// <param name="isCreateOperation">A flag to indicate if the payload is for a create (true) or update (false) operation.</param>
     /// <returns>A dictionary of property names and values to be sent in the OData request body.</returns>
     /// <remarks>
-    /// This method reflects over the entity's properties and applies the following rules:
+    /// This method reflects over the provided entity's **runtime type** using `entity.GetType()` to build the payload.
+    /// This ensures that if a derived type is passed (e.g., a `CustomerExtension` instance to a service typed for `Customer`),
+    /// all properties from the derived type are correctly included.
+    /// It applies the following rules:
     /// 1. Ignores properties that are not readable/writable, or are marked with <see cref="NotMappedAttribute"/> or <see cref="JsonIgnoreAttribute"/>.
     /// 2. Honors the <see cref="ODataFieldAttribute"/> to exclude properties specifically for create or update operations.
     /// 3. Skips properties that have not been set (i.e., still hold their default value) to create a cleaner payload.
@@ -420,7 +422,9 @@ public class ODataService<TEntity, TKey> : IODataService<TEntity, TKey>, IODataB
     private Dictionary<string, object> CreatePayload(TEntity entity, bool isCreateOperation)
     {
         var payload = new Dictionary<string, object>();
-        var properties = typeof(TEntity).GetProperties(BindingFlags.Public | BindingFlags.Instance);
+        // Use GetType() to get the actual runtime type of the entity.
+        // This supports polymorphism, allowing properties of derived classes to be included.
+        var properties = entity.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance);
 
         foreach (var property in properties)
         {
