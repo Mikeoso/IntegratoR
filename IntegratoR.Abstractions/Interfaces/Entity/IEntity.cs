@@ -22,7 +22,7 @@ public interface IEntity<TKey>
     /// For D365 F&O entities, this typically maps to the entity's primary key, such as a
     /// string-based natural key (e.g., SalesOrderNumber) or a long for RecId-based keys.
     /// </remarks>
-    TKey Id { get; set; }
+    object[] Id { get; set; }
 
     IReadOnlyDictionary<string, object> GetLoggingContext();
 }

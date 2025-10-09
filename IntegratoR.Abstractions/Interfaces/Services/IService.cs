@@ -36,7 +36,7 @@ public interface IService<TEntity, TKey> where TEntity : IEntity<TKey>
     /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
     /// <returns>A <see cref="Result{TEntity}"/> containing the entity if found, or a 'NotFound' error.</returns>
     /// <remarks>This method translates to an OData GET request, handling composite keys like `.../data/SalesOrderLines(SalesOrderNumber='S01', LineNum=1.0m)`.</remarks>
-    Task<Result<TEntity>> GetByKeyAsync(object keyValues, CancellationToken cancellationToken = default);
+    Task<Result<TEntity>> GetByKeyAsync(object[] keyValues, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Asynchronously finds a collection of entities that match a specified filter expression.

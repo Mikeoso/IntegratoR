@@ -97,7 +97,7 @@ public class ODataService<TEntity, TKey> : IODataService<TEntity, TKey>, IODataB
     /// This method is designed to handle both simple keys (e.g., a single string or int) and
     /// composite keys (using an anonymous object, like `new { Key1 = "A", Key2 = 1 }`).
     /// </remarks>
-    public async Task<Result<TEntity>> GetByKeyAsync(object keyValues, CancellationToken cancellationToken = default)
+    public async Task<Result<TEntity>> GetByKeyAsync(object[] keyValues, CancellationToken cancellationToken = default)
     {
         try
         {

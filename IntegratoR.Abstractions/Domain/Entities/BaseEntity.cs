@@ -25,7 +25,7 @@ public abstract class BaseEntity<TKey> : IEntity<TKey>, IContext
     /// implementation if needed. For instance, a derived entity might override this property to
     /// handle a composite key or a key that requires specific formatting before being set.
     /// </remarks>
-    public virtual TKey Id { get; set; }
+    public required virtual object[] Id { get; set; }
 
     /// <summary>
     /// Creates a read-only dictionary that captures the entity's state for logging purposes.
