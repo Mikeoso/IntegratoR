@@ -9,9 +9,9 @@ namespace IntegratoR.OData.FO.Features.Commands.LedgerJournals.CreateLedgerJourn
 public class CreateLedgerJournalLinesHandler<TEntity> : IRequestHandler<CreateLedgerJournalLinesCommand<TEntity>, Result> where TEntity : LedgerJournalLine
 {
     private readonly ILogger<CreateLedgerJournalLinesHandler<TEntity>> _logger;
-    private readonly IODataBatchService<TEntity, string> _service;
+    private readonly IODataBatchService<TEntity> _service;
 
-    public CreateLedgerJournalLinesHandler(ILogger<CreateLedgerJournalLinesHandler<TEntity>> logger, IODataBatchService<TEntity, string> service)
+    public CreateLedgerJournalLinesHandler(ILogger<CreateLedgerJournalLinesHandler<TEntity>> logger, IODataBatchService<TEntity> service)
     {
         _logger = logger;
         _service = service;
@@ -23,14 +23,16 @@ public class CreateLedgerJournalLinesHandler<TEntity> : IRequestHandler<CreateLe
 
         var addResult = await _service.AddBatchAsync(request.LedgerJournalLines, cancellationToken);
 
-        if (addResult.IsFailure)
-        {
-            _logger.LogError("Failed to create Ledger Journal Lines: {Error}", addResult.Error);
-            return Result.Fail(addResult.Error!);
-        }
-
-        _logger.LogInformation("Successfully created {Count} Ledger Journal Lines in F&O.", request.LedgerJournalLines.Count());
-
-        return Result.Ok();
+        return addResult.Match(
+            onSuccess: () =>
+            {
+                _logger.LogInformation("Successfully created {Count} Ledger Journal Lines in F&O.", request.LedgerJournalLines.Count());
+                return Result.Ok();
+            },
+            onFailure: error =>
+            {
+                _logger.LogError("Failed to create Ledger Journal Lines: {Error}", error.Message);
+                return Result.Fail(error);
+            });
     }
 }

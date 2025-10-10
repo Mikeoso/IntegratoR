@@ -13,14 +13,35 @@
 /// It provides a standardized way to access an entity's identifier, abstracting the specific
 /// key field names used in the underlying D365 F&O data entities.
 /// </remarks>
-public interface IEntity<TKey>
+public interface IEntity
 {
     /// <summary>
-    /// Gets or sets the unique identifier for this entity.
+    /// Gets the composite primary key that uniquely identifies this entity.
     /// </summary>
+    /// <returns>
+    /// An array of objects representing the values of the key fields. The order of values in the array is crucial and must be consistent.
+    /// </returns>
     /// <remarks>
-    /// For D365 F&O entities, this typically maps to the entity's primary key, such as a
-    /// string-based natural key (e.g., SalesOrderNumber) or a long for RecId-based keys.
+    /// This method is essential for entities with composite keys. It abstracts the specific properties
+    /// that constitute the key, enabling generic patterns (like the Repository or Specification pattern)
+    /// to retrieve or process entities by their complete key.
+    ///
+    /// In D365 F&O, many entities feature composite keys, which often include a <c>DataAreaId</c> in combination
+    /// with other fields (e.g., <c>SalesOrderNumber</c>, <c>JournalBatchNumber</c>).
     /// </remarks>
-    TKey Id { get; set; }
+    object[] GetCompositeKey();
+
+    /// <summary>
+    /// Creates a read-only dictionary that captures the entity's state for logging purposes.
+    /// </summary>
+    /// <returns>
+    /// An <see cref="IReadOnlyDictionary{TKey, TValue}"/> containing the public instance properties of the entity and their values.
+    /// </returns>
+    /// <remarks>
+    /// This method uses reflection to iterate over all public, readable instance properties of the derived class.
+    /// It is particularly useful for structured logging, where an object's state is captured as key-value pairs.
+    /// Properties whose value is <see langword="null"/> are replaced with a new <see cref="object"/> to avoid null reference issues in logging contexts.
+    /// Indexed properties are excluded from the output.
+    /// </remarks>
+    IReadOnlyDictionary<string, object> GetLoggingContext();
 }

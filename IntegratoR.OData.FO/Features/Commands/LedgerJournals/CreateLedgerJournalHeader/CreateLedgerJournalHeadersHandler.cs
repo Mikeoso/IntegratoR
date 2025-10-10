@@ -9,9 +9,9 @@ namespace IntegratoR.OData.FO.Features.Commands.LedgerJournals.CreateLedgerJourn
 public class CreateLedgerJournalHeadersHandler<TEntity> : IRequestHandler<CreateLedgerJournalHeadersCommand<TEntity>, Result> where TEntity : LedgerJournalHeader
 {
     private readonly ILogger<CreateLedgerJournalHeadersHandler<TEntity>> _logger;
-    private readonly IODataBatchService<TEntity, string> _service;
+    private readonly IODataBatchService<TEntity> _service;
 
-    public CreateLedgerJournalHeadersHandler(ILogger<CreateLedgerJournalHeadersHandler<TEntity>> logger, IODataBatchService<TEntity, string> service)
+    public CreateLedgerJournalHeadersHandler(ILogger<CreateLedgerJournalHeadersHandler<TEntity>> logger, IODataBatchService<TEntity> service)
     {
         _logger = logger;
         _service = service;
@@ -23,12 +23,16 @@ public class CreateLedgerJournalHeadersHandler<TEntity> : IRequestHandler<Create
 
         var addResult = await _service.AddBatchAsync(request.LedgerJournalHeaders, cancellationToken);
 
-        if (addResult.IsFailure)
-        {
-            return Result.Fail(addResult.Error!);
-        }
+        return addResult.Match(
+            onSuccess: () =>
+            {
+                _logger.LogInformation("Successfully created {Count} LedgerJournalHeader entities in F&O.", request.LedgerJournalHeaders.Count());
 
-        _logger.LogInformation("Successfully created {Count} LedgerJournalHeader entities in F&O.", request.LedgerJournalHeaders.Count());
-        return Result.Ok();
+                return Result.Ok();
+            },
+            onFailure: error =>
+            {
+                return Result.Fail(error);
+            });
     }
 }

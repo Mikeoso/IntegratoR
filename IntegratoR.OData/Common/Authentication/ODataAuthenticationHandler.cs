@@ -79,14 +79,13 @@ public class ODataAuthenticationHandler : DelegatingHandler
             }
             else
             {
-                // Short-circuit the request pipeline on authentication failure.
                 return new HttpResponseMessage(HttpStatusCode.Unauthorized)
                 {
                     ReasonPhrase = $"Failed to acquire F&O OAuth token: {tokenResult.Error?.Message}"
                 };
             }
         }
-        else // Assumes Subscription Key mode for non-OAuth configurations
+        else
         {
             request.Headers.Add(_settings.SubscriptionHeaderKey, _settings.SubscriptionKey);
 
@@ -95,8 +94,6 @@ public class ODataAuthenticationHandler : DelegatingHandler
                 request.Headers.Add(header.Key, header.Value);
             }
         }
-
-        // Pass the modified request to the next handler in the chain.
         return await base.SendAsync(request, cancellationToken);
     }
 }

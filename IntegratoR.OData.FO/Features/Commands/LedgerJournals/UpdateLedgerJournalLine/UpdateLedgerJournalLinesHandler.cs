@@ -9,9 +9,9 @@ namespace IntegratoR.OData.FO.Features.Commands.LedgerJournals.UpdateLedgerJourn
     public class UpdateLedgerJournalLinesHandler<TEntity> : IRequestHandler<UpdateLedgerJournalLinesCommand<TEntity>, Result> where TEntity : LedgerJournalLine
     {
         private ILogger<UpdateLedgerJournalLinesHandler<TEntity>> _logger;
-        private IODataBatchService<TEntity, string> _batchService;
+        private IODataBatchService<TEntity> _batchService;
 
-        public UpdateLedgerJournalLinesHandler(ILogger<UpdateLedgerJournalLinesHandler<TEntity>> logger, IODataBatchService<TEntity, string> batchService)
+        public UpdateLedgerJournalLinesHandler(ILogger<UpdateLedgerJournalLinesHandler<TEntity>> logger, IODataBatchService<TEntity> batchService)
         {
             _logger = logger;
             _batchService = batchService;
@@ -23,12 +23,17 @@ namespace IntegratoR.OData.FO.Features.Commands.LedgerJournals.UpdateLedgerJourn
 
             var result = await _batchService.UpdateBatchAsync(request.LedgerJournalLines, cancellationToken);
 
-            if (result.IsFailure)
-            {
-                return result;
-            }
-            _logger.LogInformation("Successfully updated {Count} Ledger Journal Lines.", request.LedgerJournalLines.Count());
-            return Result.Ok();
+            return result.Match(
+                onSuccess: () =>
+                {
+                    _logger.LogInformation("Successfully updated {Count} Ledger Journal Lines.", request.LedgerJournalLines.Count());
+                    return Result.Ok();
+                },
+                onFailure: error =>
+                {
+                    _logger.LogError("Failed to update Ledger Journal Lines. Error: {Error}", error.Message);
+                    return Result.Fail(error);
+                });
         }
     }
 }

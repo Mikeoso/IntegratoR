@@ -56,7 +56,7 @@ public class LoggingBehaviour<TRequest, TResponse> : IPipelineBehavior<TRequest,
     /// <returns>The response from the next handler in the pipeline.</returns>
     public async Task<TResponse> Handle(TRequest request, RequestHandlerDelegate<TResponse> next, CancellationToken cancellationToken)
     {
-        var contextDictionary = request.GetContextForLogging();
+        var contextDictionary = request.GetLoggingContext();
 
         using (_logger.BeginScope(contextDictionary))
         {
@@ -67,13 +67,11 @@ public class LoggingBehaviour<TRequest, TResponse> : IPipelineBehavior<TRequest,
 
             try
             {
-                var response = await next();
+                var response = await next().ConfigureAwait(false);
                 stopwatch.Stop();
 
-                // Check if the response is a controlled failure (IResult)
                 if (response is IResult { IsFailure: true } result)
                 {
-                    // Log controlled failures as Warnings, as they are expected failure paths.
                     _logger.LogWarning(
                         "Handled {RequestName} with failure result in {ElapsedMilliseconds}ms. Error: {ErrorCode} - {ErrorMessage}",
                         requestName,
@@ -83,27 +81,20 @@ public class LoggingBehaviour<TRequest, TResponse> : IPipelineBehavior<TRequest,
                 }
                 else
                 {
-                    // Log successful operations as Information.
                     _logger.LogInformation(
                         "Handled {RequestName} successfully in {ElapsedMilliseconds}ms",
                         requestName,
                         stopwatch.ElapsedMilliseconds);
                 }
-                // Log the full response at the Debug level for detailed diagnostics without cluttering standard logs.
                 _logger.LogDebug("Response for {RequestName}: {@Response}", requestName, response);
                 return response;
             }
             catch (Exception ex)
             {
                 stopwatch.Stop();
-                // Log unhandled exceptions as Errors, as they represent unexpected states.
                 _logger.LogError(ex, "An unhandled exception occurred while handling {RequestName} after {ElapsedMilliseconds}ms.", requestName, stopwatch.ElapsedMilliseconds);
-
-                // Re-throw the exception to allow higher-level exception handlers
-                // (e.g., global exception middleware in Azure Functions) to process it.
                 throw;
             }
         }
-
     }
 }

@@ -35,13 +35,6 @@ public class LedgerJournalHeader : BaseEntity<string>
     public string? JournalBatchNumber { get; set; }
 
     /// <summary>
-    /// A client-side composite identifier constructed from DataAreaId and JournalBatchNumber for simplified entity tracking within applications.
-    /// </summary>
-    [IgnoreDataMember]
-    [JsonIgnore]
-    public override string Id => $"{DataAreaId}-{JournalBatchNumber}";
-
-    /// <summary>
     /// The identifier for the Journal Name setup. This is a crucial field as it governs the journal's behavior,
     /// including default values, number sequences, posting restrictions, and workflow configurations.
     /// </summary>
@@ -93,4 +86,12 @@ public class LedgerJournalHeader : BaseEntity<string>
     /// </summary>
     [JsonPropertyName("AccountingCurrency")]
     public virtual string? AccountingCurrency { get; set; }
+
+    /// <summary>
+    /// A client-side composite identifier constructed from DataAreaId and JournalBatchNumber for simplified entity tracking within applications.
+    /// </summary>
+    public override object[] GetCompositeKey()
+    {
+        return [DataAreaId, JournalBatchNumber ?? "null"];
+    }
 }

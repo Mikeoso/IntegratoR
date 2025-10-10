@@ -9,9 +9,9 @@ namespace IntegratoR.OData.FO.Features.Commands.LedgerJournals.UpdateLedgerJourn
 public class UpdateLedgerJournalHandler<TEntity> : IRequestHandler<UpdateLedgerJournalHeadersCommand<TEntity>, Result> where TEntity : LedgerJournalHeader
 {
     private readonly ILogger<UpdateLedgerJournalHeadersCommand<TEntity>> _logger;
-    private readonly IODataBatchService<TEntity, string> _service;
+    private readonly IODataBatchService<TEntity> _service;
 
-    public UpdateLedgerJournalHandler(ILogger<UpdateLedgerJournalHeadersCommand<TEntity>> logger, IODataBatchService<TEntity, string> service)
+    public UpdateLedgerJournalHandler(ILogger<UpdateLedgerJournalHeadersCommand<TEntity>> logger, IODataBatchService<TEntity> service)
     {
         _logger = logger;
         _service = service;
@@ -23,15 +23,16 @@ public class UpdateLedgerJournalHandler<TEntity> : IRequestHandler<UpdateLedgerJ
 
         var result = await _service.UpdateBatchAsync(request.LedgerJournalHeaders, cancellationToken);
 
-        if (result.IsSuccess)
-        {
-            _logger.LogInformation("Successfully updated {Count} Ledger Journal Headers.", request.LedgerJournalHeaders.Count());
-            return Result.Ok();
-        }
-        else
-        {
-            _logger.LogError("Failed to update Ledger Journal Headers. Error: {Error}", result.Error?.Message);
-            return Result.Fail(result.Error ?? new Error("UnknownError", "An unknown error occurred during batch update.", ErrorType.Failure));
-        }
+        return result.Match(
+            onSuccess: () =>
+            {
+                _logger.LogInformation("Successfully updated {Count} Ledger Journal Headers.", request.LedgerJournalHeaders.Count());
+                return Result.Ok();
+            },
+            onFailure: error =>
+            {
+                _logger.LogError("Failed to update Ledger Journal Headers. Error: {Error}", error.Message);
+                return Result.Fail(error);
+            });
     }
 }

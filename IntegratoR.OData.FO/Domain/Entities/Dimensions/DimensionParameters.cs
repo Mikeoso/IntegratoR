@@ -1,4 +1,5 @@
 ﻿using IntegratoR.Abstractions.Domain.Entities;
+using IntegratoR.OData.FO.Domain.Enums.Dimensions;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Text.Json.Serialization;
@@ -19,7 +20,7 @@ public class DimensionParameters : BaseEntity<string>
     /// </summary>
     [Key]
     [JsonPropertyName("Key")]
-    public string? Key { get; set; }
+    public required string Key { get; set; }
 
     /// <summary>
     /// Specifies the character used to separate segments within a financial dimension string.
@@ -27,4 +28,9 @@ public class DimensionParameters : BaseEntity<string>
     /// </summary>
     [JsonPropertyName("DimensionSegmentDelimiter")]
     public virtual DimensionSegmentDelimiter DimensionSegmentDelimiter { get; set; }
+
+    public override object[] GetCompositeKey()
+    {
+        return [Key];
+    }
 }

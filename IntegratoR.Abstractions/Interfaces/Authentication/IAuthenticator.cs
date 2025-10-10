@@ -1,5 +1,4 @@
-﻿using IntegratoR.Abstractions.Common.Result;
-using IntegratoR.Abstractions.Common.Results;
+﻿using IntegratoR.Abstractions.Common.Results;
 
 namespace IntegratoR.Abstractions.Interfaces.Authentication;
 

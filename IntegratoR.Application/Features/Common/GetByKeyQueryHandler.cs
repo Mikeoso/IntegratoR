@@ -23,18 +23,18 @@ namespace IntegratoR.Application.Features.Common;
 /// which is responsible for translating the provided key object into a valid composite key for an
 /// OData URL (e.g., `.../data/SalesOrderLines(SalesOrderNumber='SO-123',LineNumber=1.0m)`).
 /// </remarks>
-public class GetByKeyQueryHandler<TEntity, TKey> : IRequestHandler<GetByKeyQuery<TEntity, TKey>, Result<TEntity>>
-    where TEntity : class, IEntity<TKey>
+public class GetByKeyQueryHandler<TEntity> : IRequestHandler<GetByKeyQuery<TEntity>, Result<TEntity>>
+    where TEntity : class, IEntity
 {
-    private readonly ILogger<GetByKeyQueryHandler<TEntity, TKey>> _logger;
-    private readonly IService<TEntity, TKey> _service;
+    private readonly ILogger<GetByKeyQueryHandler<TEntity>> _logger;
+    private readonly IService<TEntity> _service;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="GetByKeyQueryHandler{TEntity, TKey}"/> class.
     /// </summary>
     /// <param name="logger">The logger for diagnostics.</param>
     /// <param name="service">The generic repository/service for the specified entity type.</param>
-    public GetByKeyQueryHandler(ILogger<GetByKeyQueryHandler<TEntity, TKey>> logger, IService<TEntity, TKey> service)
+    public GetByKeyQueryHandler(ILogger<GetByKeyQueryHandler<TEntity>> logger, IService<TEntity> service)
     {
         _logger = logger;
         _service = service;
@@ -50,20 +50,18 @@ public class GetByKeyQueryHandler<TEntity, TKey> : IRequestHandler<GetByKeyQuery
     /// The task result contains a <see cref="Result{T}"/> wrapping the found entity on success,
     /// or a "NotFound" error on failure.
     /// </returns>
-    public async Task<Result<TEntity>> Handle(GetByKeyQuery<TEntity, TKey> request, CancellationToken cancellationToken)
+    public async Task<Result<TEntity>> Handle(GetByKeyQuery<TEntity> request, CancellationToken cancellationToken)
     {
-        _logger.LogDebug("Handling GetByKeyQuery for {Entity} with key values: {@KeyValues}", typeof(TEntity).Name, request.keyValues);
+        _logger.LogDebug("Handling GetByKeyQuery for {Entity} with key values: {@CompositeKey}", typeof(TEntity).Name, request.CompositeKey);
 
-        var entityResult = await _service.GetByKeyAsync(request.keyValues, cancellationToken);
+        var entityResult = await _service.GetByKeyAsync(request.CompositeKey, cancellationToken);
 
-        if (entityResult.IsFailure)
-        {
-            // Propagate the failure result from the service layer.
-            return Result<TEntity>.Fail(entityResult.Error!);
-        }
-
-        _logger.LogDebug("Successfully retrieved {Entity} with key values: {@KeyValues}", typeof(TEntity).Name, request.keyValues);
-
-        return Result<TEntity>.Ok(entityResult.Value!);
+        return entityResult.Match(
+            onSuccess: entity =>
+            {
+                _logger.LogDebug("Successfully retrieved {Entity} with key values: {@CompositeKey}", typeof(TEntity).Name, request.CompositeKey);
+                return Result<TEntity>.Ok(entity);
+            },
+            onFailure: _ => Result<TEntity>.Fail(entityResult));
     }
 }

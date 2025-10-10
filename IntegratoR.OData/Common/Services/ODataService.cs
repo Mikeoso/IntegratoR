@@ -1,5 +1,4 @@
-﻿using IntegratoR.Abstractions.Common.Result;
-using IntegratoR.Abstractions.Common.Results;
+﻿using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.Abstractions.Interfaces.Entity;
 using IntegratoR.OData.Common.Annotations;
 using IntegratoR.OData.Interfaces.Services;
@@ -23,7 +22,7 @@ namespace IntegratoR.OData.Common.Services;
 /// catching <see cref="WebRequestException"/> from the OData client and converting them into
 /// the application's standard <see cref="Result"/> pattern for consistent error propagation.
 /// </remarks>
-public class ODataService<TEntity, TKey> : IODataService<TEntity, TKey>, IODataBatchService<TEntity, TKey> where TEntity : class, IEntity<TKey>
+public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<TEntity> where TEntity : class, IEntity
 {
     private readonly IODataClient _client;
 
@@ -49,10 +48,11 @@ public class ODataService<TEntity, TKey> : IODataService<TEntity, TKey>, IODataB
         try
         {
             var payload = CreatePayload(entity, isCreateOperation: true);
+
             var addedEntity = await _client
                                     .For<TEntity>()
                                     .Set(payload)
-                                    .InsertEntryAsync(true, cancellationToken);  // 'true' returns the created entity from the server
+                                    .InsertEntryAsync(true, cancellationToken); 
 
             return Result<TEntity>.Ok(addedEntity);
         }
@@ -76,11 +76,14 @@ public class ODataService<TEntity, TKey> : IODataService<TEntity, TKey>, IODataB
         try
         {
             var query = _client.For<TEntity>();
+
             if (filter is not null)
             {
                 query = query.Filter(filter);
             }
+
             var entities = await query.FindEntriesAsync(cancellationToken);
+
             return Result<IEnumerable<TEntity>>.Ok(entities);
         }
         catch (WebRequestException ex)
@@ -98,7 +101,7 @@ public class ODataService<TEntity, TKey> : IODataService<TEntity, TKey>, IODataB
     /// This method is designed to handle both simple keys (e.g., a single string or int) and
     /// composite keys (using an anonymous object, like `new { Key1 = "A", Key2 = 1 }`).
     /// </remarks>
-    public async Task<Result<TEntity>> GetByKeyAsync(object keyValues, CancellationToken cancellationToken = default)
+    public async Task<Result<TEntity>> GetByKeyAsync(object[] keyValues, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -144,8 +147,8 @@ public class ODataService<TEntity, TKey> : IODataService<TEntity, TKey>, IODataB
         {
             var updatedEntity = await _client
                                     .For<TEntity>()
-                                    .Key(entity) // Extracts key from the entity itself
-                                    .Set(entity) // Sets the payload
+                                    .Key(entity)
+                                    .Set(entity)
                                     .UpdateEntryAsync(cancellationToken);
             return Result<TEntity>.Ok(updatedEntity);
         }
@@ -153,7 +156,7 @@ public class ODataService<TEntity, TKey> : IODataService<TEntity, TKey>, IODataB
         {
             return Result<TEntity>.Fail(new Error(
                 $"{typeof(TEntity).Name}.UpdateFailed",
-                $"Failed to update entity with ID '{entity.Id}': {ex.Message}",
+                $"Failed to update entity with ID '{entity.GetCompositeKey().ToString()}': {ex.Message}",
                 ErrorType.Failure,
                 ex));
         }
@@ -161,19 +164,19 @@ public class ODataService<TEntity, TKey> : IODataService<TEntity, TKey>, IODataB
 
     /// <inheritdoc />
     /// <remarks>This method translates to an OData DELETE request.</remarks>
-    public async Task<Result> DeleteAsync(TKey id, CancellationToken cancellationToken = default)
+    public async Task<Result> DeleteAsync(TEntity entity, CancellationToken cancellationToken = default)
     {
-        if (id == null)
+        if (entity == null)
         {
-            return Result<TEntity>.Fail(new Error( // Returns a non-generic Result on failure
-                "Validation.NullKey", "The provided ID cannot be null.", ErrorType.Validation));
+            return Result<TEntity>.Fail(new Error(
+                "Validation.NullEntity", "The provided entity cannot be null.", ErrorType.Validation));
         }
 
         try
         {
             await _client
                 .For<TEntity>()
-                .Key(id)
+                .Key(entity)
                 .DeleteEntryAsync(cancellationToken);
             return Result.Ok();
         }
@@ -181,43 +184,7 @@ public class ODataService<TEntity, TKey> : IODataService<TEntity, TKey>, IODataB
         {
             return Result.Fail(new Error(
                 $"{typeof(TEntity).Name}.DeleteFailed",
-                $"Failed to delete entity with ID '{id}': {ex.Message}",
-                ErrorType.Failure,
-                ex));
-        }
-    }
-
-    /// <inheritdoc />
-    public async Task<Result<TEntity>> GetByIdAsync(TKey id, CancellationToken cancellationToken = default)
-    {
-        if (id == null)
-        {
-            return Result<TEntity>.Fail(new Error(
-                "Validation.NullKey", "The provided ID cannot be null.", ErrorType.Validation));
-        }
-
-        try
-        {
-            var entity = await _client
-                .For<TEntity>()
-                .Key(id)
-                .FindEntryAsync(cancellationToken);
-
-            if (entity is null)
-            {
-                return Result<TEntity>.Fail(new Error(
-                    $"{typeof(TEntity).Name}.NotFound",
-                    $"Entity with the specified key {id} was not found.",
-                    ErrorType.NotFound));
-            }
-
-            return Result<TEntity>.Ok(entity);
-        }
-        catch (WebRequestException ex)
-        {
-            return Result<TEntity>.Fail(new Error(
-                $"{typeof(TEntity).Name}.RequestFailed",
-                $"OData request failed: {ex.Message}",
+                $"Failed to delete entity with CompositeKey '{entity.GetCompositeKey().ToString()}': {ex.Message}",
                 ErrorType.Failure,
                 ex));
         }
@@ -273,10 +240,6 @@ public class ODataService<TEntity, TKey> : IODataService<TEntity, TKey>, IODataB
                 $"Failed to query entity data set",
                 ErrorType.Failure));
             }
-
-            // FindEntriesAsync returns an empty collection, not null, if no entries are found.
-            // A null result would indicate a more serious deserialization or transport issue,
-            // which is more likely to throw a WebRequestException.
 
             return Result<IEnumerable<TEntity>>.Ok(entity);
         }
@@ -352,14 +315,14 @@ public class ODataService<TEntity, TKey> : IODataService<TEntity, TKey>, IODataB
     /// <remarks>
     /// This method groups multiple DELETE operations into a single OData `$batch` request.
     /// </remarks>
-    public async Task<Result> DeleteBatchAsync(IEnumerable<TKey> ids, CancellationToken cancellationToken = default)
+    public async Task<Result> DeleteBatchAsync(IEnumerable<TEntity> entities, CancellationToken cancellationToken = default)
     {
         try
         {
             var batch = new ODataBatch(_client);
-            foreach (var id in ids)
+            foreach (var entity in entities)
             {
-                batch += c => c.For<TEntity>().Key(id!).DeleteEntryAsync(cancellationToken);
+                batch += c => c.For<TEntity>().Key(entity.GetCompositeKey()).DeleteEntryAsync(cancellationToken);
             }
             await batch.ExecuteAsync(cancellationToken);
             return Result.Ok();
@@ -385,7 +348,7 @@ public class ODataService<TEntity, TKey> : IODataService<TEntity, TKey>, IODataB
             var batch = new ODataBatch(_client);
             foreach (var entity in entities)
             {
-                batch += c => c.For<TEntity>().Key(entity.Id!).Set(entity).UpdateEntryAsync(cancellationToken);
+                batch += c => c.For<TEntity>().Key(entity.GetCompositeKey()).Set(entity).UpdateEntryAsync(cancellationToken);
             }
             await batch.ExecuteAsync(cancellationToken);
             return Result.Ok();
@@ -411,7 +374,10 @@ public class ODataService<TEntity, TKey> : IODataService<TEntity, TKey>, IODataB
     /// <param name="isCreateOperation">A flag to indicate if the payload is for a create (true) or update (false) operation.</param>
     /// <returns>A dictionary of property names and values to be sent in the OData request body.</returns>
     /// <remarks>
-    /// This method reflects over the entity's properties and applies the following rules:
+    /// This method reflects over the provided entity's **runtime type** using `entity.GetType()` to build the payload.
+    /// This ensures that if a derived type is passed (e.g., a `CustomerExtension` instance to a service typed for `Customer`),
+    /// all properties from the derived type are correctly included.
+    /// It applies the following rules:
     /// 1. Ignores properties that are not readable/writable, or are marked with <see cref="NotMappedAttribute"/> or <see cref="JsonIgnoreAttribute"/>.
     /// 2. Honors the <see cref="ODataFieldAttribute"/> to exclude properties specifically for create or update operations.
     /// 3. Skips properties that have not been set (i.e., still hold their default value) to create a cleaner payload.
@@ -420,7 +386,8 @@ public class ODataService<TEntity, TKey> : IODataService<TEntity, TKey>, IODataB
     private Dictionary<string, object> CreatePayload(TEntity entity, bool isCreateOperation)
     {
         var payload = new Dictionary<string, object>();
-        var properties = typeof(TEntity).GetProperties(BindingFlags.Public | BindingFlags.Instance);
+
+        var properties = entity.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance);
 
         foreach (var property in properties)
         {

@@ -1,5 +1,4 @@
 ﻿using FluentValidation;
-using IntegratoR.Abstractions.Common.Result;
 using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.Abstractions.Interfaces.Results;
 using MediatR;

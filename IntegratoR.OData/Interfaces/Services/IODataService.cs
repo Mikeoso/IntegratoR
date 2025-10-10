@@ -20,7 +20,7 @@ namespace IntegratoR.OData.Interfaces.Services;
 /// </summary>
 /// <typeparam name="TEntity">The type of the entity being queried.</typeparam>
 /// <typeparam name="TKey">The type of the entity's primary key.</typeparam>
-public interface IODataService<TEntity, TKey> : IService<TEntity, TKey> where TEntity : IEntity<TKey>
+public interface IODataService<TEntity> : IService<TEntity> where TEntity : IEntity
 {
     /// <summary>
     /// Asynchronously retrieves a collection of entities using a comprehensive set of OData query options.

@@ -14,10 +14,10 @@ namespace IntegratoR.OData.FO.Features.Queries.Dimensions.GetDimensionOrder;
 public class GetDimensionOrdersQueryHandler : IRequestHandler<GetDimensionOrdersQuery, IResult<DimensionFormat>>
 {
     private readonly ILogger<GetDimensionOrdersQueryHandler> _logger;
-    private readonly IODataService<DimensionParameters, string> _dimensionParametersService;
-    private readonly IService<DimensionIntegrationFormat, string> _dimensionIntegrationFormatService;
+    private readonly IODataService<DimensionParameters> _dimensionParametersService;
+    private readonly IService<DimensionIntegrationFormat> _dimensionIntegrationFormatService;
 
-    public GetDimensionOrdersQueryHandler(ILogger<GetDimensionOrdersQueryHandler> logger, IODataService<DimensionParameters, string> dimensionParametersService, IService<DimensionIntegrationFormat, string> dimensionIntegrationFormatService)
+    public GetDimensionOrdersQueryHandler(ILogger<GetDimensionOrdersQueryHandler> logger, IODataService<DimensionParameters> dimensionParametersService, IService<DimensionIntegrationFormat> dimensionIntegrationFormatService)
     {
         _logger = logger;
         _dimensionParametersService = dimensionParametersService;

@@ -20,7 +20,7 @@ public class DimensionIntegrationFormat : BaseEntity<string>
     /// </summary>
     [Key]
     [JsonPropertyName("DimensionFormatName")]
-    public string? DimensionFormatName { get; set; }
+    public required string DimensionFormatName { get; set; }
 
     /// <summary>
     /// The type of dimension hierarchy this format applies to, such as 'Dimension combination' or 'Ledger dimension format'.
@@ -42,4 +42,9 @@ public class DimensionIntegrationFormat : BaseEntity<string>
     /// </summary>
     [JsonPropertyName("IsActive")]
     public virtual NoYes IsActive { get; set; }
+
+    public override object[] GetCompositeKey()
+    {
+        return [DimensionFormatName, DimensionFormatType];
+    }
 }

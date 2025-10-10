@@ -24,7 +24,7 @@ namespace IntegratoR.OData.Interfaces.Services;
 /// D365 F&O server. These operations are typically executed within a single transaction,
 /// providing an "all-or-nothing" guarantee for data consistency.
 /// </remarks>
-public interface IODataBatchService<TEntity, TKey> where TEntity : IEntity<TKey>
+public interface IODataBatchService<TEntity> where TEntity : IEntity
 {
     /// <summary>
     /// Adds a collection of entities in a single atomic batch operation.
@@ -57,5 +57,5 @@ public interface IODataBatchService<TEntity, TKey> where TEntity : IEntity<TKey>
     /// <remarks>
     /// This method bundles multiple OData DELETE requests into a single `$batch` request.
     /// </remarks>
-    Task<Result> DeleteBatchAsync(IEnumerable<TKey> ids, CancellationToken cancellationToken = default);
+    Task<Result> DeleteBatchAsync(IEnumerable<TEntity> entities, CancellationToken cancellationToken = default);
 }
