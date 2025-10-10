@@ -45,6 +45,6 @@ public class DimensionIntegrationFormat : BaseEntity<string>
 
     public override object[] GetCompositeKey()
     {
-        return [DimensionFormatName!, DimensionFormatType];
+        return [DimensionFormatName, DimensionFormatType];
     }
 }
