@@ -18,17 +18,8 @@ namespace IntegratoR.Abstractions.Interfaces.Services;
 /// translating these method calls into specific OData HTTP requests against a OData endpoint,
 /// typically using a library.
 /// </remarks>
-public interface IService<TEntity, TKey> where TEntity : IEntity<TKey>
+public interface IService<TEntity> where TEntity : IEntity
 {
-    /// <summary>
-    /// Asynchronously retrieves a single entity by its unique, simple primary key.
-    /// </summary>
-    /// <param name="id">The primary key value of the entity to find.</param>
-    /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
-    /// <returns>A <see cref="Result{TEntity}"/> containing the entity if found, or a 'NotFound' error.</returns>
-    /// <remarks>This method typically translates to an OData GET request like `.../data/Customers('US-001')`.</remarks>
-    Task<Result<TEntity>> GetByIdAsync(TKey id, CancellationToken cancellationToken = default);
-
     /// <summary>
     /// Asynchronously retrieves a single entity by its key, supporting simple or composite keys.
     /// </summary>
@@ -72,5 +63,5 @@ public interface IService<TEntity, TKey> where TEntity : IEntity<TKey>
     /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
     /// <returns>A non-generic <see cref="Result"/> indicating the success or failure of the deletion.</returns>
     /// <remarks>This method translates to an OData DELETE request.</remarks>
-    Task<Result> DeleteAsync(TKey id, CancellationToken cancellationToken = default);
+    Task<Result> DeleteAsync(TEntity entity, CancellationToken cancellationToken = default);
 }

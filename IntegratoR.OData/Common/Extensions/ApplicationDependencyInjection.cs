@@ -71,9 +71,9 @@ public static class ApplicationDependencyInjection
         });
 
         // Register Services
-        services.AddScoped(typeof(IService<,>), typeof(ODataService<,>));
-        services.AddScoped(typeof(IODataService<,>), typeof(ODataService<,>));
-        services.AddScoped(typeof(IODataBatchService<,>), typeof(ODataService<,>));
+        services.AddScoped(typeof(IService<>), typeof(ODataService<>));
+        services.AddScoped(typeof(IODataService<>), typeof(ODataService<>));
+        services.AddScoped(typeof(IODataBatchService<>), typeof(ODataService<>));
 
         return services;
     }

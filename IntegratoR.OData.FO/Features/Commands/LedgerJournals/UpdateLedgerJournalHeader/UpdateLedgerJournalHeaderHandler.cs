@@ -9,9 +9,9 @@ namespace IntegratoR.OData.FO.Features.Commands.LedgerJournals.UpdateLedgerJourn
 public class UpdateLedgerJournalHeaderHandler<TEntity> : IRequestHandler<UpdateLedgerJournalHeaderCommand<TEntity>, Result<TEntity>> where TEntity : LedgerJournalHeader
 {
     private readonly ILogger<UpdateLedgerJournalHeaderCommand<TEntity>> _logger;
-    private readonly IService<TEntity, string> _service;
+    private readonly IService<TEntity> _service;
 
-    public UpdateLedgerJournalHeaderHandler(ILogger<UpdateLedgerJournalHeaderCommand<TEntity>> logger, IService<TEntity, string> service)
+    public UpdateLedgerJournalHeaderHandler(ILogger<UpdateLedgerJournalHeaderCommand<TEntity>> logger, IService<TEntity> service)
     {
         _logger = logger;
         _service = service;

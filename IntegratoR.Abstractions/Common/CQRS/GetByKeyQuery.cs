@@ -13,7 +13,7 @@ namespace IntegratoR.Abstractions.Common.CQRS;
 /// </summary>
 /// <typeparam name="TEntity">The type of the entity to query, which must be a class implementing <see cref="IEntity{TKey}"/>.</typeparam>
 /// <typeparam name="TKey">The data type of the entity's primary key as defined by the <see cref="IEntity{TKey}"/> interface.</typeparam>
-/// <param name="keyValues">An object representing the primary key(s) of the entity to retrieve.</param>
+/// <param name="CompositeKey">An object representing the primary key(s) of the entity to retrieve.</param>
 /// <remarks>
 /// This query provides a flexible mechanism for fetching entities by key, which is crucial for
 /// OData that often feature composite primary keys.
@@ -29,17 +29,17 @@ namespace IntegratoR.Abstractions.Common.CQRS;
 ///   </item>
 /// </list>
 ///
-/// A query handler will use this <paramref name="keyValues"/> object to construct the key segment of an OData URL,
+/// A query handler will use this <paramref name="CompositeKey"/> object to construct the key segment of an OData URL,
 /// which the underlying implementation can do directly from an anonymous type.
 /// </remarks>
-public record GetByKeyQuery<TEntity, TKey>(object keyValues) : IQuery<Result<TEntity>> where TEntity : class, IEntity<TKey>
+public record GetByKeyQuery<TEntity>(object[] CompositeKey) : IQuery<Result<TEntity>> where TEntity : class, IEntity
 {
     public IReadOnlyDictionary<string, object> GetLoggingContext()
     {
         return new Dictionary<string, object>
         {
             { "EntityType", typeof(TEntity).Name },
-            { "KeyValues", keyValues is not null ? JsonSerializer.Serialize(keyValues) : "null" }
+            { "KeyValues", CompositeKey is not null ? JsonSerializer.Serialize(CompositeKey) : "null" }
         };
     }
 }

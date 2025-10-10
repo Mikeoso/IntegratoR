@@ -46,12 +46,6 @@ public class LedgerJournalLine : BaseEntity<string>
     public decimal LineNumber { get; set; }
 
     /// <summary>
-    /// A client-side composite identifier constructed from DataAreaId, JournalBatchNumber, and LineNumber for simplified entity tracking.
-    /// </summary>
-    [JsonIgnore]
-    public override string Id => $"{DataAreaId}-{JournalBatchNumber}-{LineNumber}";
-
-    /// <summary>
     /// The primary account for the transaction, combining the main account and financial dimensions.
     /// </summary>
     [Required]
@@ -247,4 +241,12 @@ public class LedgerJournalLine : BaseEntity<string>
     [JsonPropertyName("ReverseDate")]
     [ODataField(IgnoreOnCreate = true)]
     public virtual DateTimeOffset ReverseDate { get; set; }
+
+    /// <summary>
+    /// A client-side composite identifier constructed from DataAreaId, JournalBatchNumber, and LineNumber for simplified entity tracking.
+    /// </summary>
+    public override object[] GetCompositeKey()
+    {
+        return [DataAreaId, JournalBatchNumber, LineNumber];
+    }
 }

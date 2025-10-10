@@ -20,7 +20,7 @@ public class DimensionParameters : BaseEntity<string>
     /// </summary>
     [Key]
     [JsonPropertyName("Key")]
-    public string? Key { get; set; }
+    public required string Key { get; set; }
 
     /// <summary>
     /// Specifies the character used to separate segments within a financial dimension string.
@@ -28,4 +28,9 @@ public class DimensionParameters : BaseEntity<string>
     /// </summary>
     [JsonPropertyName("DimensionSegmentDelimiter")]
     public virtual DimensionSegmentDelimiter DimensionSegmentDelimiter { get; set; }
+
+    public override object[] GetCompositeKey()
+    {
+        return [Key];
+    }
 }

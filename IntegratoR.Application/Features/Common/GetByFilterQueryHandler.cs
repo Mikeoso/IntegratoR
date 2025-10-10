@@ -32,9 +32,9 @@ namespace IntegratoR.Application.Features.Common;
 /// is responsible for translating the LINQ expression into the appropriate OData `$filter` query for D365 F&O.
 /// </remarks>
 public class GetByFilterQueryHandler<TEntity, TKey> : IRequestHandler<GetByFilterQuery<TEntity>, Result<IEnumerable<TEntity>>>
-    where TEntity : class, IEntity<TKey>
+    where TEntity : class, IEntity
 {
-    private readonly IService<TEntity, TKey> _service;
+    private readonly IService<TEntity> _service;
     private readonly ILogger<GetByFilterQueryHandler<TEntity, TKey>> _logger;
 
     /// <summary>
@@ -42,7 +42,7 @@ public class GetByFilterQueryHandler<TEntity, TKey> : IRequestHandler<GetByFilte
     /// </summary>
     /// <param name="logger">The logger for diagnostics.</param>
     /// <param name="service">The generic repository/service for the specified entity type.</param>
-    public GetByFilterQueryHandler(ILogger<GetByFilterQueryHandler<TEntity, TKey>> logger, IService<TEntity, TKey> service)
+    public GetByFilterQueryHandler(ILogger<GetByFilterQueryHandler<TEntity, TKey>> logger, IService<TEntity> service)
     {
         _service = service;
         _logger = logger;

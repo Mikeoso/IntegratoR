@@ -15,17 +15,23 @@ namespace IntegratoR.Abstractions.Domain.Entities;
 /// helps decouple the core domain model from the data persistence layer,
 /// promoting a cleaner and more maintainable architecture.
 /// </remarks>
-public abstract class BaseEntity<TKey> : IEntity<TKey>, IContext
+public abstract class BaseEntity<TKey> : IEntity, IContext
 {
     /// <summary>
-    /// Gets or sets the unique identifier for this entity.
+    /// Gets the composite primary key that uniquely identifies this entity.
     /// </summary>
+    /// <returns>
+    /// An array of objects representing the values of the key fields. The order of values in the array is crucial and must be consistent.
+    /// </returns>
     /// <remarks>
-    /// This property is marked as <see langword="virtual"/> to allow derived classes to provide a custom
-    /// implementation if needed. For instance, a derived entity might override this property to
-    /// handle a composite key or a key that requires specific formatting before being set.
+    /// This method is essential for entities with composite keys. It abstracts the specific properties
+    /// that constitute the key, enabling generic patterns (like the Repository or Specification pattern)
+    /// to retrieve or process entities by their complete key.
+    ///
+    /// In D365 F&O, many entities feature composite keys, which often include a <c>DataAreaId</c> in combination
+    /// with other fields (e.g., <c>SalesOrderNumber</c>, <c>JournalBatchNumber</c>).
     /// </remarks>
-    public required virtual object[] Id { get; set; }
+    public abstract object[] GetCompositeKey();
 
     /// <summary>
     /// Creates a read-only dictionary that captures the entity's state for logging purposes.

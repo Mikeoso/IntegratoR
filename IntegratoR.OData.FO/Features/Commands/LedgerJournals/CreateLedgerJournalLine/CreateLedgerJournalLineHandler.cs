@@ -9,9 +9,9 @@ namespace IntegratoR.OData.FO.Features.Commands.LedgerJournals.CreateLedgerJourn
 public class CreateLedgerJournalLineHandler<TEntity> : IRequestHandler<CreateLedgerJournalLineCommand<TEntity>, Result<TEntity>> where TEntity : LedgerJournalLine
 {
     private readonly ILogger<CreateLedgerJournalLineHandler<TEntity>> _logger;
-    private readonly IService<TEntity, string> _service;
+    private readonly IService<TEntity> _service;
 
-    public CreateLedgerJournalLineHandler(ILogger<CreateLedgerJournalLineHandler<TEntity>> logger, IService<TEntity, string> service)
+    public CreateLedgerJournalLineHandler(ILogger<CreateLedgerJournalLineHandler<TEntity>> logger, IService<TEntity> service)
     {
         _logger = logger;
         _service = service;
@@ -25,20 +25,26 @@ public class CreateLedgerJournalLineHandler<TEntity> : IRequestHandler<CreateLed
 
         var addResult = await _service.AddAsync(request.LedgerJournalLine, cancellationToken);
 
-        if (addResult.IsFailure)
-        {
-            _logger.LogError("Failed to create Ledger Journal Line for Header: {JournalBatchNumber} in Company: {Comany}. Error: {Error}",
-                request.LedgerJournalLine.JournalBatchNumber,
-                request.LedgerJournalLine.DataAreaId,
-                addResult?.Error?.Message);
-            return Result<TEntity>.Fail(addResult!);
-        }
+        return addResult.Match(
+            onSuccess: entity =>
+            {
+                _logger.LogInformation(
+                    "Successfully created Ledger Journal Line with Line Number: {LineNumber} for Header: {JournalBatchNumber} in Company: {Company}",
+                    entity.LineNumber,
+                    entity.JournalBatchNumber,
+                    entity.DataAreaId);
+                
+                return Result<TEntity>.Ok(entity);
+            },
+            onFailure: error =>
+            {
+                _logger.LogError(
+                    "Failed to create Ledger Journal Line for Header: {JournalBatchNumber} in Company: {Company}. Error: {Error}",
+                    request.LedgerJournalLine.JournalBatchNumber,
+                    request.LedgerJournalLine.DataAreaId,
+                    error.Message);
 
-        _logger.LogInformation("Successfully created Ledger Journal Line with Line Number: {LineNumber} for Header: {JournalBatchNumber} in Company: {Comany}",
-            addResult.Value?.LineNumber,
-            addResult.Value?.JournalBatchNumber,
-            addResult.Value?.DataAreaId);
-
-        return Result<TEntity>.Ok(addResult.Value!);
+                return Result<TEntity>.Fail(error);
+            });
     }
 }

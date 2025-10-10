@@ -9,9 +9,9 @@ namespace IntegratoR.OData.FO.Features.Commands.LedgerJournals.UpdateLedgerJourn
 public class UpdateLedgerJournalLineHandler<TEntity> : IRequestHandler<UpdateLedgerJournalLineCommand<TEntity>, Result<TEntity>> where TEntity : LedgerJournalLine
 {
     private readonly ILogger<UpdateLedgerJournalLineHandler<TEntity>> _logger;
-    private readonly IService<TEntity, string> _service;
+    private readonly IService<TEntity> _service;
 
-    public UpdateLedgerJournalLineHandler(ILogger<UpdateLedgerJournalLineHandler<TEntity>> logger, IService<TEntity, string> service)
+    public UpdateLedgerJournalLineHandler(ILogger<UpdateLedgerJournalLineHandler<TEntity>> logger, IService<TEntity> service)
     {
         _logger = logger;
         _service = service;
@@ -26,16 +26,23 @@ public class UpdateLedgerJournalLineHandler<TEntity> : IRequestHandler<UpdateLed
 
         var updateResult = await _service.UpdateAsync(request.LedgerJournalLine, cancellationToken);
 
-        if (updateResult.IsFailure)
-        {
-            Result<TEntity>.Fail(updateResult);
-        }
-
-        _logger.LogInformation("Successfully updated Ledger Journal Line with Journal Number: {JournalBatchNumber} and Line Number: {LineNumber} in Company {Company}",
-            request.LedgerJournalLine.JournalBatchNumber,
-            request.LedgerJournalLine.LineNumber,
-            request.LedgerJournalLine.DataAreaId);
-
-        return Result<TEntity>.Ok(updateResult.Value!);
+        return updateResult.Match(
+            onSuccess: updatedEntity =>
+            {
+                _logger.LogInformation("Successfully updated Ledger Journal Line with Journal Number: {JournalBatchNumber} and Line Number: {LineNumber} in Company {Company}",
+                    request.LedgerJournalLine.JournalBatchNumber,
+                    request.LedgerJournalLine.LineNumber,
+                    request.LedgerJournalLine.DataAreaId);
+                return Result<TEntity>.Ok(updatedEntity);
+            },
+            onFailure: error =>
+            {
+                _logger.LogError("Failed to update Ledger Journal Line with Journal Number: {JournalBatchNumber} and Line Number: {LineNumber} in Company {Company}. Error: {Error}",
+                    request.LedgerJournalLine.JournalBatchNumber,
+                    request.LedgerJournalLine.LineNumber,
+                    request.LedgerJournalLine.DataAreaId,
+                    error.Message);
+                return Result<TEntity>.Fail(error);
+            });
     }
 }

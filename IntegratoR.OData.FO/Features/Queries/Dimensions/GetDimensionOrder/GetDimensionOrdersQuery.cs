@@ -21,4 +21,13 @@ public record GetDimensionOrdersQuery(string dimensionFormat, DimensionHierarchy
         return new object[] { nameof(GetDimensionOrdersQuery), dimensionFormat, hierarchyType }
         ;
     }
+
+    public IReadOnlyDictionary<string, object> GetLoggingContext()
+    {
+        return new Dictionary<string, object>
+        {
+            { "DimensionFormat", dimensionFormat },
+            { "HierarchyType", hierarchyType.ToString() }
+        };
+    }
 }
