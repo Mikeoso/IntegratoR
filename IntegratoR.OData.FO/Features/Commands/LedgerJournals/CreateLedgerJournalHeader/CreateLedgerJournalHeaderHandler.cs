@@ -31,7 +31,7 @@ public class CreateLedgerJournalHeaderHandler<TEntity>(ILogger<CreateLedgerJourn
             },
             onFailure: error =>
             {
-                return Result<TEntity>.Fail(addResult);
+                return Result<TEntity>.Fail(error);
             });
     }
 }
