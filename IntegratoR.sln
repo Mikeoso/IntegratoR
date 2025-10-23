@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 17
-VisualStudioVersion = 17.14.36414.22
+# Visual Studio Version 18
+VisualStudioVersion = 18.0.11104.47 d18.0
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IntegratoR.Abstractions", "IntegratoR.Abstractions\IntegratoR.Abstractions.csproj", "{7561604B-791D-47EC-8FEF-736C7B35CDBE}"
 EndProject
@@ -14,6 +14,8 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IntegratoR.RELion", "IntegratoR.RELion\IntegratoR.RELion.csproj", "{9D64C100-CE3A-48DB-811E-A1E8B28C9F3B}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IntegratoR.OData.FO", "IntegratoR.OData.FO\IntegratoR.OData.FO.csproj", "{0349ADC3-C923-4D9B-A242-E1E91499F1C8}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IntegratoR.Sample.WPF.Client", "IntegratoR.Client.Sample\IntegratoR.Sample.WPF.Client.csproj", "{53BE1D22-0F98-409B-AAE2-E227A7B06E0C}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -97,6 +99,18 @@ Global
 		{0349ADC3-C923-4D9B-A242-E1E91499F1C8}.Release|x64.Build.0 = Release|Any CPU
 		{0349ADC3-C923-4D9B-A242-E1E91499F1C8}.Release|x86.ActiveCfg = Release|Any CPU
 		{0349ADC3-C923-4D9B-A242-E1E91499F1C8}.Release|x86.Build.0 = Release|Any CPU
+		{53BE1D22-0F98-409B-AAE2-E227A7B06E0C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{53BE1D22-0F98-409B-AAE2-E227A7B06E0C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{53BE1D22-0F98-409B-AAE2-E227A7B06E0C}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{53BE1D22-0F98-409B-AAE2-E227A7B06E0C}.Debug|x64.Build.0 = Debug|Any CPU
+		{53BE1D22-0F98-409B-AAE2-E227A7B06E0C}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{53BE1D22-0F98-409B-AAE2-E227A7B06E0C}.Debug|x86.Build.0 = Debug|Any CPU
+		{53BE1D22-0F98-409B-AAE2-E227A7B06E0C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{53BE1D22-0F98-409B-AAE2-E227A7B06E0C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{53BE1D22-0F98-409B-AAE2-E227A7B06E0C}.Release|x64.ActiveCfg = Release|Any CPU
+		{53BE1D22-0F98-409B-AAE2-E227A7B06E0C}.Release|x64.Build.0 = Release|Any CPU
+		{53BE1D22-0F98-409B-AAE2-E227A7B06E0C}.Release|x86.ActiveCfg = Release|Any CPU
+		{53BE1D22-0F98-409B-AAE2-E227A7B06E0C}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

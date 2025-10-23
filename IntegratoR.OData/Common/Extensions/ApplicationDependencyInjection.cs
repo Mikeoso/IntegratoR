@@ -26,26 +26,36 @@ namespace IntegratoR.OData.Common.Extensions;
 public static class ApplicationDependencyInjection
 {
     /// <summary>
-    /// Configures and registers the <see cref="IODataClient"/>, its underlying <see cref="HttpClient"/>
-    /// pipeline with authentication, and the generic <see cref="ODataService{TEntity, TKey}"/> repository.
+    /// Configures and registers the OData client infrastructure using settings from the application's configuration.
     /// </summary>
     /// <param name="services">The <see cref="IServiceCollection"/> to add the services to.</param>
-    /// <param name="configuration">The application's configuration, used to bind OData settings.</param>
+    /// <param name="configuration">The application's configuration, used to bind OData settings from the "ODataSettings" section.</param>
     /// <returns>The <see cref="IServiceCollection"/> so that additional calls can be chained.</returns>
-    /// <remarks>
-    /// This method orchestrates the entire setup for the OData client by:
-    /// 1. Binding the `ODataSettings` section from configuration to a strongly-typed options object.
-    /// 2. Creating a named <c>HttpClient</c> and attaching the <see cref="ODataAuthenticationHandler"/>
-    ///    to its message pipeline, ensuring every request is automatically authenticated.
-    /// 3. Constructing a singleton instance of the <see cref="ODataClient"/>, feeding it the
-    ///    pre-configured and authenticated <c>HttpClient</c>.
-    /// 4. Registering the generic <see cref="ODataService{TEntity, TKey}"/> as the concrete
-    ///    implementation for the application's <see cref="IService{TEntity, TKey}"/> abstraction.
-    /// </remarks>
     public static IServiceCollection AddODataClient(this IServiceCollection services, IConfiguration configuration)
     {
         services.Configure<ODataSettings>(configuration.GetSection("ODataSettings"));
+        services.AddODataDependencies();
+        return services;
+    }
 
+    /// <summary>
+    /// Configures and registers the OData client infrastructure using a delegate for programmatic configuration.
+    /// </summary>
+    /// <param name="services">The <see cref="IServiceCollection"/> to add the services to.</param>
+    /// <param name="configureOptions">An action to configure the <see cref="ODataSettings"/>.</param>
+    /// <returns>The <see cref="IServiceCollection"/> so that additional calls can be chained.</returns>
+    public static IServiceCollection AddODataClient(this IServiceCollection services, Action<ODataSettings> configureOptions)
+    {
+        services.Configure(configureOptions);
+        services.AddODataDependencies();
+        return services;
+    }
+
+    /// <summary>
+    /// Encapsulates the registration of all OData-related services.
+    /// </summary>
+    private static void AddODataDependencies(this IServiceCollection services)
+    {
         // Register the custom authentication handler
         services.AddTransient<ODataAuthenticationHandler>();
 
@@ -74,7 +84,5 @@ public static class ApplicationDependencyInjection
         services.AddScoped(typeof(IService<>), typeof(ODataService<>));
         services.AddScoped(typeof(IODataService<>), typeof(ODataService<>));
         services.AddScoped(typeof(IODataBatchService<>), typeof(ODataService<>));
-
-        return services;
     }
 }

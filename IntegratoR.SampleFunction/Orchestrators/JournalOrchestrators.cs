@@ -1,5 +1,4 @@
-﻿using IntegratoR.Abstractions.Common.Result;
-using IntegratoR.Abstractions.Common.Results;
+﻿using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.OData.FO.Domain.Entities.LedgerJournal;
 using IntegratoR.RELion.Domain.Models;
 using IntegratoR.SampleFunction.Domain.DTOs.Activities;

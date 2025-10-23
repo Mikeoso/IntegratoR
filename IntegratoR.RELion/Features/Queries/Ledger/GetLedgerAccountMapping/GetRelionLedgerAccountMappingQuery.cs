@@ -19,5 +19,13 @@ namespace IntegratoR.RELion.Features.Queries.Ledger.GetLedgerAccountMapping
         {
             return new object[] { EntryNo };
         }
+
+        public IReadOnlyDictionary<string, object> GetLoggingContext()
+        {
+            return new Dictionary<string, object>
+            {
+                { "EntryNo", EntryNo }
+            };
+        }
     }
 }
