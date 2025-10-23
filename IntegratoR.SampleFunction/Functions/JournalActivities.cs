@@ -1,5 +1,4 @@
-﻿using IntegratoR.Abstractions.Common.Result;
-using IntegratoR.Abstractions.Common.Results;
+﻿using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.OData.FO.Builders;
 using IntegratoR.OData.FO.Domain.Entities.LedgerJournal;
 using IntegratoR.OData.FO.Domain.Enums.General;
@@ -14,7 +13,7 @@ using IntegratoR.RELion.Interfaces.Services;
 using IntegratoR.SampleFunction.Domain.DTOs.Activities;
 using IntegratoR.SampleFunction.Domain.Entities.LedgerJournal;
 using IntegratoR.SampleFunction.Domain.Enums;
-using IntegratoR.SampleFunction.Features.Commands.General.CreateRelionErrorEntry;
+using IntegratoR.SampleFunction.Features.Commands.General.CreateRelionErrorProtocol;
 using IntegratoR.SampleFunction.Features.Queries.Ledger.GetLedgerAccountMapping;
 using IntegratoR.SampleFunction.Features.Queries.Tax.GetItemTaxGroupMapping;
 using IntegratoR.SampleFunction.Features.Queries.Tax.GetTaxGroupMapping;
