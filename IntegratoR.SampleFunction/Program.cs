@@ -48,7 +48,7 @@ var host = new HostBuilder()
 
         services.AddApplicationServices();
         services.AddODataClient(context.Configuration);
-        services.AddODataFOProxy(context.Configuration);
+        services.AddODataClientFOProxy(context.Configuration);
         services.AddRelionClient(context.Configuration);
 
         services.AddValidatorsFromAssembly(clientAssembly);
