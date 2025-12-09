@@ -3,7 +3,7 @@ using IntegratoR.Abstractions.Interfaces.Queries;
 using IntegratoR.Abstractions.Interfaces.Telemetry;
 using System.Linq.Expressions;
 
-namespace IntegratoR.Abstractions.Common.CQRS;
+namespace IntegratoR.Abstractions.Common.CQRS.Queries;
 
 /// <summary>
 /// Represents a generic query within a CQRS pattern to retrieve a collection of entities

@@ -5,7 +5,7 @@ using IntegratoR.Abstractions.Interfaces.Queries;
 using System.Collections.Generic;
 using System.Text.Json;
 
-namespace IntegratoR.Abstractions.Common.CQRS;
+namespace IntegratoR.Abstractions.Common.CQRS.Queries;
 
 /// <summary>
 /// Represents a generic query within a CQRS pattern to retrieve a single entity using its primary key.
