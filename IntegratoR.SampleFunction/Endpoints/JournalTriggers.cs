@@ -1,5 +1,5 @@
 ﻿using Azure;
-using IntegratoR.Abstractions.Common.Result;
+using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.RELion.Domain.DTOs;
 using IntegratoR.RELion.Domain.Models;
 using IntegratoR.RELion.Interfaces.Services;

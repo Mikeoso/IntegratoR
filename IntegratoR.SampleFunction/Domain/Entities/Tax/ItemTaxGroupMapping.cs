@@ -22,5 +22,8 @@ public class ItemTaxGroupMapping : BaseEntity<string>
     [JsonPropertyName("TaxItemGroup")]
     public string? TaxItemGroup { get; set; }
 
-    public override string Id => $"{RelionTaxBusinessGroup}-{RelionTaxProductGroup}";
+    public override object[] GetCompositeKey()
+    {
+        return [RelionTaxBusinessGroup, RelionTaxProductGroup];
+    }
 }

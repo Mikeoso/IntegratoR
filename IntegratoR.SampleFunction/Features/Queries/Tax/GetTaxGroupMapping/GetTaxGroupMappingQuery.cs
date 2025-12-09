@@ -25,5 +25,14 @@ namespace IntegratoR.SampleFunction.Features.Queries.Tax.GetTaxGroupMapping
         {
             return new object[] { nameof(GetTaxGroupMappingQuery), BookingType, BookingGroup };
         }
+
+        public IReadOnlyDictionary<string, object> GetLoggingContext()
+        {
+            return new Dictionary<string, object>
+            {
+                { "BookingType", BookingType },
+                { "BookingGroup", BookingGroup }
+            };
+        }
     }
 }

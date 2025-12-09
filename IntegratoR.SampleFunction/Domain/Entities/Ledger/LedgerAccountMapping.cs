@@ -1,6 +1,5 @@
 ﻿using IntegratoR.Abstractions.Domain.Entities;
 using IntegratoR.OData.Common.Annotations;
-using IntegratoR.OData.Domain.Enums;
 using IntegratoR.OData.FO.Domain.Enums.General;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
@@ -42,5 +41,8 @@ public class LedgerAccountMapping : BaseEntity<string>
     [JsonPropertyName("NoYes")]
     public NoYes ExcludeFromImport { get; set; }
 
-    public override string Id => $"{RelionLedgerIFRS}-{RelionLedgerAccount}";
+    public override object[] GetCompositeKey()
+    {
+        return [RelionLedgerIFRS!, RelionLedgerAccount];
+    }
 }

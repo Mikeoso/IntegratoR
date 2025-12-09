@@ -24,5 +24,14 @@ namespace IntegratoR.SampleFunction.Features.Queries.Ledger.GetLedgerAccountMapp
         {
             return new object[] { nameof(GetLedgerAccountMappingQuery), LedgerAccount, IFRS };
         }
+
+        public IReadOnlyDictionary<string, object> GetLoggingContext()
+        {
+            return new Dictionary<string, object>
+            {
+                { "LedgerAccount", LedgerAccount },
+                { "IFRS", IFRS }
+            };
+        }
     }
 }
