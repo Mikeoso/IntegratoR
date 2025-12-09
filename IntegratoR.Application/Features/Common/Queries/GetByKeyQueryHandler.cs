@@ -1,11 +1,11 @@
-﻿using IntegratoR.Abstractions.Common.CQRS;
+﻿using IntegratoR.Abstractions.Common.CQRS.Queries;
 using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.Abstractions.Interfaces.Entity;
 using IntegratoR.Abstractions.Interfaces.Services;
 using MediatR;
 using Microsoft.Extensions.Logging;
 
-namespace IntegratoR.Application.Features.Common;
+namespace IntegratoR.Application.Features.Common.Queries;
 
 /// <summary>
 /// A reusable, generic MediatR query handler for processing the <see cref="GetByKeyQuery{TEntity, TKey}"/>.

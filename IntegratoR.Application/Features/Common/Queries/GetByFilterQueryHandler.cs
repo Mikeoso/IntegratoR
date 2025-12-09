@@ -1,11 +1,11 @@
 ﻿using MediatR;
-using IntegratoR.Abstractions.Common.CQRS;
 using IntegratoR.Abstractions.Interfaces.Services;
 using IntegratoR.Abstractions.Interfaces.Entity;
 using Microsoft.Extensions.Logging;
 using IntegratoR.Abstractions.Common.Results;
+using IntegratoR.Abstractions.Common.CQRS.Queries;
 
-namespace IntegratoR.Application.Features.Common;
+namespace IntegratoR.Application.Features.Common.Queries;
 
 // FILE-LEVEL DOCUMENTATION
 // ---------------------------------------------------------------------------------------------
