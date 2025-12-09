@@ -5,33 +5,29 @@ using IntegratoR.OData.Domain.Settings;
 using IntegratoR.OData.Interfaces.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Polly;
+using Polly.Extensions.Http;
+using Polly.Retry;
 using Simple.OData.Client;
+using System.Net;
 
 namespace IntegratoR.OData.Common.Extensions;
 
-// FILE-LEVEL DOCUMENTATION
-// ---------------------------------------------------------------------------------------------
-// <remarks>
-// This file defines the Composition Root for the OData Infrastructure layer. It encapsulates all
-// the complex configuration required to set up a resilient and properly authenticated OData client
-// for communicating with Dynamics 365 F&O.
-// </remarks>
-// ---------------------------------------------------------------------------------------------
-
 /// <summary>
-/// Provides an extension method to configure and register all services related to the
-/// OData infrastructure layer in the dependency injection (DI) container.
+/// Provides dependency injection configuration for OData infrastructure services.
 /// </summary>
 public static class ApplicationDependencyInjection
 {
     /// <summary>
-    /// Configures and registers the OData client infrastructure using settings from the application's configuration.
+    /// Registers OData client services with configuration from IConfiguration.
     /// </summary>
-    /// <param name="services">The <see cref="IServiceCollection"/> to add the services to.</param>
-    /// <param name="configuration">The application's configuration, used to bind OData settings from the "ODataSettings" section.</param>
-    /// <returns>The <see cref="IServiceCollection"/> so that additional calls can be chained.</returns>
-    public static IServiceCollection AddODataClient(this IServiceCollection services, IConfiguration configuration)
+    /// <param name="services">The service collection.</param>
+    /// <param name="configuration">The configuration containing ODataSettings section.</param>
+    public static IServiceCollection AddODataClient(
+        this IServiceCollection services,
+        IConfiguration configuration)
     {
         services.Configure<ODataSettings>(configuration.GetSection("ODataSettings"));
         services.AddODataDependencies();
@@ -39,50 +35,140 @@ public static class ApplicationDependencyInjection
     }
 
     /// <summary>
-    /// Configures and registers the OData client infrastructure using a delegate for programmatic configuration.
+    /// Registers OData client services with programmatic configuration.
     /// </summary>
-    /// <param name="services">The <see cref="IServiceCollection"/> to add the services to.</param>
-    /// <param name="configureOptions">An action to configure the <see cref="ODataSettings"/>.</param>
-    /// <returns>The <see cref="IServiceCollection"/> so that additional calls can be chained.</returns>
-    public static IServiceCollection AddODataClient(this IServiceCollection services, Action<ODataSettings> configureOptions)
+    /// <param name="services">The service collection.</param>
+    /// <param name="configureOptions">Action to configure OData settings.</param>
+    public static IServiceCollection AddODataClient(
+        this IServiceCollection services,
+        Action<ODataSettings> configureOptions)
     {
         services.Configure(configureOptions);
         services.AddODataDependencies();
         return services;
     }
 
-    /// <summary>
-    /// Encapsulates the registration of all OData-related services.
-    /// </summary>
     private static void AddODataDependencies(this IServiceCollection services)
     {
-        // Register the custom authentication handler
         services.AddTransient<ODataAuthenticationHandler>();
 
-        // Configure a named HttpClient specifically for our OData client.
         services.AddHttpClient("ODataClient")
-            .AddHttpMessageHandler<ODataAuthenticationHandler>();
+            .AddHttpMessageHandler<ODataAuthenticationHandler>()
+            .AddPolicyHandler((serviceProvider, request) =>
+            {
+                var settings = serviceProvider.GetRequiredService<IOptions<ODataSettings>>().Value;
 
-        // Register the Simple.OData.Client
+                if (!settings.EnableRetries)
+                {
+                    return Policy.NoOpAsync<HttpResponseMessage>();
+                }
+
+                var loggerFactory = serviceProvider.GetService<ILoggerFactory>();
+                var logger = loggerFactory?.CreateLogger("IntegratoR.OData.HttpRetry");
+
+                return HttpPolicyExtensions
+                    .HandleTransientHttpError()
+                    .Or<TaskCanceledException>()
+                    .OrResult(response => response.StatusCode == HttpStatusCode.TooManyRequests)
+                    .WaitAndRetryAsync(
+                        settings.RetryCount,
+                        retryAttempt => CalculateRetryDelay(retryAttempt),
+                        onRetry: (outcome, timespan, retryCount, context) =>
+                        {
+                            logger?.LogWarning(
+                                "HTTP retry attempt {RetryCount} after {DelayMs}ms. Reason: {Reason}",
+                                retryCount,
+                                timespan.TotalMilliseconds,
+                                outcome.Exception?.Message ??
+                                outcome.Result?.StatusCode.ToString() ?? "Unknown");
+                        });
+            })
+            .AddPolicyHandler((serviceProvider, request) =>
+            {
+                var settings = serviceProvider.GetRequiredService<IOptions<ODataSettings>>().Value;
+
+                if (!settings.UseCircuitBreaker)
+                {
+                    return Policy.NoOpAsync<HttpResponseMessage>();
+                }
+
+                return HttpPolicyExtensions
+                    .HandleTransientHttpError()
+                    .CircuitBreakerAsync(
+                        handledEventsAllowedBeforeBreaking: settings.CircuitBreakerThreshold,
+                        durationOfBreak: TimeSpan.FromSeconds(settings.CircuitBreakerDurationSeconds));
+            });
+
         services.AddSingleton<IODataClient>(serviceProvider =>
         {
             var settings = serviceProvider.GetRequiredService<IOptions<ODataSettings>>().Value;
+            var httpClient = serviceProvider.GetRequiredService<IHttpClientFactory>()
+                .CreateClient("ODataClient");
 
-            var oDataHttpClient = serviceProvider.GetRequiredService<IHttpClientFactory>().CreateClient("ODataClient");
-            oDataHttpClient.Timeout = TimeSpan.FromSeconds(settings.Timeout);
+            httpClient.Timeout = TimeSpan.FromSeconds(settings.Timeout);
 
-            // Configure and create the ODataClient.
-            var odataClientSettings = new ODataClientSettings(oDataHttpClient)
+            var odataClientSettings = new ODataClientSettings(httpClient)
             {
                 BaseUri = new Uri(settings.Url),
                 RequestTimeout = TimeSpan.FromSeconds(settings.Timeout),
             };
+
             return new ODataClient(odataClientSettings);
         });
 
-        // Register Services
+        // Register AsyncRetryPolicy as optional service
+        services.AddSingleton(serviceProvider =>
+        {
+            var settings = serviceProvider.GetRequiredService<IOptions<ODataSettings>>().Value;
+
+            if (!settings.EnableRetries)
+            {
+                return (AsyncRetryPolicy)null!;
+            }
+
+            var loggerFactory = serviceProvider.GetService<ILoggerFactory>();
+            var logger = loggerFactory?.CreateLogger("IntegratoR.OData.Retry");
+
+            return Policy
+                .Handle<WebRequestException>(ex => IsTransientError(ex.Code))
+                .Or<TaskCanceledException>()
+                .WaitAndRetryAsync(
+                    settings.RetryCount,
+                    retryAttempt => CalculateRetryDelay(retryAttempt),
+                    onRetry: (exception, timespan, retryCount, context) =>
+                    {
+                        logger?.LogWarning(
+                            exception,
+                            "OData operation retry attempt {RetryCount} after {DelayMs}ms",
+                            retryCount,
+                            timespan.TotalMilliseconds);
+                    });
+        });
+
         services.AddScoped(typeof(IService<>), typeof(ODataService<>));
         services.AddScoped(typeof(IODataService<>), typeof(ODataService<>));
         services.AddScoped(typeof(IODataBatchService<>), typeof(ODataService<>));
+    }
+
+    private static TimeSpan CalculateRetryDelay(int retryAttempt)
+    {
+        var baseDelay = TimeSpan.FromSeconds(Math.Pow(2, retryAttempt));
+        var jitterMs = Random.Shared.Next(0, (int)(baseDelay.TotalMilliseconds * 0.25));
+        return baseDelay + TimeSpan.FromMilliseconds(jitterMs);
+    }
+
+    private static bool IsTransientError(HttpStatusCode statusCode)
+    {
+        return statusCode switch
+        {
+            HttpStatusCode.RequestTimeout => true,
+            HttpStatusCode.TooManyRequests => true,
+            HttpStatusCode.InternalServerError => true,
+            HttpStatusCode.BadGateway => true,
+            HttpStatusCode.ServiceUnavailable => true,
+            HttpStatusCode.GatewayTimeout => true,
+            _ when ((int)statusCode >= 500) => true,
+            _ => false
+        };
     }
 }
