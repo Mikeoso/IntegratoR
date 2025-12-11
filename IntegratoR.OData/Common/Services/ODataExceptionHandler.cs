@@ -21,7 +21,7 @@ namespace IntegratoR.OData.Common.Services;
 /// - Structured logging with performance tracking
 /// - Support for different operation types (single, collection, scalar, non-query)
 /// </remarks>
-internal class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
+public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
 {
     private readonly ILogger _logger;
     private readonly string _entityTypeName;
