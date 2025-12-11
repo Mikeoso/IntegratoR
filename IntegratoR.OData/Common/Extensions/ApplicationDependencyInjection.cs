@@ -50,7 +50,10 @@ public static class ApplicationDependencyInjection
 
     private static void AddODataDependencies(this IServiceCollection services)
     {
+        AppContext.SetSwitch("Switch.System.Xml.AllowDefaultResolver", true);
+
         services.AddTransient<ODataAuthenticationHandler>();
+        services.AddTransient<ODataMetadataProvider>();
 
         services.AddHttpClient("ODataClient")
             .AddHttpMessageHandler<ODataAuthenticationHandler>()
@@ -102,6 +105,8 @@ public static class ApplicationDependencyInjection
         services.AddSingleton<IODataClient>(serviceProvider =>
         {
             var settings = serviceProvider.GetRequiredService<IOptions<ODataSettings>>().Value;
+            var logger = serviceProvider.GetRequiredService<ILogger<IODataClient>>();
+
             var httpClient = serviceProvider.GetRequiredService<IHttpClientFactory>()
                 .CreateClient("ODataClient");
 
@@ -111,7 +116,39 @@ public static class ApplicationDependencyInjection
             {
                 BaseUri = new Uri(settings.Url),
                 RequestTimeout = TimeSpan.FromSeconds(settings.Timeout),
+                ReadUntypedAsString = true,
+                IgnoreUnmappedProperties = true,
+                PayloadFormat = ODataPayloadFormat.Json
             };
+
+            // Load local metadata if configured
+            if (!string.IsNullOrEmpty(settings.MetadataFilePath))
+            {
+                try
+                {
+                    var metadataProvider = serviceProvider.GetRequiredService<ODataMetadataProvider>();
+                    var metadataXml = metadataProvider.LoadMetadata(settings.MetadataFilePath);
+
+                    // Set metadata as string - Simple.OData.Client will parse it
+                    odataClientSettings.MetadataDocument = metadataXml;
+
+                    logger.LogInformation(
+                        "OData client configured with local metadata from: {MetadataFilePath}",
+                        settings.MetadataFilePath);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(
+                        ex,
+                        "Failed to load local metadata file from {MetadataFilePath}. Falling back to server metadata.",
+                        settings.MetadataFilePath);
+                    // Don't set MetadataDocument - let it fetch from server
+                }
+            }
+            else
+            {
+                logger.LogInformation("OData client will fetch metadata from server on first request.");
+            }
 
             return new ODataClient(odataClientSettings);
         });

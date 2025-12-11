@@ -138,4 +138,23 @@ public class ODataSettings
     public int CircuitBreakerDurationSeconds { get; set; } = 30;
 
     #endregion
+
+    #region Metadata Settings
+    /// <summary>
+    /// Gets or sets the path to a local metadata.xml file.
+    /// When specified, the OData client will use this local file instead of fetching metadata from the server.
+    /// </summary>
+    /// <remarks>
+    /// This is the recommended approach for production deployments as it:
+    /// - Avoids DTD security issues in D365 F&O metadata
+    /// - Reduces startup time (no metadata download)
+    /// - Enables offline development
+    /// - Makes metadata changes traceable in version control
+    /// 
+    /// Path can be absolute or relative to the application root.
+    /// </remarks>
+    /// <example>metadata.xml</example>
+    /// <example>Config/OData/metadata.xml</example>
+    public string? MetadataFilePath { get; set; }
+    #endregion
 }
