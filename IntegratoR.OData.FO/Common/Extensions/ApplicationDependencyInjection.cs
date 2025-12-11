@@ -47,6 +47,7 @@ namespace IntegratoR.OData.FO.Common.Extensions
             // Register all MediatR handlers
             services.AddMediatR(cfg =>
             {
+                cfg.RegisterGenericHandlers = true;
                 cfg.RegisterServicesFromAssembly(typeof(CreateLedgerJournalHeaderCommand<>).Assembly);
             });
 

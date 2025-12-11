@@ -15,8 +15,8 @@ namespace IntegratoR.SampleFunction.Features.Queries.Tax.GetItemTaxGroupMapping
     public class GetItemTaxGroupMappingHandler : IRequestHandler<GetItemTaxGroupMappingQuery, Result<ItemTaxGroupMapping>>
     {
         private readonly ILogger<GetItemTaxGroupMappingHandler> _logger;
-        private readonly IService<ItemTaxGroupMapping, string> _itemTaxGroupMappingService;
-        public GetItemTaxGroupMappingHandler(ILogger<GetItemTaxGroupMappingHandler> logger, IService<ItemTaxGroupMapping, string> itemTaxGroupMappingService)
+        private readonly IService<ItemTaxGroupMapping> _itemTaxGroupMappingService;
+        public GetItemTaxGroupMappingHandler(ILogger<GetItemTaxGroupMappingHandler> logger, IService<ItemTaxGroupMapping> itemTaxGroupMappingService)
         {
             _logger = logger;
             _itemTaxGroupMappingService = itemTaxGroupMappingService;

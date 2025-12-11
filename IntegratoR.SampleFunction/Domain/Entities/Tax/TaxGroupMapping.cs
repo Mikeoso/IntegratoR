@@ -19,4 +19,9 @@ public class TaxGroupMapping : BaseEntity<string>
 
     [JsonPropertyName("TaxGroup")]
     public string? TaxGroup { get; set; }
+
+    public override object[] GetCompositeKey()
+    {
+        return [RelionBookingType, RelionBusinessGroup];
+    }
 }

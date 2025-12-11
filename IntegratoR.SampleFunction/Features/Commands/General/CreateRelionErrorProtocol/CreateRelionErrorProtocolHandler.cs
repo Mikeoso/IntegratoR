@@ -1,7 +1,6 @@
 ﻿using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.Abstractions.Interfaces.Services;
 using IntegratoR.SampleFunction.Domain.Entities.Relion;
-using IntegratoR.SampleFunction.Features.Commands.General.CreateRelionErrorEntry;
 using MediatR;
 using Microsoft.Extensions.Logging;
 
@@ -10,9 +9,9 @@ namespace IntegratoR.SampleFunction.Features.Commands.General.CreateRelionErrorP
     public class CreateRelionErrorProtocolHandler : IRequestHandler<CreateRelionErrorProcotolCommand, Result<bool>>
     {
         private readonly ILogger<CreateRelionErrorProtocolHandler> _logger;
-        private readonly IService<RelionErrorProtocol, string> _service;
+        private readonly IService<RelionErrorProtocol> _service;
 
-        public CreateRelionErrorProtocolHandler(ILogger<CreateRelionErrorProtocolHandler> logger, IService<RelionErrorProtocol, string> service)
+        public CreateRelionErrorProtocolHandler(ILogger<CreateRelionErrorProtocolHandler> logger, IService<RelionErrorProtocol> service)
         {
             _logger = logger;
             _service = service;

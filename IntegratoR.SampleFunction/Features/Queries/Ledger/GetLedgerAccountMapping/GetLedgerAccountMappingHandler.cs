@@ -15,9 +15,9 @@ namespace IntegratoR.SampleFunction.Features.Queries.Ledger.GetLedgerAccountMapp
     public class GetLedgerAccountMappingHandler : IRequestHandler<GetLedgerAccountMappingQuery, Result<LedgerAccountMapping>>
     {
         private readonly ILogger<GetLedgerAccountMappingHandler> _logger;
-        private readonly IService<LedgerAccountMapping, string> _ledgerAccountMappingService;
+        private readonly IService<LedgerAccountMapping> _ledgerAccountMappingService;
 
-        public GetLedgerAccountMappingHandler(ILogger<GetLedgerAccountMappingHandler> logger, IService<LedgerAccountMapping, string> ledgerAccountMappingService)
+        public GetLedgerAccountMappingHandler(ILogger<GetLedgerAccountMappingHandler> logger, IService<LedgerAccountMapping> ledgerAccountMappingService)
         {
             _logger = logger;
             _ledgerAccountMappingService = ledgerAccountMappingService;

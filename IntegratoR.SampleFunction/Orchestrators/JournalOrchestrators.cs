@@ -49,18 +49,34 @@ public static class JournalOrchestrators
         // Get input from the blob trigger that started this orchestration.
         var orchestrationInput = context.GetInput<BlobOrchestratorInput>();
 
-        if (orchestrationInput is null || string.IsNullOrEmpty(orchestrationInput.BlobName) || orchestrationInput.Content is null)
+        if (orchestrationInput is null || string.IsNullOrEmpty(orchestrationInput.BlobName))
         {
-            logger.LogError("Invalid orchestration input: Input, BlobName, or Content is null. Stopping orchestration.");
+            logger.LogError("Invalid orchestration input: BlobName is null. Stopping orchestration.");
             return;
         }
 
         string blobName = orchestrationInput.BlobName;
-        byte[] content = orchestrationInput.Content;
 
         logger.LogInformation("Orchestration started for file {BlobName}.", blobName);
 
-        // 1. Parse the entire file into a structured list of lines.
+        // STEP 1: Read the blob content from storage (avoids Durable Functions size limits)
+        byte[] content;
+        try
+        {
+            content = await context.CallActivityAsync<byte[]>(
+                nameof(JournalActivities.ReadBlobActivity),
+                blobName);
+
+            logger.LogInformation("Read {SizeKB:N2} KB from blob {BlobName}",
+                content.Length / 1024.0, blobName);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to read blob {BlobName}: {Error}", blobName, ex.Message);
+            return;
+        }
+
+        // STEP 2: Parse the file content into structured lines
         var lines = await context.CallActivityAsync<List<RelionLedgerJournalLine>>(
             nameof(JournalActivities.ParseJournalFileActivity),
             content);
@@ -68,17 +84,17 @@ public static class JournalOrchestrators
         if (lines == null || lines.Count == 0)
         {
             logger.LogWarning("File {BlobName} is empty or failed to parse. Stopping orchestration.", blobName);
-            // TODO DDI:Move invalid file to error folder activity could be called here
             return;
         }
 
-        // 2. Group lines by company to enable parallel processing.
+        // STEP 3: Group lines by company to enable parallel processing
         var companyGroups = lines.GroupBy(l => l.RelCompetenceUnit).ToList();
-        logger.LogInformation("Found {Count} companies to process in file {BlobName}.", companyGroups.Count, blobName);
+        logger.LogInformation("Found {Count} companies to process in file {BlobName}.",
+            companyGroups.Count, blobName);
 
         var processingTasks = new List<Task<Result>>();
 
-        // 3. Fan-Out: Start a sub-orchestrator for each company.
+        // STEP 4: Fan-Out - Start a sub-orchestrator for each company
         foreach (var group in companyGroups)
         {
             var companyJournal = new CompanyOrchestratorInput
@@ -93,16 +109,15 @@ public static class JournalOrchestrators
             processingTasks.Add(subOrchestrationTask);
         }
 
-        // 4. Fan-In: Wait for all parallel company processing tasks to complete.
+        // STEP 5: Fan-In - Wait for all parallel company processing tasks
         await Task.WhenAll(processingTasks);
 
-        // 5. Aggregation: Collect all results and check for failures.
+        // STEP 6: Aggregation - Collect results and determine overall status
         var results = processingTasks.Select(t => t.Result).ToList();
         var failedTasks = results.Where(r => r.IsFailure).ToList();
 
         if (failedTasks.Count != 0)
         {
-            // Aggregate error messages for better logging and diagnostics
             var aggregatedErrors = string.Join("; ", failedTasks.Select(r => r?.Error?.Message));
             logger.LogError(
                 "Processing failed for {FailedCount} of {TotalCount} companies in file {BlobName}. Errors: {Errors}",
@@ -110,16 +125,11 @@ public static class JournalOrchestrators
                 results.Count,
                 blobName,
                 aggregatedErrors);
-
-            // TODO DDI: Hier könnte man eine komplexere Logik implementieren:
-            // - Eine Activity aufrufen, die eine Fehlerdatei mit den fehlgeschlagenen Zeilen erstellt.
-            // - Eine Activity aufrufen, die nur die erfolgreichen Teile des Prozesses archiviert.
-            // - Den ganzen Blob in den Fehlerordner verschieben.
         }
         else
         {
-            logger.LogInformation("All {Count} companies for file {BlobName} processed successfully.", results.Count, blobName);
-            //TODO DDI: Call archive file activity here
+            logger.LogInformation("All {Count} companies for file {BlobName} processed successfully.",
+                results.Count, blobName);
         }
     }
 
@@ -135,73 +145,85 @@ public static class JournalOrchestrators
     /// 3.  Create the mapped journal lines in the target system as a batch.
     /// </remarks>
     [Function(nameof(RunCompanyOrchestrator))]
-    public static async Task<Result> RunCompanyOrchestrator([OrchestrationTrigger] TaskOrchestrationContext context)
+    public static async Task RunCompanyOrchestrator([OrchestrationTrigger] TaskOrchestrationContext context)
     {
         var logger = context.CreateReplaySafeLogger(nameof(RunCompanyOrchestrator));
         var input = context.GetInput<CompanyOrchestratorInput>();
 
         if (input == null || string.IsNullOrEmpty(input.Company))
         {
-            var error = new Error(
-                "CompanyOrchestrator.InvalidInput",
-                "Input or Company identifier is null or empty.",
-                ErrorType.Validation);
-            logger.LogError("Invalid input for company orchestrator: {Error}", error);
-            return Result.Fail(error);
+            logger.LogError("Invalid input for company orchestrator: Input or Company is null.");
+            throw new ArgumentException("Input or Company identifier is null or empty.");
         }
 
         logger.LogInformation("Sub-orchestration started for company {Company}.", input.Company);
 
-        // 1. Create the journal header.
-        var headerResult = await context.CallActivityAsync<Result<LedgerJournalHeader>>(
-            nameof(JournalActivities.CreateJournalHeaderActivity),
-            input.Company);
-
-        if (headerResult.IsFailure)
+        try
         {
-            logger.LogError("Journal header creation failed for company {Company}: {Error}", input.Company, headerResult.Error);
-            return headerResult; // Propagate the failure result.
+            // STEP 1: Create journal header (throws on error)
+            var header = await context.CallActivityAsync<LedgerJournalHeader>(
+                nameof(JournalActivities.CreateJournalHeaderActivity),
+                input.Company);
+
+            var journalBatchNumber = header?.JournalBatchNumber;
+
+            if (string.IsNullOrEmpty(journalBatchNumber))
+            {
+                logger.LogError("Created journal header is missing batch number for company {Company}.", input.Company);
+                throw new InvalidOperationException("Created journal header is missing batch number.");
+            }
+
+            logger.LogInformation(
+                "Created journal header with batch number {BatchNumber} for company {Company}.",
+                journalBatchNumber, input.Company);
+
+            if (input.Lines == null || input.Lines.Count == 0)
+            {
+                logger.LogInformation("No journal lines to process for company {Company}.", input.Company);
+                return; // Success - no lines to process
+            }
+
+            // STEP 2: Map source lines to target format (throws on error)
+            var mappingInput = new MapLinesActivityInput
+            {
+                JournalBatchNumber = journalBatchNumber,
+                Lines = input.Lines
+            };
+
+            var mappedLines = await context.CallActivityAsync<List<LedgerJournalLine>>(
+                nameof(JournalActivities.MapLinesActivity),
+                mappingInput);
+
+            if (mappedLines == null || mappedLines.Count == 0)
+            {
+                logger.LogWarning(
+                    "No lines were successfully mapped for company {Company}. Skipping creation.",
+                    input.Company);
+                return;
+            }
+
+            logger.LogInformation(
+                "Mapped {Count} lines for company {Company}. Creating in F&O...",
+                mappedLines.Count, input.Company);
+
+            // STEP 3: Create journal lines in F&O (throws on error)
+            await context.CallActivityAsync(
+                nameof(JournalActivities.CreateJournalLinesActivity),
+                mappedLines);
+
+            logger.LogInformation(
+                "Successfully processed {Count} lines for company {Company}.",
+                mappedLines.Count, input.Company);
         }
-
-        var journalBatchNumber = headerResult.Value?.JournalBatchNumber;
-        if (string.IsNullOrEmpty(journalBatchNumber))
+        catch (Exception ex)
         {
-            var error = new Error(
-                "CompanyOrchestrator.HeaderMissingBatchNumber",
-                "Created journal header is missing a batch number.",
-                ErrorType.Failure);
-            logger.LogError("Critical error for company {Company}: {Error}", input.Company, error);
-            return Result.Fail(error);
+            logger.LogError(ex,
+                "Failed to process company {Company}: {Error}",
+                input.Company, ex.Message);
+
+            // Re-throw so the parent orchestrator knows about the failure
+            throw;
         }
-
-        if (input.Lines == null || input.Lines.Count == 0)
-        {
-            // This is not a failure, just an informational outcome.
-            logger.LogInformation("No journal lines provided for processing for company {Company}.", input.Company);
-            return Result.Ok();
-        }
-
-        // 2. Map the source lines to the target format.
-        var mappingInput = new MapLinesActivityInput
-        {
-            JournalBatchNumber = journalBatchNumber,
-            Lines = input.Lines
-        };
-
-        var mappedLinesResult = await context.CallActivityAsync<Result<List<LedgerJournalLine>>>(
-            nameof(JournalActivities.MapLinesActivity),
-            mappingInput);
-
-        if (mappedLinesResult.IsFailure)
-        {
-            logger.LogError("Error while mapping lines for company {Company}: {Error}", input.Company, mappedLinesResult.Error);
-            return mappedLinesResult;
-        }
-
-        // 3. Create the journal lines in the target system.
-        return await context.CallActivityAsync<Result>(
-            nameof(JournalActivities.CreateJournalLinesActivity),
-            mappedLinesResult.Value);
     }
 
     /// <summary>
@@ -216,68 +238,113 @@ public static class JournalOrchestrators
     /// 3.  The creation of this new blob will subsequently trigger the main `ProcessJournalFileOrchestrator` to begin processing.
     /// </remarks>
     [Function(nameof(ProcessJournalOrchestrator))]
-    public static async Task<Result> ProcessJournalOrchestrator([OrchestrationTrigger] TaskOrchestrationContext context)
+    public static async Task ProcessJournalOrchestrator([OrchestrationTrigger] TaskOrchestrationContext context)
     {
-        var logger = context.CreateReplaySafeLogger(nameof(ProcessJournalOrchestrator));
-        var businessEvent = context.GetInput<HTTPOrchestratorInput>();
+        var logger = context.CreateReplaySafeLogger(nameof(ProcessJournalFileOrchestrator));
 
-        if (businessEvent == null || string.IsNullOrEmpty(businessEvent.BusinessEventLegalEntity) || string.IsNullOrEmpty(businessEvent.BusinessEventId))
+        var orchestrationInput = context.GetInput<BlobOrchestratorInput>();
+
+        if (orchestrationInput is null || string.IsNullOrEmpty(orchestrationInput.BlobName))
         {
-            var error = new Error(
-                "ProcessJournalOrchestrator.InvalidInput",
-                "BusinessEventId or BusinessEventLegalEntity is null or empty.",
-                ErrorType.Validation);
-            logger.LogError("Invalid input for business event: {Error}", error);
-            return Result.Fail(error);
+            logger.LogError("Invalid orchestration input: BlobName is null. Stopping orchestration.");
+            return;
         }
 
-        logger.LogInformation("Orchestration started for business event {BusinessEventId} in legal entity {LegalEntity}.",
-            businessEvent.BusinessEventId, businessEvent.BusinessEventLegalEntity);
+        string blobName = orchestrationInput.BlobName;
+        logger.LogInformation("Orchestration started for file {BlobName}.", blobName);
 
+        // STEP 1: Read blob from storage (avoids Durable Functions size limits)
+        byte[] content;
         try
         {
-            // 1. Fetch data from the source system.
-            var journalLinesResult = await context.CallActivityAsync<Result<List<RelionLedgerJournalLine>>>(
-                nameof(JournalActivities.GetRelionJournalLinesActivity),
-                businessEvent.ImportDate);
+            content = await context.CallActivityAsync<byte[]>(
+                nameof(JournalActivities.ReadBlobActivity),
+                blobName);
 
-            if (journalLinesResult.IsFailure)
-            {
-                logger.LogWarning("Fetching journal lines from Relion failed: {Error}", journalLinesResult.Error);
-                return journalLinesResult;
-            }
-
-            var journalLines = journalLinesResult.Value;
-            if (journalLines == null || journalLines.Count == 0)
-            {
-                logger.LogInformation("No new journal lines found in Relion since {ImportDate}. Orchestration ending.", businessEvent.ImportDate);
-                return Result.Ok();
-            }
-
-            logger.LogInformation("Fetched {Count} journal lines from Relion. Uploading to blob storage.", journalLines.Count);
-
-            // 2. Persist the fetched data to a blob to trigger the next stage.
-            var blobPayload = new WriteJournalLinesActivityInput
-            {
-                BlobName = $"relion_journals_{DateTime.UtcNow:yyyyMMddHHmmss}.json",
-                Lines = journalLines
-            };
-
-            await context.CallActivityAsync(
-                nameof(JournalActivities.WriteJournalLinesToBlobActivity),
-                blobPayload);
-
-            logger.LogInformation("Upload successful. Blob {BlobName} has been created and queued for processing.", blobPayload.BlobName);
-            return Result.Ok();
+            logger.LogInformation("Read {SizeKB:N2} KB from blob {BlobName}",
+                content.Length / 1024.0, blobName);
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "An unexpected error occurred during the journal ingestion orchestration: {Message}", ex.Message);
-            return Result.Fail(new Error(
-                "Orchestration.UnexpectedError",
-                $"An unexpected error occurred: {ex.Message}",
-                ErrorType.Failure
-            ));
+            logger.LogError(ex, "Failed to read blob {BlobName}: {Error}", blobName, ex.Message);
+            return;
+        }
+
+        // STEP 2: Parse file content
+        List<RelionLedgerJournalLine> lines;
+        try
+        {
+            lines = await context.CallActivityAsync<List<RelionLedgerJournalLine>>(
+                nameof(JournalActivities.ParseJournalFileActivity),
+                content);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to parse blob {BlobName}: {Error}", blobName, ex.Message);
+            return;
+        }
+
+        if (lines == null || lines.Count == 0)
+        {
+            logger.LogWarning("File {BlobName} is empty or failed to parse. Stopping orchestration.", blobName);
+            return;
+        }
+
+        // STEP 3: Group by company
+        var companyGroups = lines.GroupBy(l => l.RelCompetenceUnit).ToList();
+        logger.LogInformation("Found {Count} companies to process in file {BlobName}.",
+            companyGroups.Count, blobName);
+
+        // STEP 4: Fan-Out - Start sub-orchestrator for each company
+        var processingTasks = new List<Task>();
+
+        foreach (var group in companyGroups)
+        {
+            var companyJournal = new CompanyOrchestratorInput
+            {
+                Company = group.Key,
+                Lines = [.. group]
+            };
+
+            var subOrchestrationTask = context.CallSubOrchestratorAsync(
+                nameof(RunCompanyOrchestrator),
+                companyJournal);
+
+            processingTasks.Add(subOrchestrationTask);
+        }
+
+        // STEP 5: Fan-In - Wait for all companies (handle exceptions)
+        var results = await Task.WhenAll(processingTasks.Select(async task =>
+        {
+            try
+            {
+                await task;
+                return (Success: true, Error: (string?)null);
+            }
+            catch (Exception ex)
+            {
+                return (Success: false, Error: ex.Message);
+            }
+        }));
+
+        // STEP 6: Aggregation
+        var failedCount = results.Count(r => !r.Success);
+
+        if (failedCount > 0)
+        {
+            var errors = string.Join("; ", results.Where(r => !r.Success).Select(r => r.Error));
+            logger.LogError(
+                "Processing failed for {FailedCount} of {TotalCount} companies in file {BlobName}. Errors: {Errors}",
+                failedCount,
+                results.Length,
+                blobName,
+                errors);
+        }
+        else
+        {
+            logger.LogInformation(
+                "All {Count} companies for file {BlobName} processed successfully.",
+                results.Length, blobName);
         }
     }
 }

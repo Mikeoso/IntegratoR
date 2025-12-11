@@ -11,7 +11,7 @@ namespace IntegratoR.Abstractions.Common.CQRS.Commands
     /// A generic base command for creating new entities in a batch.
     /// </summary>
     /// <typeparam name="TEntity">The type of the entity to create.</typeparam>
-    public record CreateBatchCommand<TEntity>(IEnumerable<TEntity> Entities) : ICommand<Result<TEntity>>
+    public record CreateBatchCommand<TEntity>(IEnumerable<TEntity> Entities) : ICommand<Result>
         where TEntity : IEntity
     {
         /// <summary>

@@ -26,6 +26,8 @@ public class RelionErrorProtocol : BaseEntity<string>
     [JsonPropertyName("ErrorPayload")]
     public string? ErrorPayload { get; set; }
 
-    [JsonIgnore]
-    public override string Id => $"{DataAreaId}-{ErrorNum}-{ErrorDescription}";
+    public override object[] GetCompositeKey()
+    {
+        return [DataAreaId, ErrorNum, ErrorDescription];
+    }
 }

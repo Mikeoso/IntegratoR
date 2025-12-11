@@ -1,19 +1,8 @@
-﻿// FILE-LEVEL DOCUMENTATION
-// ---------------------------------------------------------------------------------------------
-// <remarks>
-// This file defines a strongly-typed configuration class for all OData connection settings.
-// This class is designed to be used with the .NET IOptions pattern, allowing for a clean,
-// configurable, and testable way to manage application settings.
-// </remarks>
-// ---------------------------------------------------------------------------------------------
-
-using IntegratoR.OData.Domain.Settings;
-
-namespace IntegratoR.OData.Domain.Settings;
+﻿namespace IntegratoR.OData.Domain.Settings;
 
 /// <summary>
 /// Encapsulates all configuration settings required to connect and authenticate with a
-/// D365 F&O OData endpoint.
+/// D365 F&O OData endpoint, including retry and resilience policies.
 /// </summary>
 /// <remarks>
 /// An instance of this class is typically populated from the `appsettings.json` file
@@ -44,11 +33,10 @@ public class ODataSettings
     /// Represents additional HTTP headers to include with every request to the OData service.
     /// </summary>
     public Dictionary<string, string> DefaultHeaders { get; set; } = new();
+
     #endregion
 
     #region OAuth 2.0 Settings
-
-    // <remarks>These settings are required only when AuthMode is set to ODataAuthMode.OAuth.</remarks>
 
     /// <summary>
     /// Gets or sets the Client ID (Application ID) for the service principal.
@@ -87,8 +75,6 @@ public class ODataSettings
 
     #region API Management (Gateway) Settings
 
-    // <remarks>These settings are required only when AuthMode is set to ODataAuthMode.ApiKey.</remarks>
-
     /// <summary>
     /// Gets or sets the subscription key required by an API gateway (e.g., Azure API Management).
     /// </summary>
@@ -102,5 +88,73 @@ public class ODataSettings
     /// </remarks>
     public string SubscriptionHeaderKey { get; set; } = "Ocp-Apim-Subscription-Key";
 
+    #endregion
+
+    #region Retry and Resilience Settings
+
+    /// <summary>
+    /// Gets or sets whether automatic retry policies should be enabled for transient failures.
+    /// </summary>
+    /// <remarks>
+    /// When enabled, operations will automatically retry on transient errors such as timeouts,
+    /// rate limiting (429), and server errors (5xx). Defaults to true for production environments.
+    /// </remarks>
+    public bool EnableRetries { get; set; } = true;
+
+    /// <summary>
+    /// Gets or sets the number of retry attempts for transient failures.
+    /// </summary>
+    /// <remarks>
+    /// Defaults to 3 retries with exponential backoff. Valid range: 1-10.
+    /// </remarks>
+    public int RetryCount { get; set; } = 3;
+
+    /// <summary>
+    /// Gets or sets whether the circuit breaker pattern should be enabled.
+    /// </summary>
+    /// <remarks>
+    /// Circuit breaker prevents cascading failures by stopping requests when a threshold
+    /// of consecutive failures is reached. Defaults to true.
+    /// </remarks>
+    public bool UseCircuitBreaker { get; set; } = true;
+
+    /// <summary>
+    /// Gets or sets the number of consecutive failures before the circuit breaker opens.
+    /// </summary>
+    /// <remarks>
+    /// When the threshold is reached, the circuit breaker will block all requests for the
+    /// duration specified in <see cref="CircuitBreakerDurationSeconds"/>. Defaults to 5.
+    /// </remarks>
+    public int CircuitBreakerThreshold { get; set; } = 5;
+
+    /// <summary>
+    /// Gets or sets the duration in seconds that the circuit breaker stays open before
+    /// attempting recovery.
+    /// </summary>
+    /// <remarks>
+    /// After this duration, the circuit breaker transitions to half-open state and allows
+    /// a test request through. Defaults to 30 seconds.
+    /// </remarks>
+    public int CircuitBreakerDurationSeconds { get; set; } = 30;
+
+    #endregion
+
+    #region Metadata Settings
+    /// <summary>
+    /// Gets or sets the path to a local metadata.xml file.
+    /// When specified, the OData client will use this local file instead of fetching metadata from the server.
+    /// </summary>
+    /// <remarks>
+    /// This is the recommended approach for production deployments as it:
+    /// - Avoids DTD security issues in D365 F&O metadata
+    /// - Reduces startup time (no metadata download)
+    /// - Enables offline development
+    /// - Makes metadata changes traceable in version control
+    /// 
+    /// Path can be absolute or relative to the application root.
+    /// </remarks>
+    /// <example>metadata.xml</example>
+    /// <example>Config/OData/metadata.xml</example>
+    public string? MetadataFilePath { get; set; }
     #endregion
 }
