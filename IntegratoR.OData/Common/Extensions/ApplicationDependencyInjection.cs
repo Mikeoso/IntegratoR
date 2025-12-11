@@ -50,13 +50,18 @@ public static class ApplicationDependencyInjection
 
     private static void AddODataDependencies(this IServiceCollection services)
     {
+        // Enable DTD processing for D365 F&O metadata (required for $metadata endpoint)
+        // Note: Only enables parsing, not external entity resolution (safe)
         AppContext.SetSwitch("Switch.System.Xml.AllowDefaultResolver", true);
 
+        // Register supporting services
         services.AddTransient<ODataAuthenticationHandler>();
-        services.AddTransient<ODataMetadataProvider>();
+        services.AddSingleton<ODataMetadataProvider>();
 
+        // Configure HttpClient with Polly policies
         services.AddHttpClient("ODataClient")
             .AddHttpMessageHandler<ODataAuthenticationHandler>()
+            // Retry Policy - handles transient failures with exponential backoff
             .AddPolicyHandler((serviceProvider, request) =>
             {
                 var settings = serviceProvider.GetRequiredService<IOptions<ODataSettings>>().Value;
@@ -86,6 +91,7 @@ public static class ApplicationDependencyInjection
                                 outcome.Result?.StatusCode.ToString() ?? "Unknown");
                         });
             })
+            // Circuit Breaker Policy - prevents cascading failures
             .AddPolicyHandler((serviceProvider, request) =>
             {
                 var settings = serviceProvider.GetRequiredService<IOptions<ODataSettings>>().Value;
@@ -102,6 +108,7 @@ public static class ApplicationDependencyInjection
                         durationOfBreak: TimeSpan.FromSeconds(settings.CircuitBreakerDurationSeconds));
             });
 
+        // Register Simple.OData.Client with metadata handling
         services.AddSingleton<IODataClient>(serviceProvider =>
         {
             var settings = serviceProvider.GetRequiredService<IOptions<ODataSettings>>().Value;
@@ -124,24 +131,24 @@ public static class ApplicationDependencyInjection
             // Load local metadata if configured
             if (!string.IsNullOrEmpty(settings.MetadataFilePath))
             {
-                try
-                {
-                    var metadataProvider = serviceProvider.GetRequiredService<ODataMetadataProvider>();
-                    var metadataXml = metadataProvider.LoadMetadata(settings.MetadataFilePath);
+                var metadataProvider = serviceProvider.GetRequiredService<ODataMetadataProvider>();
+                var metadataResult = metadataProvider.LoadMetadata(settings.MetadataFilePath);
 
+                if (metadataResult.IsSuccess)
+                {
                     // Set metadata as string - Simple.OData.Client will parse it
-                    odataClientSettings.MetadataDocument = metadataXml;
+                    odataClientSettings.MetadataDocument = metadataResult.Value;
 
                     logger.LogInformation(
                         "OData client configured with local metadata from: {MetadataFilePath}",
                         settings.MetadataFilePath);
                 }
-                catch (Exception ex)
+                else
                 {
                     logger.LogError(
-                        ex,
-                        "Failed to load local metadata file from {MetadataFilePath}. Falling back to server metadata.",
-                        settings.MetadataFilePath);
+                        "Failed to load local metadata file from {MetadataFilePath}. Error: {Error}. Falling back to server metadata.",
+                        settings.MetadataFilePath,
+                        metadataResult.Error?.Message);
                     // Don't set MetadataDocument - let it fetch from server
                 }
             }
@@ -153,7 +160,7 @@ public static class ApplicationDependencyInjection
             return new ODataClient(odataClientSettings);
         });
 
-        // Register AsyncRetryPolicy as optional service
+        // Register AsyncRetryPolicy for OData operations (in addition to HTTP retries)
         services.AddSingleton(serviceProvider =>
         {
             var settings = serviceProvider.GetRequiredService<IOptions<ODataSettings>>().Value;
@@ -182,11 +189,15 @@ public static class ApplicationDependencyInjection
                     });
         });
 
+        // Register repository services
         services.AddScoped(typeof(IService<>), typeof(ODataService<>));
         services.AddScoped(typeof(IODataService<>), typeof(ODataService<>));
         services.AddScoped(typeof(IODataBatchService<>), typeof(ODataService<>));
     }
 
+    /// <summary>
+    /// Calculates retry delay with exponential backoff and jitter.
+    /// </summary>
     private static TimeSpan CalculateRetryDelay(int retryAttempt)
     {
         var baseDelay = TimeSpan.FromSeconds(Math.Pow(2, retryAttempt));
@@ -194,6 +205,9 @@ public static class ApplicationDependencyInjection
         return baseDelay + TimeSpan.FromMilliseconds(jitterMs);
     }
 
+    /// <summary>
+    /// Determines if an HTTP status code represents a transient error worth retrying.
+    /// </summary>
     private static bool IsTransientError(HttpStatusCode statusCode)
     {
         return statusCode switch

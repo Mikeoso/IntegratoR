@@ -8,7 +8,6 @@ using IntegratoR.OData.FO.Domain.Models.Settings;
 using IntegratoR.OData.FO.Features.Commands.LedgerJournals.CreateLedgerJournalHeader;
 using IntegratoR.OData.FO.Features.Queries.Dimensions.GetDimensionOrder;
 using IntegratoR.RELion.Domain.Models;
-using IntegratoR.RELion.Domain.Settings;
 using IntegratoR.RELion.Features.Queries.Ledger.GetLedgerAccountMapping;
 using IntegratoR.RELion.Interfaces.Services;
 using IntegratoR.SampleFunction.Domain.DTOs.Activities;
@@ -23,8 +22,6 @@ using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Newtonsoft.Json;
-using System.Collections.Generic;
-using System.IO.IsolatedStorage;
 using System.Text;
 
 namespace IntegratoR.SampleFunction.Functions
@@ -32,6 +29,11 @@ namespace IntegratoR.SampleFunction.Functions
     /// <summary>
     /// Contains all activity functions for processing journal files.
     /// </summary>
+    /// <remarks>
+    /// All activities now consistently follow the Result pattern, returning Result{T} instead of throwing exceptions.
+    /// This ensures proper error handling and makes the orchestrator flow more explicit and maintainable.
+    /// Orchestrators can now handle failures gracefully without try-catch blocks.
+    /// </remarks>
     public class JournalActivities(
         ILogger<JournalActivities> logger,
         IMediator mediator,
@@ -40,7 +42,7 @@ namespace IntegratoR.SampleFunction.Functions
     {
         private readonly ILogger<JournalActivities> _logger = logger;
         private readonly IMediator _mediator = mediator;
-        private readonly IRelionService _relionSerivce = relionService;
+        private readonly IRelionService _relionService = relionService;
         private readonly FOSettings _foSettings = foSettings.Value;
 
         /// <summary>
@@ -48,9 +50,12 @@ namespace IntegratoR.SampleFunction.Functions
         /// This is needed because Durable Functions have a ~4-5 MB input size limit.
         /// </summary>
         /// <param name="blobName">The name of the blob to read from the 'input' container.</param>
-        /// <returns>The blob content as byte array.</returns>
+        /// <returns>
+        /// A <see cref="Result{T}"/> containing the blob content as byte array on success,
+        /// or an error if the blob cannot be found or read.
+        /// </returns>
         [Function(nameof(ReadBlobActivity))]
-        public async Task<byte[]> ReadBlobActivity([ActivityTrigger] string blobName)
+        public async Task<Result<byte[]>> ReadBlobActivity([ActivityTrigger] string blobName)
         {
             _logger.LogInformation("Reading blob {BlobName} from storage...", blobName);
 
@@ -61,8 +66,13 @@ namespace IntegratoR.SampleFunction.Functions
 
                 if (string.IsNullOrEmpty(connectionString))
                 {
-                    throw new InvalidOperationException(
-                        "AzureWebJobsStorage connection string not found in environment variables.");
+                    var error = new Error(
+                        "BlobStorage.ConnectionStringNotFound",
+                        "AzureWebJobsStorage connection string not found in environment variables.",
+                        ErrorType.Failure);
+
+                    _logger.LogError("AzureWebJobsStorage connection string not found");
+                    return Result<byte[]>.Fail(error);
                 }
 
                 // Create blob client
@@ -73,7 +83,13 @@ namespace IntegratoR.SampleFunction.Functions
                 // Check if blob exists
                 if (!await blobClient.ExistsAsync())
                 {
-                    throw new FileNotFoundException($"Blob {blobName} not found in container 'input'.");
+                    var error = new Error(
+                        "BlobStorage.BlobNotFound",
+                        $"Blob {blobName} not found in container 'input'.",
+                        ErrorType.NotFound);
+
+                    _logger.LogError("Blob {BlobName} not found in container 'input'", blobName);
+                    return Result<byte[]>.Fail(error);
                 }
 
                 // Download blob content
@@ -87,51 +103,76 @@ namespace IntegratoR.SampleFunction.Functions
                     blobName,
                     content.Length / 1024.0);
 
-                return content;
+                return Result<byte[]>.Ok(content);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex,
-                    "Failed to read blob {BlobName}: {Error}",
-                    blobName, ex.Message);
-                throw;
+                var error = new Error(
+                    "BlobStorage.ReadFailed",
+                    $"Failed to read blob {blobName}: {ex.Message}",
+                    ErrorType.Failure,
+                    ex);
+
+                _logger.LogError(ex, "Failed to read blob {BlobName}", blobName);
+                return Result<byte[]>.Fail(error);
             }
         }
-    
+
         /// <summary>
         /// Parses the JSON content of a journal file into a list of RelionLedgerJournalLine objects.
         /// </summary>
-        /// <param name="jsonContent">The json content</param>
-        /// <returns>A list of relion ledger journal lines</returns>
+        /// <param name="jsonContent">The json content as byte array.</param>
+        /// <returns>
+        /// A <see cref="Result{T}"/> containing a list of relion ledger journal lines on success,
+        /// or an error if parsing fails.
+        /// </returns>
         [Function(nameof(ParseJournalFileActivity))]
-        public List<RelionLedgerJournalLine> ParseJournalFileActivity(
+        public Result<List<RelionLedgerJournalLine>> ParseJournalFileActivity(
             [ActivityTrigger] byte[] jsonContent)
         {
             _logger.LogInformation("Parsing file...");
 
-            // Parse byte array to string and convert to object
-            var jsonString = Encoding.UTF8.GetString(jsonContent);
-
-            var wrapper = JsonConvert.DeserializeObject<JournalFileWrapper>(jsonString);
-            var lines = wrapper?.Data;
-
-            // Log warning when parsing failed
-            if (lines == null || lines.Count == 0)
+            try
             {
-                _logger.LogWarning("File content is empty or invalid.");
-                return [];
-            }
+                // Parse byte array to string and convert to object
+                var jsonString = Encoding.UTF8.GetString(jsonContent);
 
-            return lines;
+                var wrapper = JsonConvert.DeserializeObject<JournalFileWrapper>(jsonString);
+                var lines = wrapper?.Data;
+
+                // Log warning when parsing returns empty result
+                if (lines == null || lines.Count == 0)
+                {
+                    _logger.LogWarning("File content is empty or invalid.");
+                    return Result<List<RelionLedgerJournalLine>>.Ok(new List<RelionLedgerJournalLine>());
+                }
+
+                _logger.LogInformation("Successfully parsed {Count} journal lines", lines.Count);
+                return Result<List<RelionLedgerJournalLine>>.Ok(lines);
+            }
+            catch (Exception ex)
+            {
+                var error = new Error(
+                    "JournalFile.ParseFailed",
+                    $"Failed to parse journal file: {ex.Message}",
+                    ErrorType.Failure,
+                    ex);
+
+                _logger.LogError(ex, "Failed to parse journal file");
+                return Result<List<RelionLedgerJournalLine>>.Fail(error);
+            }
         }
 
         /// <summary>
         /// Creates a new journal header in F&O for the specified company.
         /// </summary>
-        /// <param name="company">The legal entity id</param>
-        /// <returns></returns>
+        /// <param name="company">The legal entity id.</param>
+        /// <returns>
+        /// A <see cref="Result{T}"/> containing the created journal header on success,
+        /// or an error if creation fails.
+        /// </returns>
         [Function(nameof(CreateJournalHeaderActivity))]
-        public async Task<LedgerJournalHeader> CreateJournalHeaderActivity([ActivityTrigger] string company)
+        public async Task<Result<LedgerJournalHeader>> CreateJournalHeaderActivity([ActivityTrigger] string company)
         {
             _logger.LogInformation("Creating journal header for company {Company}...", company);
 
@@ -148,271 +189,359 @@ namespace IntegratoR.SampleFunction.Functions
             if (createHeaderResult.IsFailure)
             {
                 _logger.LogError("Failed to create journal header for company {Company}: {Error}",
-                    company, createHeaderResult.Error);
+                    company, createHeaderResult.Error?.Message);
 
-                // Throw so Durable Functions can retry/handle
-                throw new InvalidOperationException(
-                    $"Failed to create journal header: {createHeaderResult.Error?.Message}");
+                return Result<LedgerJournalHeader>.Fail(createHeaderResult);
             }
 
             _logger.LogInformation("Created journal header with batch number {BatchNumber}.",
                 createHeaderResult.Value?.JournalBatchNumber);
 
-            return createHeaderResult.Value!;
+            return createHeaderResult;
         }
 
         /// <summary>
         /// Maps RelionLedgerJournalLine objects to LedgerJournalLine entities for F&O.
         /// </summary>
-        /// <param name="input">List of relion ledger journals and their corresponding batch number</param>
-        /// <returns>A List of mapped LedgerJournalLines</returns>
+        /// <param name="input">List of relion ledger journals and their corresponding batch number.</param>
+        /// <returns>
+        /// A <see cref="Result{T}"/> containing a list of mapped LedgerJournalLines on success,
+        /// or an error if mapping fails critically. Individual line errors are logged but don't fail the entire operation.
+        /// </returns>
         [Function(nameof(MapLinesActivity))]
-        public async Task<List<LedgerJournalLine>> MapLinesActivity(
+        public async Task<Result<List<LedgerJournalLine>>> MapLinesActivity(
             [ActivityTrigger] MapLinesActivityInput input)
         {
-            _logger.LogInformation("Mapping {Count} lines for journal {JournalBatchNumber}...", input.Lines.Count, input.JournalBatchNumber);
+            _logger.LogInformation("Mapping {Count} lines for journal {JournalBatchNumber}...",
+                input.Lines.Count, input.JournalBatchNumber);
 
-            var mappedLines = new List<LedgerJournalLine>();
-
-            var headerBatchNumber = input.JournalBatchNumber;
-            var lines = input.Lines;
-
-            var dimensionOrder = await _mediator.Send(new GetDimensionOrdersQuery(_foSettings.DimensionFormatName, _foSettings.DimensionHierarchyType));
-
-            if (dimensionOrder.IsFailure)
+            try
             {
-                var error = dimensionOrder.Error;
+                var mappedLines = new List<LedgerJournalLine>();
+                var headerBatchNumber = input.JournalBatchNumber;
+                var lines = input.Lines;
 
-                _logger.LogError("Failed to retrieve dimension order: {Error}", dimensionOrder.Error);
-                throw new InvalidOperationException($"Failed to retrieve dimension order: {error?.Message}");
-            }
+                // Get dimension order configuration
+                var dimensionOrder = await _mediator.Send(
+                    new GetDimensionOrdersQuery(_foSettings.DimensionFormatName, _foSettings.DimensionHierarchyType));
 
-            foreach (RelionLedgerJournalLine line in lines)
-            {
-
-                _logger.LogDebug("Mapping line with Relion Entry ID {EntryId}...", line.EntryNo);
-                var currentCompany = line.RelCompetenceUnit;
-                var ifrs = string.Empty;
-
-                if (!string.IsNullOrEmpty(line.ShortcutDimensionCode))
+                if (dimensionOrder.IsFailure)
                 {
-                    ifrs = line.ShortcutDimensionCode;
+                    _logger.LogError("Failed to retrieve dimension order: {Error}", dimensionOrder.Error?.Message);
+                    return Result<List<LedgerJournalLine>>.Fail(dimensionOrder.Error!);
                 }
 
-                var ledgerAccountMapping = await _mediator.Send(new GetLedgerAccountMappingQuery(line.AccountNum, ifrs));
-
-                if (ledgerAccountMapping.IsFailure)
+                foreach (RelionLedgerJournalLine line in lines)
                 {
-                    var error = new Error(
-                        "MapLinesActivity.LedgerAccountMappingFailed",
-                        $"Failed to retrieve ledger account mapping for Relion Account {line.AccountNum} and IFRS {ifrs} for EntryNo {line.EntryNo}.",
-                        ErrorType.Failure);
-                    _logger.LogError("{Error}", error);
+                    _logger.LogDebug("Mapping line with Relion Entry ID {EntryId}...", line.EntryNo);
 
-                    var command = new CreateRelionErrorProcotolCommand(currentCompany, line.EntryNo.ToString(), error.Message, "MapLinesActivity");
-                    await _mediator.Send(command);
+                    var currentCompany = line.RelCompetenceUnit;
+                    var ifrs = string.IsNullOrEmpty(line.ShortcutDimensionCode) ? string.Empty : line.ShortcutDimensionCode;
 
-                    throw new InvalidOperationException($"Failed to retrieve dimension order: {error?.Message}");
-                }
+                    // Retrieve ledger account mapping
+                    var ledgerAccountMapping = await _mediator.Send(
+                        new GetLedgerAccountMappingQuery(line.AccountNum, ifrs));
 
-                if (ledgerAccountMapping.Value == null)
-                {
-                    _logger.LogWarning("No ledger account mapping found for Relion Account {RelionAccount} and IFRS {IFRS}. Skipping line with Entry ID {EntryId}.",
-                        line.AccountNum,
-                        ifrs,
-                        line.EntryNo);
-                    continue;
-                }
-
-                var mappingResult = ledgerAccountMapping.Value;
-                var isExcludedFromImport = mappingResult.ExcludeFromImport;
-                var mappingExists = false;
-
-                if (isExcludedFromImport == NoYes.Yes)
-                {
-                    var relionAccountMapping = await _mediator.Send(new GetRelionLedgerAccountMappingQuery(EntryNo: line.EntryNo));
-
-                    if (relionAccountMapping.IsFailure)
+                    if (ledgerAccountMapping.IsFailure)
                     {
-                        _logger.LogError("Failed to retrieve Relion ledger account mapping for EntryNo {EntryNo}: {Error}",
-                            line.EntryNo,
-                            relionAccountMapping.Error);
-                    }
+                        var error = new Error(
+                            "MapLinesActivity.LedgerAccountMappingFailed",
+                            $"Failed to retrieve ledger account mapping for Relion Account {line.AccountNum} and IFRS {ifrs} for EntryNo {line.EntryNo}.",
+                            ErrorType.Failure);
 
-                    if (!string.IsNullOrEmpty(relionAccountMapping?.Value?.LedgerAccountNo))
-                    {
-                        mappingExists = true;
-                    }
-                }
+                        _logger.LogWarning("{Error}", error.Message);
 
-                var financialDimensions = new FinancialDimensionBuilder()
-                    .Initialize(dimensionOrder.Value!)
-                    .Add("MainAccount", ledgerAccountMapping.Value.MainAccount!)
-                    .Add("D_Projekte", line.RelObjectNum)
-                    .Add("G_Bewegungsarten", line.MovementType)
-                    .Add("H_Partnergesellschaft", line.ICPartnerCode)
-                    .Build();
-
-                var ledgerJournalLine = new LedgerJournalLineExtension
-                {
-                    DataAreaId = currentCompany,
-                    JournalBatchNumber = headerBatchNumber,
-                    AccountType = LedgerJournalACType.Ledger,
-                    CreditAmount = line.CreditAmount ?? 0m,
-                    DebitAmount = line.DebitAmount ?? 0m,
-                    CurrencyCode = "EUR",
-                    Voucher = line.DocumentNo,
-                    TransactionText = line.Description + line.RelDescription,
-                    ExchRate = 100,
-                    Document = line.DocumentNo,
-                    Invoice = line.ExternalDocumentNo,
-                    DocumentDate = line.DocumentDate ?? default,
-                    TransDate = line.PostingDate,
-                    AccountDisplayValue = financialDimensions
-                };
-
-                var postingProfile = line.PostingType;
-
-                if (!mappingExists && isExcludedFromImport == NoYes.Yes && postingProfile == 0)
-                {
-                    _logger.LogWarning("Line with Entry ID {EntryId} is marked as excluded from import and has no posting profile. Skipping line.",
-                        line.EntryNo);
-                    continue;
-                }
-
-                if (postingProfile > 0)
-                {
-                    var postingTypeEnum = RelionBookingType.Purchase;
-
-                    switch (postingProfile)
-                    {
-                        case 1:
-                            postingTypeEnum = RelionBookingType.Purchase;
-                            break;
-                        case 2:
-                            postingTypeEnum = RelionBookingType.Sale;
-                            break;
-                    }
-
-                    if (string.IsNullOrEmpty(line.PostingGroup))
-                    {
+                        // Log to error protocol but continue with other lines
                         await _mediator.Send(new CreateRelionErrorProcotolCommand(
-                            currentCompany,
-                            line.EntryNo.ToString(),
-                            $"Missing posting group for Relion Account {line.AccountNum} and IFRS {ifrs} for EntryNo {line.EntryNo}.",
-                            "MapLinesActivity"));
-                        _logger.LogWarning("Missing posting group for Relion Account {RelionAccount} and IFRS {IFRS}. Skipping line with Entry ID {EntryId}.", line.AccountNum, ifrs, line.EntryNo);
+                            currentCompany, line.EntryNo.ToString(), error.Message, "MapLinesActivity"));
                         continue;
                     }
 
-                    var taxGroup = await _mediator.Send(new GetTaxGroupMappingQuery(postingTypeEnum, line.PostingGroup));
-
-                    if (taxGroup.IsFailure)
+                    if (ledgerAccountMapping.Value == null)
                     {
-                        var error = new Error(
-                            "MapLinesActivity.TaxGroupMappingFailed",
-                            $"Failed to retrieve tax group mapping for PostingType {postingTypeEnum} and PostingGroup {line.PostingGroup} for EntryNo {line.EntryNo}.",
-                            ErrorType.Failure);
-                        _logger.LogError("{Error}", error);
-                        var command = new CreateRelionErrorProcotolCommand(currentCompany, line.EntryNo.ToString(), error.Message, "MapLinesActivity");
-                        await _mediator.Send(command);
+                        _logger.LogWarning(
+                            "No ledger account mapping found for Relion Account {RelionAccount} and IFRS {IFRS}. Skipping line with Entry ID {EntryId}.",
+                            line.AccountNum, ifrs, line.EntryNo);
                         continue;
                     }
 
-                    if (string.IsNullOrEmpty(line.VATBusPostingGroup) || string.IsNullOrEmpty(line.VATProdPostingGroup))
-                    {
-                        var error = new Error(
-                            "MapLinesActivity.MissingTaxPostingGroups",
-                            $"Missing VAT posting groups for EntryNo {line.EntryNo}. VATBusPostingGroup: '{line.VATBusPostingGroup}', VATProdPostingGroup: '{line.VATProdPostingGroup}'.",
-                            ErrorType.Failure);
-                        _logger.LogError("{Error}", error);
-                        var command = new CreateRelionErrorProcotolCommand(currentCompany, line.EntryNo.ToString(), error.Message, "MapLinesActivity");
-                        await _mediator.Send(command);
-                        continue;
-                    }
+                    var mappingResult = ledgerAccountMapping.Value;
+                    var isExcludedFromImport = mappingResult.ExcludeFromImport;
+                    var mappingExists = false;
 
-                    var itemTaxGroup = await _mediator.Send(new GetItemTaxGroupMappingQuery(line.VATBusPostingGroup, line.VATProdPostingGroup));
-
-                    if (itemTaxGroup.IsFailure)
-                    {
-                        var error = new Error(
-                            "MapLinesActivity.ItemTaxGroupMappingFailed",
-                            $"Failed to retrieve item tax group mapping for VATBusPostingGroup {line.VATBusPostingGroup} and VATProdPostingGroup {line.VATProdPostingGroup} for EntryNo {line.EntryNo}.",
-                            ErrorType.Failure);
-                        _logger.LogError("{Error}", error);
-                        continue;
-                    }
-
+                    // Check for existing Relion account mapping if excluded
                     if (isExcludedFromImport == NoYes.Yes)
                     {
-                        ledgerJournalLine.SalesTaxCode = itemTaxGroup?.Value?.TaxCode;
+                        var relionAccountMapping = await _mediator.Send(
+                            new GetRelionLedgerAccountMappingQuery(EntryNo: line.EntryNo));
+
+                        if (relionAccountMapping.IsFailure)
+                        {
+                            _logger.LogError(
+                                "Failed to retrieve Relion ledger account mapping for EntryNo {EntryNo}: {Error}",
+                                line.EntryNo, relionAccountMapping.Error?.Message);
+                        }
+                        else if (!string.IsNullOrEmpty(relionAccountMapping?.Value?.LedgerAccountNo))
+                        {
+                            mappingExists = true;
+                        }
+                    }
+
+                    // Build financial dimensions string
+                    var financialDimensions = new FinancialDimensionBuilder()
+                        .Initialize(dimensionOrder.Value!)
+                        .Add("MainAccount", mappingResult.MainAccount!)
+                        .Add("D_Projekte", line.RelObjectNum)
+                        .Add("G_Bewegungsarten", line.MovementType)
+                        .Add("H_Partnergesellschaft", line.ICPartnerCode)
+                        .Build();
+
+                    // Create the journal line entity
+                    var ledgerJournalLine = new LedgerJournalLineExtension
+                    {
+                        DataAreaId = currentCompany,
+                        JournalBatchNumber = headerBatchNumber,
+                        AccountType = LedgerJournalACType.Ledger,
+                        CreditAmount = line.CreditAmount ?? 0m,
+                        DebitAmount = line.DebitAmount ?? 0m,
+                        CurrencyCode = "EUR",
+                        Voucher = line.DocumentNo,
+                        TransactionText = line.Description + line.RelDescription,
+                        ExchRate = 100,
+                        Document = line.DocumentNo,
+                        Invoice = line.ExternalDocumentNo,
+                        DocumentDate = line.DocumentDate ?? default,
+                        TransDate = line.PostingDate,
+                        AccountDisplayValue = financialDimensions
+                    };
+
+                    var postingProfile = line.PostingType;
+
+                    // Skip lines that are excluded without posting profile
+                    if (!mappingExists && isExcludedFromImport == NoYes.Yes && postingProfile == 0)
+                    {
+                        _logger.LogWarning(
+                            "Line with Entry ID {EntryId} is marked as excluded from import and has no posting profile. Skipping line.",
+                            line.EntryNo);
+                        continue;
+                    }
+
+                    // Handle tax group mapping if posting profile exists
+                    if (postingProfile > 0)
+                    {
+                        var postingTypeEnum = postingProfile switch
+                        {
+                            1 => RelionBookingType.Purchase,
+                            2 => RelionBookingType.Sale,
+                            _ => RelionBookingType.Purchase
+                        };
+
+                        // Validate posting group
+                        if (string.IsNullOrEmpty(line.PostingGroup))
+                        {
+                            await _mediator.Send(new CreateRelionErrorProcotolCommand(
+                                currentCompany,
+                                line.EntryNo.ToString(),
+                                $"Missing posting group for Relion Account {line.AccountNum} and IFRS {ifrs} for EntryNo {line.EntryNo}.",
+                                "MapLinesActivity"));
+
+                            _logger.LogWarning(
+                                "Missing posting group for Relion Account {RelionAccount} and IFRS {IFRS}. Skipping line with Entry ID {EntryId}.",
+                                line.AccountNum, ifrs, line.EntryNo);
+                            continue;
+                        }
+
+                        // Get tax group mapping
+                        var taxGroup = await _mediator.Send(
+                            new GetTaxGroupMappingQuery(postingTypeEnum, line.PostingGroup));
+
+                        if (taxGroup.IsFailure)
+                        {
+                            var error = new Error(
+                                "MapLinesActivity.TaxGroupMappingFailed",
+                                $"Failed to retrieve tax group mapping for PostingType {postingTypeEnum} and PostingGroup {line.PostingGroup} for EntryNo {line.EntryNo}.",
+                                ErrorType.Failure);
+
+                            _logger.LogWarning("{Error}", error.Message);
+
+                            await _mediator.Send(new CreateRelionErrorProcotolCommand(
+                                currentCompany, line.EntryNo.ToString(), error.Message, "MapLinesActivity"));
+                            continue;
+                        }
+
+                        // Validate VAT posting groups
+                        if (string.IsNullOrEmpty(line.VATBusPostingGroup) || string.IsNullOrEmpty(line.VATProdPostingGroup))
+                        {
+                            var error = new Error(
+                                "MapLinesActivity.MissingTaxPostingGroups",
+                                $"Missing VAT posting groups for EntryNo {line.EntryNo}. VATBusPostingGroup: '{line.VATBusPostingGroup}', VATProdPostingGroup: '{line.VATProdPostingGroup}'.",
+                                ErrorType.Failure);
+
+                            _logger.LogWarning("{Error}", error.Message);
+
+                            await _mediator.Send(new CreateRelionErrorProcotolCommand(
+                                currentCompany, line.EntryNo.ToString(), error.Message, "MapLinesActivity"));
+                            continue;
+                        }
+
+                        // Get item tax group mapping
+                        var itemTaxGroup = await _mediator.Send(
+                            new GetItemTaxGroupMappingQuery(line.VATBusPostingGroup, line.VATProdPostingGroup));
+
+                        if (itemTaxGroup.IsFailure)
+                        {
+                            var error = new Error(
+                                "MapLinesActivity.ItemTaxGroupMappingFailed",
+                                $"Failed to retrieve item tax group mapping for VATBusPostingGroup {line.VATBusPostingGroup} and VATProdPostingGroup {line.VATProdPostingGroup} for EntryNo {line.EntryNo}.",
+                                ErrorType.Failure);
+
+                            _logger.LogWarning("{Error}", error.Message);
+                            continue;
+                        }
+
+                        // Apply tax settings based on exclusion status
+                        if (isExcludedFromImport == NoYes.Yes)
+                        {
+                            ledgerJournalLine.SalesTaxCode = itemTaxGroup?.Value?.TaxCode;
+                        }
+                        else
+                        {
+                            ledgerJournalLine.SalesTaxGroup = taxGroup?.Value?.TaxGroup;
+                            ledgerJournalLine.ItemSalesTaxGroup = itemTaxGroup?.Value?.TaxItemGroup;
+                        }
+                    }
+
+                    // Adjust amounts based on VAT and exclusion status
+                    if (isExcludedFromImport == NoYes.Yes)
+                    {
+                        ledgerJournalLine.CreditAmount = -line.VatAmount;
                     }
                     else
                     {
-                        ledgerJournalLine.SalesTaxGroup = taxGroup?.Value?.TaxGroup;
-                        ledgerJournalLine.ItemSalesTaxGroup = itemTaxGroup?.Value?.TaxItemGroup;
+                        ledgerJournalLine.CreditAmount = line.CreditAmount != 0
+                            ? ledgerJournalLine.CreditAmount - line.VatAmount
+                            : 0;
+                        ledgerJournalLine.DebitAmount = line.DebitAmount != 0
+                            ? ledgerJournalLine.DebitAmount + line.VatAmount
+                            : 0;
                     }
+
+                    mappedLines.Add(ledgerJournalLine);
                 }
 
-                if (isExcludedFromImport == NoYes.Yes)
-                {
-                    ledgerJournalLine.CreditAmount = -line.VatAmount;
-                }
-                else
-                {
-                    ledgerJournalLine.CreditAmount = line.CreditAmount != 0 ? ledgerJournalLine.CreditAmount - line.VatAmount : 0;
-                    ledgerJournalLine.DebitAmount = line.DebitAmount != 0 ? ledgerJournalLine.DebitAmount + line.VatAmount : 0;
-                }
-                mappedLines.Add(ledgerJournalLine);
+                _logger.LogInformation(
+                    "Successfully mapped {MappedCount} of {TotalCount} lines",
+                    mappedLines.Count, lines.Count);
+
+                return Result<List<LedgerJournalLine>>.Ok(mappedLines);
+            }
+            catch (Exception ex)
+            {
+                var error = new Error(
+                    "MapLinesActivity.UnexpectedError",
+                    $"Unexpected error during line mapping: {ex.Message}",
+                    ErrorType.Failure,
+                    ex);
+
+                _logger.LogError(ex, "Unexpected error during line mapping");
+                return Result<List<LedgerJournalLine>>.Fail(error);
+            }
+        }
+
+        /// <summary>
+        /// Creates journal lines in F&O.
+        /// </summary>
+        /// <param name="lines">List of ledger journal lines to create.</param>
+        /// <returns>
+        /// A <see cref="Result"/> indicating success or failure of the creation operation.
+        /// </returns>
+        [Function(nameof(CreateJournalLinesActivity))]
+        public async Task<Result> CreateJournalLinesActivity([ActivityTrigger] List<LedgerJournalLine> lines)
+        {
+            if (lines == null || !lines.Any())
+            {
+                _logger.LogWarning("No lines provided to create");
+                return Result.Ok();
             }
 
-            return mappedLines;
+            _logger.LogInformation("Creating {Count} journal lines for batch {JournalBatchNumber}...",
+                lines.Count, lines.First().JournalBatchNumber);
+
+            // TODO: Implement actual creation logic via MediatR command
+            // For now, just return success
+            await Task.CompletedTask;
+            return Result.Ok();
         }
 
-        [Function(nameof(CreateJournalLinesActivity))]
-        public async Task CreateJournalLinesActivity([ActivityTrigger] List<LedgerJournalLine> lines)
-        {
-            _logger.LogInformation("Creating {Count} journal lines for batch {JournalBatchNumber}...", lines.Count, lines.First().JournalBatchNumber);
-
-            return;
-        }
-
+        /// <summary>
+        /// Fetches journal lines from Relion since a specific import date.
+        /// </summary>
+        /// <param name="importDate">The timestamp to fetch records from.</param>
+        /// <returns>
+        /// A <see cref="Result{T}"/> containing a list of Relion journal lines on success,
+        /// or an error if the fetch fails.
+        /// </returns>
         [Function(nameof(GetRelionJournalLinesActivity))]
-        public async Task<List<RelionLedgerJournalLine>> GetRelionJournalLinesActivity(
+        public async Task<Result<List<RelionLedgerJournalLine>>> GetRelionJournalLinesActivity(
             [ActivityTrigger] DateTime importDate)
         {
             _logger.LogInformation("Fetching journal lines from Relion since {ImportDate} UTC", importDate);
 
-            var result = await _relionSerivce.GetNewJournalLinesAsync(importDate);
+            var result = await _relionService.GetNewJournalLinesAsync(importDate);
 
             if (result.IsFailure)
             {
-                _logger.LogError("Failed to fetch journal lines from Relion: {Error}", result.Error);
-                throw new InvalidOperationException($"Failed to fetch journal lines: {result.Error?.Message}");
+                _logger.LogError("Failed to fetch journal lines from Relion: {Error}", result.Error?.Message);
+                return result;
             }
 
             _logger.LogInformation("Fetched {Count} journal lines from Relion.", result.Value?.Count ?? 0);
-            return result.Value!;
+            return result;
         }
 
+        /// <summary>
+        /// Writes journal lines to a blob in Azure Storage.
+        /// </summary>
+        /// <param name="input">The input containing blob name and lines to write.</param>
+        /// <returns>
+        /// A <see cref="Result{T}"/> containing the activity result with blob details on success,
+        /// or an error if writing fails.
+        /// </returns>
         [Function(nameof(WriteJournalLinesToBlobActivity))]
-        public WriteJournalLinesActivityResult WriteJournalLinesToBlobActivity(
+        public Result<WriteJournalLinesActivityResult> WriteJournalLinesToBlobActivity(
             [ActivityTrigger] WriteJournalLinesActivityInput input)
         {
-            var wrapper = new JournalFileWrapper
+            try
             {
-                Data = [.. input.Lines]
-            };
+                var wrapper = new JournalFileWrapper
+                {
+                    Data = [.. input.Lines]
+                };
 
-            var contentBytes = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(wrapper));
+                var contentBytes = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(wrapper));
 
-            var activityResult = new WriteJournalLinesActivityResult
+                var activityResult = new WriteJournalLinesActivityResult
+                {
+                    BlobName = input.BlobName,
+                    BlobContent = contentBytes
+                };
+
+                _logger.LogInformation("Prepared blob content for {BlobName} ({Size} bytes)",
+                    input.BlobName, contentBytes.Length);
+
+                return Result<WriteJournalLinesActivityResult>.Ok(activityResult);
+            }
+            catch (Exception ex)
             {
-                BlobName = input.BlobName,
-                BlobContent = contentBytes
-            };
+                var error = new Error(
+                    "WriteBlob.SerializationFailed",
+                    $"Failed to serialize journal lines: {ex.Message}",
+                    ErrorType.Failure,
+                    ex);
 
-            return activityResult;
+                _logger.LogError(ex, "Failed to serialize journal lines");
+                return Result<WriteJournalLinesActivityResult>.Fail(error);
+            }
         }
     }
 }

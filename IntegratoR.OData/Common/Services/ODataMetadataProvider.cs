@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.Logging;
+﻿using IntegratoR.Abstractions.Common.Results;
+using Microsoft.Extensions.Logging;
 using System.Xml;
 
 namespace IntegratoR.OData.Common.Services;
@@ -26,13 +27,16 @@ public class ODataMetadataProvider
     /// Removes DTD declarations to prevent security issues.
     /// </summary>
     /// <param name="metadataFilePath">Relative or absolute path to the metadata.xml file</param>
-    /// <returns>Clean metadata XML string without DTD declarations</returns>
-    public string LoadMetadata(string metadataFilePath)
+    /// <returns>
+    /// A <see cref="Result{T}"/> containing the clean metadata XML string without DTD declarations on success,
+    /// or an error if the file cannot be found or processed.
+    /// </returns>
+    public Result<string> LoadMetadata(string metadataFilePath)
     {
         if (_cachedMetadata != null)
         {
             _logger.LogDebug("Returning cached metadata.");
-            return _cachedMetadata;
+            return Result<string>.Ok(_cachedMetadata);
         }
 
         // Resolve the full path
@@ -40,13 +44,17 @@ public class ODataMetadataProvider
 
         if (!File.Exists(resolvedPath))
         {
-            throw new FileNotFoundException(
+            var error = new Error(
+                "ODataMetadata.FileNotFound",
                 $"Metadata file not found. Searched paths:\n" +
                 $"  - Configured: {metadataFilePath}\n" +
                 $"  - Resolved: {resolvedPath}\n" +
                 $"  - Current Directory: {Directory.GetCurrentDirectory()}\n" +
                 $"  - AppContext.BaseDirectory: {AppContext.BaseDirectory}",
-                resolvedPath);
+                ErrorType.NotFound);
+
+            _logger.LogError("Metadata file not found at resolved path: {ResolvedPath}", resolvedPath);
+            return Result<string>.Fail(error);
         }
 
         _logger.LogInformation("Loading OData metadata from: {MetadataFilePath}", resolvedPath);
@@ -60,17 +68,27 @@ public class ODataMetadataProvider
             xmlContent = RemoveDtdDeclaration(xmlContent);
 
             // Validate that it's proper XML
-            ValidateXml(xmlContent);
+            var validationResult = ValidateXml(xmlContent);
+            if (validationResult.IsFailure)
+            {
+                return Result<string>.Fail(validationResult);
+            }
 
             _cachedMetadata = xmlContent;
             _logger.LogInformation("Successfully loaded and cached metadata ({Size} bytes)", xmlContent.Length);
 
-            return _cachedMetadata;
+            return Result<string>.Ok(_cachedMetadata);
         }
-        catch (Exception ex) when (ex is not FileNotFoundException)
+        catch (Exception ex)
         {
+            var error = new Error(
+                "ODataMetadata.LoadFailed",
+                $"Failed to load metadata from file: {ex.Message}",
+                ErrorType.Failure,
+                ex);
+
             _logger.LogError(ex, "Failed to load metadata from file: {MetadataFilePath}", resolvedPath);
-            throw;
+            return Result<string>.Fail(error);
         }
     }
 
@@ -121,7 +139,7 @@ public class ODataMetadataProvider
     }
 
     /// <summary>
-    /// Removes DOCTYPE/DTD declarations from XML to prevent security issues
+    /// Removes DOCTYPE/DTD declarations from XML to prevent security issues.
     /// </summary>
     private string RemoveDtdDeclaration(string xmlContent)
     {
@@ -139,23 +157,42 @@ public class ODataMetadataProvider
     }
 
     /// <summary>
-    /// Validates that the string is well-formed XML
+    /// Validates that the string is well-formed XML.
     /// </summary>
-    private void ValidateXml(string xmlContent)
+    /// <returns>
+    /// A <see cref="Result"/> indicating success if the XML is valid,
+    /// or a failure with details if validation fails.
+    /// </returns>
+    private Result ValidateXml(string xmlContent)
     {
-        var settings = new XmlReaderSettings
+        try
         {
-            DtdProcessing = DtdProcessing.Prohibit, // Extra safety
-            XmlResolver = null // No external entity resolution
-        };
+            var settings = new XmlReaderSettings
+            {
+                DtdProcessing = DtdProcessing.Prohibit, // Extra safety
+                XmlResolver = null // No external entity resolution
+            };
 
-        using var stringReader = new StringReader(xmlContent);
-        using var xmlReader = XmlReader.Create(stringReader, settings);
+            using var stringReader = new StringReader(xmlContent);
+            using var xmlReader = XmlReader.Create(stringReader, settings);
 
-        // Just parse through it to validate
-        while (xmlReader.Read()) { }
+            // Just parse through it to validate
+            while (xmlReader.Read()) { }
 
-        _logger.LogDebug("Metadata XML validation successful");
+            _logger.LogDebug("Metadata XML validation successful");
+            return Result.Ok();
+        }
+        catch (Exception ex)
+        {
+            var error = new Error(
+                "ODataMetadata.ValidationFailed",
+                $"XML validation failed: {ex.Message}",
+                ErrorType.Validation,
+                ex);
+
+            _logger.LogError(ex, "XML validation failed");
+            return Result.Fail(error);
+        }
     }
 
     /// <summary>
