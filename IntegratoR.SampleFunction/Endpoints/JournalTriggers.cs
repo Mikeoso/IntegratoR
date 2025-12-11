@@ -25,16 +25,14 @@ namespace IntegratoR.SampleFunction.Endpoints
     {
         private readonly ILogger<JournalTriggers> _logger;
         private readonly IMediator _mediator;
-        private readonly IRelionService _relionService;
 
         private const string TEST_BUSINESS_EVENTID = "BusinessEventsTestEndpointContract";
         private const string RELION_BUSINESS_EVENTID = "INWRelionImportBusinessEvent";
 
-        public JournalTriggers(ILogger<JournalTriggers> logger, IMediator mediator, IRelionService relionService)
+        public JournalTriggers(ILogger<JournalTriggers> logger, IMediator mediator)
         {
             _logger = logger;
             _mediator = mediator;
-            _relionService = relionService;
         }
 
         /// <summary>
@@ -46,13 +44,16 @@ namespace IntegratoR.SampleFunction.Endpoints
         /// <returns></returns>
         [Function("QueueJournalFileProcessing_Trigger")]
         public async Task QueueJournalFileProcessing(
-            [BlobTrigger("input/{name}", Connection = "AzureWebJobsStorage")] byte[] content,
+            [BlobTrigger("input/{name}", Connection = "AzureWebJobsStorage")] Stream blobStream,
             string name,
             [DurableClient] DurableTaskClient client)
         {
-            _logger.LogInformation("New file detected: {Name}. Starting orchestration.", name);
+            _logger.LogInformation(
+                "New file detected: {Name} (Size: {SizeKB:N2} KB). Starting orchestration.",
+                name,
+                blobStream.Length / 1024.0);
 
-            var orcehstrationInput = new BlobOrchestratorInput { BlobName = name, Content = content };
+            var orcehstrationInput = new BlobOrchestratorInput { BlobName = name, Content = Array.Empty<byte>() };
 
             var instanceId = await client.ScheduleNewOrchestrationInstanceAsync(
                 nameof(JournalOrchestrators.ProcessJournalFileOrchestrator), orcehstrationInput);

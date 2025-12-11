@@ -1,4 +1,5 @@
-﻿using IntegratoR.Abstractions.Common.Results;
+﻿using Azure.Storage.Blobs;
+using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.OData.FO.Builders;
 using IntegratoR.OData.FO.Domain.Entities.LedgerJournal;
 using IntegratoR.OData.FO.Domain.Enums.General;
@@ -43,6 +44,61 @@ namespace IntegratoR.SampleFunction.Functions
         private readonly FOSettings _foSettings = foSettings.Value;
 
         /// <summary>
+        /// Reads a blob from Azure Blob Storage.
+        /// This is needed because Durable Functions have a ~4-5 MB input size limit.
+        /// </summary>
+        /// <param name="blobName">The name of the blob to read from the 'input' container.</param>
+        /// <returns>The blob content as byte array.</returns>
+        [Function(nameof(ReadBlobActivity))]
+        public async Task<byte[]> ReadBlobActivity([ActivityTrigger] string blobName)
+        {
+            _logger.LogInformation("Reading blob {BlobName} from storage...", blobName);
+
+            try
+            {
+                // Get connection string from environment (AzureWebJobsStorage)
+                var connectionString = Environment.GetEnvironmentVariable("AzureWebJobsStorage");
+
+                if (string.IsNullOrEmpty(connectionString))
+                {
+                    throw new InvalidOperationException(
+                        "AzureWebJobsStorage connection string not found in environment variables.");
+                }
+
+                // Create blob client
+                var blobServiceClient = new BlobServiceClient(connectionString);
+                var containerClient = blobServiceClient.GetBlobContainerClient("input");
+                var blobClient = containerClient.GetBlobClient(blobName);
+
+                // Check if blob exists
+                if (!await blobClient.ExistsAsync())
+                {
+                    throw new FileNotFoundException($"Blob {blobName} not found in container 'input'.");
+                }
+
+                // Download blob content
+                using var memoryStream = new MemoryStream();
+                await blobClient.DownloadToAsync(memoryStream);
+
+                var content = memoryStream.ToArray();
+
+                _logger.LogInformation(
+                    "Successfully read blob {BlobName} ({SizeKB:N2} KB)",
+                    blobName,
+                    content.Length / 1024.0);
+
+                return content;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "Failed to read blob {BlobName}: {Error}",
+                    blobName, ex.Message);
+                throw;
+            }
+        }
+    
+        /// <summary>
         /// Parses the JSON content of a journal file into a list of RelionLedgerJournalLine objects.
         /// </summary>
         /// <param name="jsonContent">The json content</param>
@@ -75,27 +131,34 @@ namespace IntegratoR.SampleFunction.Functions
         /// <param name="company">The legal entity id</param>
         /// <returns></returns>
         [Function(nameof(CreateJournalHeaderActivity))]
-        public async Task<Result<LedgerJournalHeader>> CreateJournalHeaderActivity([ActivityTrigger] string company)
+        public async Task<LedgerJournalHeader> CreateJournalHeaderActivity([ActivityTrigger] string company)
         {
             _logger.LogInformation("Creating journal header for company {Company}...", company);
 
-            // Define new journal header command
             var newLedgerJournalHeader = new LedgerJournalHeader
             {
                 DataAreaId = company,
                 JournalName = "RELion",
                 Description = $"RELion_{DateTime.Now:yyyyMMddHHmm}"
             };
-            var createHeaderResult = await _mediator.Send(new CreateLedgerJournalHeaderCommand<LedgerJournalHeader>(newLedgerJournalHeader));
+
+            var createHeaderResult = await _mediator.Send(
+                new CreateLedgerJournalHeaderCommand<LedgerJournalHeader>(newLedgerJournalHeader));
 
             if (createHeaderResult.IsFailure)
             {
-                _logger.LogError("Failed to create journal header for company {Company}: {Error}", company, createHeaderResult.Error);
-                return Result<LedgerJournalHeader>.Fail(createHeaderResult);
+                _logger.LogError("Failed to create journal header for company {Company}: {Error}",
+                    company, createHeaderResult.Error);
+
+                // Throw so Durable Functions can retry/handle
+                throw new InvalidOperationException(
+                    $"Failed to create journal header: {createHeaderResult.Error?.Message}");
             }
 
-            _logger.LogInformation("Created journal header with batch number {BatchNumber}.", createHeaderResult.Value?.JournalBatchNumber);
-            return Result<LedgerJournalHeader>.Ok(createHeaderResult?.Value!);
+            _logger.LogInformation("Created journal header with batch number {BatchNumber}.",
+                createHeaderResult.Value?.JournalBatchNumber);
+
+            return createHeaderResult.Value!;
         }
 
         /// <summary>
@@ -104,7 +167,7 @@ namespace IntegratoR.SampleFunction.Functions
         /// <param name="input">List of relion ledger journals and their corresponding batch number</param>
         /// <returns>A List of mapped LedgerJournalLines</returns>
         [Function(nameof(MapLinesActivity))]
-        public async Task<Result<List<LedgerJournalLine>>> MapLinesActivity(
+        public async Task<List<LedgerJournalLine>> MapLinesActivity(
             [ActivityTrigger] MapLinesActivityInput input)
         {
             _logger.LogInformation("Mapping {Count} lines for journal {JournalBatchNumber}...", input.Lines.Count, input.JournalBatchNumber);
@@ -121,7 +184,7 @@ namespace IntegratoR.SampleFunction.Functions
                 var error = dimensionOrder.Error;
 
                 _logger.LogError("Failed to retrieve dimension order: {Error}", dimensionOrder.Error);
-                return Result<List<LedgerJournalLine>>.Fail(error!);
+                throw new InvalidOperationException($"Failed to retrieve dimension order: {error?.Message}");
             }
 
             foreach (RelionLedgerJournalLine line in lines)
@@ -149,7 +212,7 @@ namespace IntegratoR.SampleFunction.Functions
                     var command = new CreateRelionErrorProcotolCommand(currentCompany, line.EntryNo.ToString(), error.Message, "MapLinesActivity");
                     await _mediator.Send(command);
 
-                    return Result<List<LedgerJournalLine>>.Fail(error!);
+                    throw new InvalidOperationException($"Failed to retrieve dimension order: {error?.Message}");
                 }
 
                 if (ledgerAccountMapping.Value == null)
@@ -303,19 +366,20 @@ namespace IntegratoR.SampleFunction.Functions
                 mappedLines.Add(ledgerJournalLine);
             }
 
-            return Result<List<LedgerJournalLine>>.Ok(mappedLines);
+            return mappedLines;
         }
 
         [Function(nameof(CreateJournalLinesActivity))]
-        public async Task<Result> CreateJournalLinesActivity([ActivityTrigger] List<LedgerJournalLine> lines)
+        public async Task CreateJournalLinesActivity([ActivityTrigger] List<LedgerJournalLine> lines)
         {
             _logger.LogInformation("Creating {Count} journal lines for batch {JournalBatchNumber}...", lines.Count, lines.First().JournalBatchNumber);
 
-            return Result.Ok();
+            return;
         }
 
         [Function(nameof(GetRelionJournalLinesActivity))]
-        public async Task<Result<List<RelionLedgerJournalLine>>> GetRelionJournalLinesActivity([ActivityTrigger] DateTime importDate)
+        public async Task<List<RelionLedgerJournalLine>> GetRelionJournalLinesActivity(
+            [ActivityTrigger] DateTime importDate)
         {
             _logger.LogInformation("Fetching journal lines from Relion since {ImportDate} UTC", importDate);
 
@@ -324,14 +388,16 @@ namespace IntegratoR.SampleFunction.Functions
             if (result.IsFailure)
             {
                 _logger.LogError("Failed to fetch journal lines from Relion: {Error}", result.Error);
-                return Result<List<RelionLedgerJournalLine>>.Fail(result);
+                throw new InvalidOperationException($"Failed to fetch journal lines: {result.Error?.Message}");
             }
+
             _logger.LogInformation("Fetched {Count} journal lines from Relion.", result.Value?.Count ?? 0);
-            return Result<List<RelionLedgerJournalLine>>.Ok(result.Value!); ;
+            return result.Value!;
         }
 
         [Function(nameof(WriteJournalLinesToBlobActivity))]
-        public WriteJournalLinesActivityResult WriteJournalLinesToBlobActivity([ActivityTrigger] WriteJournalLinesActivityInput input)
+        public WriteJournalLinesActivityResult WriteJournalLinesToBlobActivity(
+            [ActivityTrigger] WriteJournalLinesActivityInput input)
         {
             var wrapper = new JournalFileWrapper
             {
@@ -339,11 +405,13 @@ namespace IntegratoR.SampleFunction.Functions
             };
 
             var contentBytes = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(wrapper));
+
             var activityResult = new WriteJournalLinesActivityResult
             {
                 BlobName = input.BlobName,
                 BlobContent = contentBytes
             };
+
             return activityResult;
         }
     }
