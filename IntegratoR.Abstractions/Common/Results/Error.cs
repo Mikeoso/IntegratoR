@@ -1,4 +1,6 @@
-﻿namespace IntegratoR.Abstractions.Common.Results;
+﻿using Newtonsoft.Json;
+
+namespace IntegratoR.Abstractions.Common.Results;
 
 // FILE-LEVEL DOCUMENTATION
 // ---------------------------------------------------------------------------------------------
@@ -8,6 +10,10 @@
 // way to represent failures. This decouples internal exceptions (e.g., an OData exception from D365) from the
 // public error contract exposed by our APIs (e.g., in an Azure Function). This allows for robust logging,
 // easier debugging, and clear, machine-readable error responses for client applications.
+//
+// SERIALIZATION: These classes are now decorated with Newtonsoft.Json attributes to support
+// serialization in Durable Functions orchestrators, which require all state to be JSON-serializable.
+// Note: The Exception property is NOT serialized as exceptions cannot be reliably serialized.
 // </remarks>
 // ---------------------------------------------------------------------------------------------
 
@@ -15,6 +21,7 @@
 /// Specifies the high-level category of an error, primarily used to map a business or system failure
 /// to a corresponding and conventional HTTP status code in the API layer.
 /// </summary>
+[JsonConverter(typeof(Newtonsoft.Json.Converters.StringEnumConverter))]
 public enum ErrorType
 {
     /// <summary>
@@ -59,4 +66,58 @@ public enum ErrorType
 /// <param name="Message">A descriptive, human-readable message intended for developers and logging. It should not be parsed by client applications and may change over time.</param>
 /// <param name="Type">The category of the error, which dictates the nature of the failure and informs the resulting HTTP status code.</param>
 /// <param name="Exception">The optional, underlying exception that caused this error. This is crucial for logging and debugging but must never be serialized to the client.</param>
-public sealed record Error(string Code, string Message, ErrorType Type, Exception? Exception = null);
+/// <remarks>
+/// This class is JSON-serializable for use in Durable Functions orchestrators.
+/// Note: The Exception property is NOT serialized as exceptions cannot be reliably serialized across process boundaries.
+/// </remarks>
+[JsonObject(MemberSerialization.OptIn)]
+public sealed record Error
+{
+    /// <summary>
+    /// A stable, unique error code for programmatic handling by clients.
+    /// </summary>
+    [JsonProperty("code")]
+    public string Code { get; init; }
+
+    /// <summary>
+    /// A descriptive, human-readable message intended for developers and logging.
+    /// </summary>
+    [JsonProperty("message")]
+    public string Message { get; init; }
+
+    /// <summary>
+    /// The category of the error, which dictates the nature of the failure.
+    /// </summary>
+    [JsonProperty("type")]
+    public ErrorType Type { get; init; }
+
+    /// <summary>
+    /// The optional, underlying exception that caused this error.
+    /// NOT serialized - only available in the original process.
+    /// </summary>
+    [JsonIgnore]
+    public Exception? Exception { get; init; }
+
+    /// <summary>
+    /// Parameterless constructor for JSON deserialization.
+    /// </summary>
+    [JsonConstructor]
+    public Error()
+    {
+        Code = string.Empty;
+        Message = string.Empty;
+        Type = ErrorType.Failure;
+        Exception = null;
+    }
+
+    /// <summary>
+    /// Creates a new Error instance.
+    /// </summary>
+    public Error(string code, string message, ErrorType type, Exception? exception = null)
+    {
+        Code = code;
+        Message = message;
+        Type = type;
+        Exception = exception;
+    }
+}

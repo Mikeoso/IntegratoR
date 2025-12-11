@@ -1,5 +1,6 @@
 ﻿using IntegratoR.Abstractions.Interfaces.Results;
 using System.Diagnostics.CodeAnalysis;
+using Newtonsoft.Json;
 
 namespace IntegratoR.Abstractions.Common.Results;
 
@@ -12,9 +13,11 @@ namespace IntegratoR.Abstractions.Common.Results;
 // resilient code, which is especially critical in distributed systems like Azure Functions
 // interacting with D365 F&O. It forces the caller to explicitly handle both success and failure
 // states, preventing common runtime errors and making functional pipelines more explicit.
+//
+// SERIALIZATION: These classes are now decorated with Newtonsoft.Json attributes to support
+// serialization in Durable Functions orchestrators, which require all state to be JSON-serializable.
 // </remarks>
 // ---------------------------------------------------------------------------------------------
-
 
 /// <summary>
 /// Represents the outcome of an operation that does not return a value, indicating either success or failure.
@@ -22,17 +25,33 @@ namespace IntegratoR.Abstractions.Common.Results;
 /// <remarks>
 /// This non-generic version is ideal for CQRS Commands or repository methods where the operation's success
 /// is the only required information (e.g., Create, Update, Delete, or invoking a OData Action).
+/// 
+/// This class is JSON-serializable for use in Durable Functions orchestrators.
 /// </remarks>
+[JsonObject(MemberSerialization.OptIn)]
 public class Result : IResult
 {
     /// <inheritdoc />
-    public bool IsSuccess { get; }
+    [JsonProperty("isSuccess")]
+    public bool IsSuccess { get; private set; }
 
     /// <inheritdoc />
+    [JsonIgnore]
     public bool IsFailure => !IsSuccess;
 
     /// <inheritdoc />
-    public Error? Error { get; }
+    [JsonProperty("error")]
+    public Error? Error { get; private set; }
+
+    /// <summary>
+    /// Parameterless constructor for JSON deserialization.
+    /// </summary>
+    [JsonConstructor]
+    protected Result()
+    {
+        IsSuccess = true;
+        Error = null;
+    }
 
     /// <summary>
     /// Initializes a new instance of the <see cref="Result"/> class, enforcing the pattern's invariants.
@@ -96,7 +115,10 @@ public class Result : IResult
 /// <remarks>
 /// This generic version is the standard return type for CQRS Queries or any function that retrieves data,
 /// such as fetching a data entity from D365 F&O.
+/// 
+/// This class is JSON-serializable for use in Durable Functions orchestrators.
 /// </remarks>
+[JsonObject(MemberSerialization.OptIn)]
 public sealed class Result<TValue> : Result, IResult<TValue>
 {
     /// <inheritdoc />
@@ -106,7 +128,17 @@ public sealed class Result<TValue> : Result, IResult<TValue>
     /// To avoid potential null reference exceptions, prefer using the <see cref="Match{TOut}"/> method for safer access.
     /// </remarks>
     [MaybeNull]
-    public TValue Value { get; }
+    [JsonProperty("value")]
+    public TValue Value { get; private set; }
+
+    /// <summary>
+    /// Parameterless constructor for JSON deserialization.
+    /// </summary>
+    [JsonConstructor]
+    private Result() : base()
+    {
+        Value = default;
+    }
 
     /// <summary>
     /// Initializes a new instance of the generic <see cref="Result{TValue}"/> class.
