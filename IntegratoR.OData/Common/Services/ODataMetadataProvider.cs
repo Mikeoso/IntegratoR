@@ -169,7 +169,7 @@ public class ODataMetadataProvider
         {
             var settings = new XmlReaderSettings
             {
-                DtdProcessing = DtdProcessing.Prohibit, // Extra safety
+                DtdProcessing = DtdProcessing.Parse, // Extra safety
                 XmlResolver = null // No external entity resolution
             };
 

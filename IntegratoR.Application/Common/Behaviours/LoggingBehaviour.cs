@@ -1,4 +1,5 @@
-﻿using IntegratoR.Abstractions.Interfaces.Results;
+﻿using FluentResults;
+using IntegratoR.Abstractions.Interfaces.Results;
 using IntegratoR.Abstractions.Interfaces.Telemetry;
 using MediatR;
 using Microsoft.Extensions.Logging;
@@ -70,7 +71,7 @@ public class LoggingBehaviour<TRequest, TResponse> : IPipelineBehavior<TRequest,
                 var response = await next().ConfigureAwait(false);
                 stopwatch.Stop();
 
-                if (response is IResult { IsFailure: true } result)
+                if (response is Result { IsFailed: true } result)
                 {
                     _logger.LogWarning(
                         "Handled {RequestName} with failure result in {ElapsedMilliseconds}ms. Error: {ErrorCode} - {ErrorMessage}",
