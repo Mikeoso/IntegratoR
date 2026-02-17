@@ -109,3 +109,26 @@ Prefer these patterns throughout the codebase:
 public class LoggingBehaviour<TRequest, TResponse> : IPipelineBehavior<TRequest, TResponse>
     where TRequest : IRequest<TResponse>, IContext
 ```
+
+## IntegrationError Codes
+
+`IntegrationError` extends FluentResults `Error` with a structured `Code` and `ErrorType`. Follow this naming convention:
+
+**Code format:** `Area.SpecificError`
+
+| Area | Example Code | When to Use |
+|---|---|---|
+| `CompanyOrchestrator` | `CompanyOrchestrator.InvalidInput` | Orchestrator-level validation failures |
+| `CompanyOrchestrator` | `CompanyOrchestrator.MissingBatchNumber` | Missing expected data after an activity call |
+| `BlobStorage` | `BlobStorage.ReadFailed` | Azure Blob Storage operation failures |
+| `OData` | `OData.CreateFailed` | OData POST/PATCH failures |
+| `Mapping` | `Mapping.AccountNotFound` | Lookup failures during data mapping |
+
+**ErrorType enum** maps to HTTP semantics for consistent handling:
+
+| ErrorType | Meaning | Use When |
+|---|---|---|
+| `Validation` | Bad input, missing required fields | Input fails validation before processing |
+| `NotFound` | Entity or mapping not found | Lookup returns no results |
+| `Conflict` | Duplicate or state conflict | Entity already exists, concurrent modification |
+| `Failure` | General operational failure | External system error, unexpected state |

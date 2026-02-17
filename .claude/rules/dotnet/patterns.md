@@ -114,3 +114,98 @@ services.Configure<ODataSettings>(configuration.GetSection("ODataSettings"));
 ```
 
 Settings classes live in the `Domain/Settings` folder of their respective project. Provide sensible defaults for optional settings (retry counts, timeouts, feature flags).
+
+## Feature File Organisation
+
+Commands and queries follow a strict folder structure within each infrastructure project:
+
+```
+Features/
+  Commands/
+    {Domain}/
+      {OperationEntity}/
+        {OperationEntity}Command.cs          # Single-entity command (record)
+        {OperationEntity}Handler.cs          # Single-entity handler
+        {OperationEntity}sCommand.cs         # Batch command (plural, record)
+        {OperationEntity}sHandler.cs         # Batch handler
+  Queries/
+    {Domain}/
+      {QueryName}/
+        {QueryName}Query.cs
+        {QueryName}QueryHandler.cs
+```
+
+Single commands return `Result<TEntity>`. Batch commands return non-generic `Result`. Each handler has its own file — never combine multiple handlers in one file.
+
+Example: `Features/Commands/LedgerJournals/CreateLedgerJournalHeader/` contains `CreateLedgerJournalHeaderCommand.cs`, `CreateLedgerJournalHeaderHandler.cs`, `CreateLedgerJournalHeadersCommand.cs`, and `CreateLedgerJournalHeadersHandler.cs`.
+
+## Durable Functions Patterns
+
+### Orchestrator Constraints
+
+Orchestrators must be **deterministic** — they replay from the beginning on every wake-up. Never use:
+- `DateTime.Now` or `DateTime.UtcNow` (use `context.CurrentUtcDateTime`)
+- `Guid.NewGuid()` (use `context.NewGuid()`)
+- Direct I/O, HTTP calls, or Thread.Sleep (delegate to activities)
+- Non-deterministic conditionals that change between replays
+
+### Activity Functions
+
+Activities perform the actual work. Follow these conventions:
+- Return `Result<T>` or `Result` — never throw exceptions to the orchestrator
+- Wrap all external calls in try-catch, converting exceptions to `IntegrationError`
+- Use primary constructors for dependency injection
+- Async activities return `Task<Result<T>>`; synchronous return `Result<T>` directly
+- Name activities with a descriptive verb suffix: `ReadBlobActivity`, `MapLinesActivity`, `CreateJournalLinesActivity`
+
+### Orchestrator Error Handling
+
+Orchestrators check `result.IsFailed` after every activity call — never use try-catch for Result-returning activities:
+
+```csharp
+var result = await context.CallActivityAsync<Result<T>>(nameof(MyActivity), input);
+
+if (result.IsFailed)
+{
+    logger.LogError("Failed: {Error}", result.GetError()?.Message);
+    return Result.Fail(result.Errors);
+}
+```
+
+### Fan-Out/Fan-In with Sub-Orchestrations
+
+Group work items, start sub-orchestrations in parallel, then aggregate:
+
+```csharp
+var tasks = groups.Select(g =>
+    context.CallSubOrchestratorAsync<Result>(nameof(SubOrchestrator), g));
+await Task.WhenAll(tasks);
+```
+
+### Serialization Limits
+
+Durable Functions orchestration state has practical size limits (~4-5 MB). For large data (file contents, bulk entity lists), use blob storage and pass the blob name through orchestration state instead.
+
+**Reference:** `IntegratoR.SampleFunction/Orchestrators/JournalOrchestrators.cs`
+
+## Anti-Patterns
+
+Things to **never do** in this codebase:
+
+### Result Pattern Violations
+- **Never throw exceptions for business logic** — use `Result.Fail()` with `IntegrationError`. Exceptions are for truly unexpected failures only.
+- **Never use try-catch in orchestrators** for Result-returning activities. Check `result.IsFailed` instead.
+- **Never catch exceptions in pipeline behaviours** without re-throwing. Behaviours log and re-throw; they don't swallow.
+
+### Architecture Violations
+- **Never create additional DI registration classes** — each project has exactly one `ApplicationDependencyInjection` static class in `Common/Extensions/`.
+- **Never unify Newtonsoft.Json and System.Text.Json** — they serve different purposes and must coexist.
+- **Never reorder pipeline behaviours** — the registration order (Logging -> Validation -> Caching) is critical and intentional.
+
+### Entity Violations
+- **Never skip `GetCompositeKey()` on entities** — all entities must implement it, even single-key entities. Generic handlers depend on it.
+- **Never use `DateTime.Now` in orchestrators** — use `context.CurrentUtcDateTime` for deterministic replay.
+
+### Build & Versioning
+- **Never edit `<Version>` in `.csproj` files** — GitVersion computes versions from git history.
+- **Never change `<TargetFramework>`, `<LangVersion>`, `<Nullable>`, or `<ImplicitUsings>`** project settings.

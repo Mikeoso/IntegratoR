@@ -50,6 +50,7 @@ local.settings.json
 .env
 .env.*
 secrets.json
+CLAUDE.local.md
 
 # OS files
 Thumbs.db
