@@ -2,7 +2,7 @@
 codename: "testkit"
 title: "TestKit Foundation"
 quest: "test-suite"
-status: completed
+status: planned
 complexity: "L"
 depends_on: []
 created: "2026-02-18"
