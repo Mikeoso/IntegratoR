@@ -9,7 +9,7 @@
     <PackageVersion Include="FluentResults" Version="4.0.0" />
     <PackageVersion Include="FluentValidation" Version="12.1.1" />
     <PackageVersion Include="FluentValidation.DependencyInjectionExtensions" Version="12.1.1" />
-    <PackageVersion Include="MediatR" Version="12.5.0" />
+    <PackageVersion Include="MediatR" Version="14.0.0" />
     <PackageVersion Include="Newtonsoft.Json" Version="13.0.4" />
   </ItemGroup>
 
