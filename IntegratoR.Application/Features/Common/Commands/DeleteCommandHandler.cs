@@ -1,5 +1,5 @@
 ﻿using IntegratoR.Abstractions.Common.CQRS.Commands;
-using IntegratoR.Abstractions.Common.Results;
+using FluentResults;
 using IntegratoR.Abstractions.Interfaces.Entity;
 using IntegratoR.Abstractions.Interfaces.Services;
 using MediatR;
@@ -9,7 +9,7 @@ using System.Text;
 
 namespace IntegratoR.Application.Features.Common.Commands
 {
-    public class DeleteCommandHandler<TEntity> : IRequestHandler<DeleteCommand<TEntity>, Result>
+    public class DeleteCommandHandler<TEntity> : IRequestHandler<DeleteCommand<TEntity>, Result<TEntity>>
         where TEntity : class, IEntity
     {
         private readonly IService<TEntity> _service;
@@ -19,9 +19,12 @@ namespace IntegratoR.Application.Features.Common.Commands
             _service = service;
         }
 
-        public async Task<Result> Handle(DeleteCommand<TEntity> request, CancellationToken cancellationToken)
+        public async Task<Result<TEntity>> Handle(DeleteCommand<TEntity> request, CancellationToken cancellationToken)
         {
-            return await _service.DeleteAsync(request.Entity, cancellationToken);
+            var result = await _service.DeleteAsync(request.Entity, cancellationToken).ConfigureAwait(false);
+            return result.IsSuccess
+                ? Result.Ok(request.Entity)
+                : Result.Fail<TEntity>(result.Errors);
         }
     }
 }

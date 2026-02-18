@@ -1,4 +1,5 @@
-﻿using IntegratoR.Abstractions.Interfaces.Authentication;
+﻿using FluentValidation;
+using IntegratoR.Abstractions.Interfaces.Authentication;
 using IntegratoR.Abstractions.Interfaces.Services;
 using IntegratoR.Application.Common.Authentication;
 using IntegratoR.Application.Common.Behaviours;
@@ -55,6 +56,9 @@ public static class ApplicationDependencyInjection
             cfg.RegisterGenericHandlers = true;
             cfg.RegisterServicesFromAssembly(Assembly.GetExecutingAssembly());
         });
+
+        // Register all FluentValidation validators from the application assembly.
+        services.AddValidatorsFromAssembly(Assembly.GetExecutingAssembly(), includeInternalTypes: true);
 
         // Register core application services.
         // These are registered as Singletons as they are designed to be thread-safe and maintain state (like a cache)

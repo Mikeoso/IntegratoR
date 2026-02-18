@@ -14,7 +14,7 @@
 | Polly | 8.5.0 | Retry + circuit breaker resilience |
 | Azure Functions Worker | 2.0.0 | Isolated-process Azure Functions host |
 | Durable Task Extensions | 1.7.1 | Orchestration, activities, fan-out/fan-in |
-| Newtonsoft.Json | 13.0.4 | Durable Functions serialization (required) |
+| Newtonsoft.Json | 13.0.3 | Durable Functions serialization (required) |
 | StackExchange.Redis | 2.8.16 | Distributed caching |
 
 ## Project Structure

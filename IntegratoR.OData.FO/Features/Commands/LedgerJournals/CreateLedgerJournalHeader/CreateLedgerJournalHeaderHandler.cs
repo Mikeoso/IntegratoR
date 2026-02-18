@@ -1,4 +1,5 @@
-﻿using IntegratoR.Abstractions.Common.Results;
+﻿using FluentResults;
+using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.Abstractions.Interfaces.Services;
 using IntegratoR.OData.FO.Domain.Entities.LedgerJournal;
 using MediatR;
@@ -17,7 +18,7 @@ public class CreateLedgerJournalHeaderHandler<TEntity>(ILogger<CreateLedgerJourn
             request.LedgerJournalHeader.JournalName,
             request.LedgerJournalHeader.DataAreaId);
 
-        var addResult = await _service.AddAsync(request.LedgerJournalHeader, cancellationToken);
+        var addResult = await _service.AddAsync(request.LedgerJournalHeader, cancellationToken).ConfigureAwait(false);
 
         return addResult.Match(
             onSuccess: entity =>
@@ -27,11 +28,11 @@ public class CreateLedgerJournalHeaderHandler<TEntity>(ILogger<CreateLedgerJourn
                     request.LedgerJournalHeader.JournalBatchNumber,
                     request.LedgerJournalHeader.DataAreaId);
 
-                return Result<TEntity>.Ok(entity);
+                return Result.Ok(entity);
             },
             onFailure: error =>
             {
-                return Result<TEntity>.Fail(error);
+                return Result.Fail<TEntity>(error);
             });
     }
 }

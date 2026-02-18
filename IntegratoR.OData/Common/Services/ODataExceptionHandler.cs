@@ -1,6 +1,6 @@
-﻿using IntegratoR.Abstractions.Common.Results;
+﻿using FluentResults;
+using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.Abstractions.Interfaces.Entity;
-using IntegratoR.Abstractions.Interfaces.Results;
 using Microsoft.Extensions.Logging;
 using Polly.Retry;
 using Simple.OData.Client;
@@ -53,8 +53,8 @@ public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
         return await ExecuteWithRetryAsync(
             context,
             operation,
-            result => Result<TEntity>.Ok(result),
-            cancellationToken);
+            result => Result.Ok(result),
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -72,15 +72,15 @@ public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
             context,
             async () =>
             {
-                var result = await operation();
+                var result = await operation().ConfigureAwait(false);
                 return result as IList<TEntity> ?? result.ToList();
             },
             result =>
             {
                 LogSuccess(context, TimeSpan.Zero, result.Count);
-                return Result<IEnumerable<TEntity>>.Ok(result);
+                return Result.Ok<IEnumerable<TEntity>>(result);
             },
-            cancellationToken);
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -97,8 +97,8 @@ public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
         return await ExecuteWithRetryAsync(
             context,
             operation,
-            result => Result<T>.Ok(result),
-            cancellationToken);
+            result => Result.Ok(result),
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -117,12 +117,12 @@ public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
             context,
             async () =>
             {
-                await operation();
+                await operation().ConfigureAwait(false);
                 return true;
             },
             _ => Result.Ok(),
             cancellationToken,
-            treatNotFoundAsSuccess);
+            treatNotFoundAsSuccess).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -134,7 +134,7 @@ public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
         Func<TOperationResult, TResult> resultMapper,
         CancellationToken cancellationToken,
         bool treatNotFoundAsSuccess = false)
-        where TResult : IResult
+        where TResult : IResultBase
     {
         var stopwatch = Stopwatch.StartNew();
         var attemptCount = 0;
@@ -156,13 +156,13 @@ public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
                             attemptCount, context.OperationName, context.EntityType);
                     }
 
-                    return await operation();
-                }, cancellationToken);
+                    return await operation().ConfigureAwait(false);
+                }, cancellationToken).ConfigureAwait(false);
             }
             else
             {
                 attemptCount = 1;
-                result = await operation();
+                result = await operation().ConfigureAwait(false);
             }
 
             stopwatch.Stop();
@@ -182,7 +182,7 @@ public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
                     context.OperationName, context.EntityType,
                     stopwatch.ElapsedMilliseconds, attemptCount);
 
-                return (TResult)(IResult)Result.Ok();
+                return (TResult)(object)Result.Ok();
             }
 
             return HandleNotFound<TResult>(context, stopwatch.Elapsed, ex, attemptCount);
@@ -200,7 +200,7 @@ public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
         Exception exception,
         CancellationToken cancellationToken,
         int attemptCount)
-        where TResult : IResult
+        where TResult : IResultBase
     {
         var error = exception switch
         {
@@ -214,16 +214,19 @@ public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
         if (typeof(TResult).IsGenericType)
         {
             var genericType = typeof(TResult).GetGenericArguments()[0];
-            var failMethod = typeof(Result<>)
-                .MakeGenericType(genericType)
-                .GetMethod(nameof(Result<object>.Fail), new[] { typeof(Error) });
+            var failMethod = typeof(Result)
+                .GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+                .First(m => m.Name == "Fail" && m.IsGenericMethod
+                    && m.GetParameters().Length == 1
+                    && m.GetParameters()[0].ParameterType == typeof(IError))
+                .MakeGenericMethod(genericType);
             return (TResult)failMethod!.Invoke(null, new object[] { error })!;
         }
 
-        return (TResult)(IResult)Result.Fail(error);
+        return (TResult)(object)Result.Fail(error);
     }
 
-    private Error CreateWebRequestError(
+    private IntegrationError CreateWebRequestError(
         OperationContext context,
         TimeSpan elapsed,
         WebRequestException exception,
@@ -258,7 +261,7 @@ public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
             context.OperationName, context.EntityType, elapsed.TotalMilliseconds,
             attemptCount, exception.Code);
 
-        return new Error($"{context.EntityType}.{errorCode}", errorMessage, errorType, exception);
+        return new IntegrationError($"{context.EntityType}.{errorCode}", errorMessage, errorType, exception);
     }
 
     private TResult HandleNotFound<TResult>(
@@ -266,7 +269,7 @@ public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
         TimeSpan elapsed,
         ODataNotFoundException exception,
         int attemptCount)
-        where TResult : IResult
+        where TResult : IResultBase
     {
         _logger.LogInformation(
             "{Operation} on {EntityType} - entity not found after {ElapsedMs}ms " +
@@ -274,7 +277,7 @@ public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
             context.OperationName, context.EntityType, elapsed.TotalMilliseconds,
             attemptCount, context.EntityKey);
 
-        var error = new Error(
+        var error = new IntegrationError(
             $"{context.EntityType}.NotFound",
             exception.Message,
             ErrorType.NotFound,
@@ -283,16 +286,19 @@ public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
         if (typeof(TResult).IsGenericType)
         {
             var genericType = typeof(TResult).GetGenericArguments()[0];
-            var failMethod = typeof(Result<>)
-                .MakeGenericType(genericType)
-                .GetMethod(nameof(Result<object>.Fail), new[] { typeof(Error) });
+            var failMethod = typeof(Result)
+                .GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+                .First(m => m.Name == "Fail" && m.IsGenericMethod
+                    && m.GetParameters().Length == 1
+                    && m.GetParameters()[0].ParameterType == typeof(IError))
+                .MakeGenericMethod(genericType);
             return (TResult)failMethod!.Invoke(null, new object[] { error })!;
         }
 
-        return (TResult)(IResult)Result.Fail(error);
+        return (TResult)(object)Result.Fail(error);
     }
 
-    private Error CreateTimeoutError(
+    private IntegrationError CreateTimeoutError(
         OperationContext context,
         TimeSpan elapsed,
         TaskCanceledException exception,
@@ -302,14 +308,14 @@ public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
             "{Operation} on {EntityType} timed out after {ElapsedMs}ms and {Attempts} attempt(s)",
             context.OperationName, context.EntityType, elapsed.TotalMilliseconds, attemptCount);
 
-        return new Error(
+        return new IntegrationError(
             $"{context.EntityType}.Timeout",
             "Request timed out",
             ErrorType.Failure,
             exception);
     }
 
-    private Error CreateCancellationError(
+    private IntegrationError CreateCancellationError(
         OperationContext context,
         TimeSpan elapsed,
         OperationCanceledException exception,
@@ -319,14 +325,14 @@ public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
             "{Operation} on {EntityType} was cancelled after {ElapsedMs}ms and {Attempts} attempt(s)",
             context.OperationName, context.EntityType, elapsed.TotalMilliseconds, attemptCount);
 
-        return new Error(
+        return new IntegrationError(
             $"{context.EntityType}.Cancelled",
             "Operation was cancelled",
             ErrorType.Failure,
             exception);
     }
 
-    private Error CreateUnexpectedError(
+    private IntegrationError CreateUnexpectedError(
         OperationContext context,
         TimeSpan elapsed,
         Exception exception,
@@ -338,7 +344,7 @@ public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
             context.OperationName, context.EntityType, elapsed.TotalMilliseconds,
             attemptCount, exception.GetType().Name);
 
-        return new Error(
+        return new IntegrationError(
             $"{context.EntityType}.UnexpectedError",
             $"An unexpected error occurred: {exception.Message}",
             ErrorType.Failure,

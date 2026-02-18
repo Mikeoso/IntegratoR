@@ -1,4 +1,5 @@
-﻿using IntegratoR.Abstractions.Common.Results;
+﻿using FluentResults;
+using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.Abstractions.Interfaces.Services;
 using IntegratoR.OData.FO.Domain.Entities.LedgerJournal;
 using MediatR;
@@ -24,7 +25,7 @@ public class UpdateLedgerJournalLineHandler<TEntity> : IRequestHandler<UpdateLed
             request.LedgerJournalLine.LineNumber,
             request.LedgerJournalLine.DataAreaId);
 
-        var updateResult = await _service.UpdateAsync(request.LedgerJournalLine, cancellationToken);
+        var updateResult = await _service.UpdateAsync(request.LedgerJournalLine, cancellationToken).ConfigureAwait(false);
 
         return updateResult.Match(
             onSuccess: updatedEntity =>
@@ -33,7 +34,7 @@ public class UpdateLedgerJournalLineHandler<TEntity> : IRequestHandler<UpdateLed
                     request.LedgerJournalLine.JournalBatchNumber,
                     request.LedgerJournalLine.LineNumber,
                     request.LedgerJournalLine.DataAreaId);
-                return Result<TEntity>.Ok(updatedEntity);
+                return Result.Ok(updatedEntity);
             },
             onFailure: error =>
             {
@@ -42,7 +43,7 @@ public class UpdateLedgerJournalLineHandler<TEntity> : IRequestHandler<UpdateLed
                     request.LedgerJournalLine.LineNumber,
                     request.LedgerJournalLine.DataAreaId,
                     error.Message);
-                return Result<TEntity>.Fail(error);
+                return Result.Fail<TEntity>(error);
             });
     }
 }

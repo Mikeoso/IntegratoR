@@ -1,4 +1,5 @@
-﻿using IntegratoR.Abstractions.Common.Results;
+﻿using FluentResults;
+using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.Abstractions.Interfaces.Services;
 using IntegratoR.OData.FO.Domain.Entities.LedgerJournal;
 using MediatR;
@@ -21,15 +22,15 @@ public class UpdateLedgerJournalHeaderHandler<TEntity> : IRequestHandler<UpdateL
     {
         _logger.LogInformation("Updating Ledger Journal Header in F&O with Journal Name: {JournalName}", request.LedgerJournalHeader.JournalName);
 
-        var updateResult = await _service.UpdateAsync(request.LedgerJournalHeader, cancellationToken);
+        var updateResult = await _service.UpdateAsync(request.LedgerJournalHeader, cancellationToken).ConfigureAwait(false);
 
-        if (updateResult.IsFailure)
+        if (updateResult.IsFailed)
         {
-            return Result<TEntity>.Fail(updateResult);
+            return Result.Fail<TEntity>(updateResult.Errors);
         }
 
         _logger.LogInformation("Successfully updated Ledger Journal Header with ID: {JournalId}", updateResult.Value?.JournalName);
 
-        return Result<TEntity>.Ok(updateResult.Value!);
+        return Result.Ok(updateResult.Value!);
     }
 }

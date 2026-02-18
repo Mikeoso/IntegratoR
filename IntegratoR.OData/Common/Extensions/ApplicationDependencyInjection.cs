@@ -1,4 +1,5 @@
-﻿using IntegratoR.Abstractions.Interfaces.Services;
+﻿using IntegratoR.Abstractions.Common.Results;
+using IntegratoR.Abstractions.Interfaces.Services;
 using IntegratoR.OData.Common.Authentication;
 using IntegratoR.OData.Common.Services;
 using IntegratoR.OData.Domain.Settings;
@@ -121,8 +122,7 @@ public static class ApplicationDependencyInjection
 
             var odataClientSettings = new ODataClientSettings(httpClient)
             {
-                BaseUri = new Uri(settings.Url),
-                RequestTimeout = TimeSpan.FromSeconds(settings.Timeout)
+                BaseUri = new Uri(settings.Url)
             };
 
             // Load local metadata if configured
@@ -145,7 +145,7 @@ public static class ApplicationDependencyInjection
                     logger.LogError(
                         "Failed to load local metadata file from {MetadataFilePath}. Error: {Error}. Falling back to server metadata.",
                         settings.MetadataFilePath,
-                        metadataResult.Error?.Message);
+                        metadataResult.GetError()?.Message);
                     // Don't set MetadataDocument - let it fetch from server
                 }
             }

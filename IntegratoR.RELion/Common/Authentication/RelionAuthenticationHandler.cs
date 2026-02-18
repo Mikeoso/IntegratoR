@@ -1,4 +1,5 @@
-﻿using IntegratoR.Abstractions.Interfaces.Authentication;
+﻿using IntegratoR.Abstractions.Common.Results;
+using IntegratoR.Abstractions.Interfaces.Authentication;
 using IntegratoR.RELion.Domain.Settings;
 using Microsoft.Extensions.Options;
 using System.Net;
@@ -17,7 +18,7 @@ public class RelionAuthenticationHandler : DelegatingHandler
     public RelionAuthenticationHandler(IOptions<RelionSettings> settings, IAuthenticator authenticator)
     {
         _settings = settings.Value;
-        _authenticator = authenticator;
+        _authenticator = authenticator ?? throw new ArgumentNullException(nameof(authenticator));
     }
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -25,7 +26,7 @@ public class RelionAuthenticationHandler : DelegatingHandler
         if (_settings.AuthMode == RelionAuthMode.OAuth)
         {
             // Use the authenticator with Relion-specific settings
-            var tokenResult = await _authenticator.GetAccessTokenAsync(_settings.ClientId, _settings.ClientSecret, _settings.TenantId, _settings.Resource);
+            var tokenResult = await _authenticator.GetAccessTokenAsync(_settings.ClientId, _settings.ClientSecret, _settings.TenantId, _settings.Resource).ConfigureAwait(false);
             if (tokenResult.IsSuccess)
             {
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokenResult.Value);
@@ -34,7 +35,7 @@ public class RelionAuthenticationHandler : DelegatingHandler
             {
                 return new HttpResponseMessage(HttpStatusCode.Unauthorized)
                 {
-                    ReasonPhrase = $"Failed to acquire Relion OAuth token: {tokenResult?.Error?.Message}"
+                    ReasonPhrase = $"Failed to acquire Relion OAuth token: {tokenResult?.GetError()?.Message}"
                 };
             }
         }
@@ -43,6 +44,6 @@ public class RelionAuthenticationHandler : DelegatingHandler
             request.Headers.Add(_settings.SubscriptionHeaderKey, _settings.SubscriptionKey);
         }
 
-        return await base.SendAsync(request, cancellationToken);
+        return await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
     }
 }

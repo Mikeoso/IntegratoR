@@ -1,10 +1,12 @@
-﻿using IntegratoR.Abstractions.Common.Results;
+﻿using FluentResults;
+using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.Abstractions.Interfaces.Entity;
 using IntegratoR.OData.Common.Annotations;
 using IntegratoR.OData.Interfaces.Services;
 using Microsoft.Extensions.Logging;
 using Polly.Retry;
 using Simple.OData.Client;
+using System.Collections.Concurrent;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Linq.Expressions;
 using System.Reflection;
@@ -20,6 +22,8 @@ namespace IntegratoR.OData.Common.Services;
 public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<TEntity>
     where TEntity : class, IEntity
 {
+    private static readonly ConcurrentDictionary<Type, CachedPropertyMetadata[]> PropertyMetadataCache = new();
+
     private readonly IODataClient _client;
     private readonly ILogger<ODataService<TEntity>> _logger;
     private readonly ODataExceptionHandler<TEntity> _exceptionHandler;
@@ -50,7 +54,8 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
                 return await _client
                     .For<TEntity>()
                     .Set(payload)
-                    .InsertEntryAsync(true, cancellationToken);
+                    .InsertEntryAsync(true, cancellationToken)
+                    .ConfigureAwait(false);
             },
             entityKey: () => entity.GetCompositeKey(),
             cancellationToken: cancellationToken);
@@ -74,7 +79,7 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
                         typeof(TEntity).Name, filter.ToString());
                 }
 
-                return await query.FindEntriesAsync(cancellationToken);
+                return await query.FindEntriesAsync(cancellationToken).ConfigureAwait(false);
             },
             cancellationToken: cancellationToken);
     }
@@ -84,7 +89,7 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
     {
         if (keyValues == null || keyValues.Length == 0)
         {
-            return Task.FromResult(Result<TEntity>.Fail(new Error(
+            return Task.FromResult(Result.Fail<TEntity>(new IntegrationError(
                 $"{typeof(TEntity).Name}.InvalidKey",
                 "Key values cannot be null or empty",
                 ErrorType.Validation)));
@@ -100,7 +105,8 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
                 var entity = await _client
                     .For<TEntity>()
                     .Key(keyValues)
-                    .FindEntryAsync(cancellationToken);
+                    .FindEntryAsync(cancellationToken)
+                    .ConfigureAwait(false);
 
                 if (entity is null)
                 {
@@ -119,7 +125,7 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
     {
         if (entity == null)
         {
-            return Task.FromResult(Result<TEntity>.Fail(new Error(
+            return Task.FromResult(Result.Fail<TEntity>(new IntegrationError(
                 "Validation.NullEntity",
                 "The provided entity cannot be null",
                 ErrorType.Validation)));
@@ -136,7 +142,8 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
                     .For<TEntity>()
                     .Key(entity)
                     .Set(entity)
-                    .UpdateEntryAsync(cancellationToken);
+                    .UpdateEntryAsync(cancellationToken)
+                    .ConfigureAwait(false);
             },
             entityKey: () => entity.GetCompositeKey(),
             cancellationToken: cancellationToken);
@@ -147,7 +154,7 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
     {
         if (entity == null)
         {
-            return Task.FromResult(Result.Fail(new Error(
+            return Task.FromResult(Result.Fail(new IntegrationError(
                 "Validation.NullEntity",
                 "The provided entity cannot be null",
                 ErrorType.Validation)));
@@ -163,7 +170,8 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
                 await _client
                     .For<TEntity>()
                     .Key(entity)
-                    .DeleteEntryAsync(cancellationToken);
+                    .DeleteEntryAsync(cancellationToken)
+                    .ConfigureAwait(false);
             },
             entityKey: () => entity.GetCompositeKey(),
             cancellationToken: cancellationToken,
@@ -196,7 +204,7 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
                 if (skip.HasValue) query = query.Skip(skip.Value);
                 if (top.HasValue) query = query.Top(top.Value);
 
-                return await query.FindEntriesAsync(cancellationToken);
+                return await query.FindEntriesAsync(cancellationToken).ConfigureAwait(false);
             },
             cancellationToken: cancellationToken);
     }
@@ -208,7 +216,8 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
             operationName: "FindAll",
             operation: async () => await _client
                 .For<TEntity>()
-                .FindEntriesAsync(cancellationToken),
+                .FindEntriesAsync(cancellationToken)
+                .ConfigureAwait(false),
             cancellationToken: cancellationToken);
     }
 
@@ -223,7 +232,7 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
             {
                 var query = _client.For<TEntity>();
                 if (filter is not null) query = query.Filter(filter);
-                return await query.Count().FindScalarAsync<int>(cancellationToken);
+                return await query.Count().FindScalarAsync<int>(cancellationToken).ConfigureAwait(false);
             },
             cancellationToken: cancellationToken);
     }
@@ -248,7 +257,7 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
                         .Set(entity)
                         .InsertEntryAsync(cancellationToken);
                 }
-                await batch.ExecuteAsync(cancellationToken);
+                await batch.ExecuteAsync(cancellationToken).ConfigureAwait(false);
             },
             entityKey: () => new object[] { $"{entities.Count()} entities" },
             cancellationToken: cancellationToken);
@@ -270,7 +279,7 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
                         .Key(entity.GetCompositeKey())
                         .DeleteEntryAsync(cancellationToken);
                 }
-                await batch.ExecuteAsync(cancellationToken);
+                await batch.ExecuteAsync(cancellationToken).ConfigureAwait(false);
             },
             entityKey: () => new object[] { $"{entities.Count()} entities" },
             cancellationToken: cancellationToken);
@@ -293,7 +302,7 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
                         .Set(entity)
                         .UpdateEntryAsync(cancellationToken);
                 }
-                await batch.ExecuteAsync(cancellationToken);
+                await batch.ExecuteAsync(cancellationToken).ConfigureAwait(false);
             },
             entityKey: () => new object[] { $"{entities.Count()} entities" },
             cancellationToken: cancellationToken);
@@ -303,37 +312,61 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
 
     #region Helper Methods
 
-    private Dictionary<string, object> CreatePayload(TEntity entity, bool isCreateOperation)
+    private static Dictionary<string, object> CreatePayload(TEntity entity, bool isCreateOperation)
     {
+        var metadata = PropertyMetadataCache.GetOrAdd(
+            entity.GetType(),
+            type => BuildPropertyMetadata(type));
+
         var payload = new Dictionary<string, object>();
-        var properties = entity.GetType()
-            .GetProperties(BindingFlags.Public | BindingFlags.Instance);
 
-        foreach (var property in properties)
+        foreach (var prop in metadata)
         {
-            if (!property.CanRead || !property.CanWrite) continue;
-            if (property.GetCustomAttribute<NotMappedAttribute>() is not null) continue;
-            if (property.GetCustomAttribute<JsonIgnoreAttribute>() is not null) continue;
+            if (isCreateOperation && prop.IgnoreOnCreate) continue;
+            if (!isCreateOperation && prop.IgnoreOnUpdate) continue;
 
-            var attribute = property.GetCustomAttribute<ODataFieldAttribute>();
-            if (isCreateOperation && attribute?.IgnoreOnCreate == true) continue;
-            if (!isCreateOperation && attribute?.IgnoreOnUpdate == true) continue;
+            var value = prop.Property.GetValue(entity);
 
-            var value = property.GetValue(entity);
-            var defaultValue = property.PropertyType.IsValueType
-                ? Activator.CreateInstance(property.PropertyType)
-                : null;
-
-            if (value is not null && !value.Equals(defaultValue))
+            if (value is not null && !value.Equals(prop.DefaultValue))
             {
-                var propertyName = property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name
-                    ?? property.Name;
-                payload.Add(propertyName, value);
+                payload.Add(prop.PayloadName, value);
             }
         }
 
         return payload;
     }
+
+    private static CachedPropertyMetadata[] BuildPropertyMetadata(Type type)
+    {
+        return type
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .Where(p => p.CanRead && p.CanWrite)
+            .Where(p => p.GetCustomAttribute<NotMappedAttribute>() is null)
+            .Where(p => p.GetCustomAttribute<JsonIgnoreAttribute>() is null)
+            .Select(p =>
+            {
+                var odataField = p.GetCustomAttribute<ODataFieldAttribute>();
+                var payloadName = p.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? p.Name;
+                var defaultValue = p.PropertyType.IsValueType
+                    ? Activator.CreateInstance(p.PropertyType)
+                    : null;
+
+                return new CachedPropertyMetadata(
+                    p,
+                    payloadName,
+                    odataField?.IgnoreOnCreate ?? false,
+                    odataField?.IgnoreOnUpdate ?? false,
+                    defaultValue);
+            })
+            .ToArray();
+    }
+
+    private sealed record CachedPropertyMetadata(
+        PropertyInfo Property,
+        string PayloadName,
+        bool IgnoreOnCreate,
+        bool IgnoreOnUpdate,
+        object? DefaultValue);
 
     #endregion
 }
