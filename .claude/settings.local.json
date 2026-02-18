@@ -1,0 +1,19 @@
+{
+  "disabledMcpjsonServers": [],
+  "enabledMcpjsonServers": [
+    "microsoft-learn",
+    "context7",
+    "sequential-thinking"
+  ],
+  "permissions": {
+    "allow":[
+      "Bash(*)",
+      "Read(*)",
+      "Edit(*)",
+      "Write(*)",
+      "Update(*)",
+      "Grep(*)",
+      "Grob(*)"
+    ]
+  }
+}
