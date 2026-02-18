@@ -39,7 +39,7 @@
   <ItemGroup Label="Resilience">
     <PackageVersion Include="Polly" Version="8.5.0" />
     <PackageVersion Include="Polly.Extensions.Http" Version="3.0.0" />
-    <PackageVersion Include="StackExchange.Redis" Version="2.8.16" />
+    <PackageVersion Include="StackExchange.Redis" Version="2.11.0" />
   </ItemGroup>
 
   <ItemGroup Label="Azure Functions">
