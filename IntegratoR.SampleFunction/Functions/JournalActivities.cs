@@ -1,4 +1,5 @@
 ﻿using Azure.Storage.Blobs;
+using FluentResults;
 using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.OData.FO.Builders;
 using IntegratoR.OData.FO.Domain.Entities.LedgerJournal;
@@ -66,13 +67,13 @@ namespace IntegratoR.SampleFunction.Functions
 
                 if (string.IsNullOrEmpty(connectionString))
                 {
-                    var error = new Error(
+                    var error = new IntegrationError(
                         "BlobStorage.ConnectionStringNotFound",
                         "AzureWebJobsStorage connection string not found in environment variables.",
                         ErrorType.Failure);
 
                     _logger.LogError("AzureWebJobsStorage connection string not found");
-                    return Result<byte[]>.Fail(error);
+                    return Result.Fail<byte[]>(error);
                 }
 
                 // Create blob client
@@ -83,13 +84,13 @@ namespace IntegratoR.SampleFunction.Functions
                 // Check if blob exists
                 if (!await blobClient.ExistsAsync())
                 {
-                    var error = new Error(
+                    var error = new IntegrationError(
                         "BlobStorage.BlobNotFound",
                         $"Blob {blobName} not found in container 'input'.",
                         ErrorType.NotFound);
 
                     _logger.LogError("Blob {BlobName} not found in container 'input'", blobName);
-                    return Result<byte[]>.Fail(error);
+                    return Result.Fail<byte[]>(error);
                 }
 
                 // Download blob content
@@ -103,18 +104,18 @@ namespace IntegratoR.SampleFunction.Functions
                     blobName,
                     content.Length / 1024.0);
 
-                return Result<byte[]>.Ok(content);
+                return Result.Ok(content);
             }
             catch (Exception ex)
             {
-                var error = new Error(
+                var error = new IntegrationError(
                     "BlobStorage.ReadFailed",
                     $"Failed to read blob {blobName}: {ex.Message}",
                     ErrorType.Failure,
                     ex);
 
                 _logger.LogError(ex, "Failed to read blob {BlobName}", blobName);
-                return Result<byte[]>.Fail(error);
+                return Result.Fail<byte[]>(error);
             }
         }
 
@@ -144,22 +145,22 @@ namespace IntegratoR.SampleFunction.Functions
                 if (lines == null || lines.Count == 0)
                 {
                     _logger.LogWarning("File content is empty or invalid.");
-                    return Result<List<RelionLedgerJournalLine>>.Ok(new List<RelionLedgerJournalLine>());
+                    return Result.Ok(new List<RelionLedgerJournalLine>());
                 }
 
                 _logger.LogInformation("Successfully parsed {Count} journal lines", lines.Count);
-                return Result<List<RelionLedgerJournalLine>>.Ok(lines);
+                return Result.Ok(lines);
             }
             catch (Exception ex)
             {
-                var error = new Error(
+                var error = new IntegrationError(
                     "JournalFile.ParseFailed",
                     $"Failed to parse journal file: {ex.Message}",
                     ErrorType.Failure,
                     ex);
 
                 _logger.LogError(ex, "Failed to parse journal file");
-                return Result<List<RelionLedgerJournalLine>>.Fail(error);
+                return Result.Fail<List<RelionLedgerJournalLine>>(error);
             }
         }
 
@@ -186,12 +187,12 @@ namespace IntegratoR.SampleFunction.Functions
             var createHeaderResult = await _mediator.Send(
                 new CreateLedgerJournalHeaderCommand<LedgerJournalHeader>(newLedgerJournalHeader));
 
-            if (createHeaderResult.IsFailure)
+            if (createHeaderResult.IsFailed)
             {
                 _logger.LogError("Failed to create journal header for company {Company}: {Error}",
-                    company, createHeaderResult.Error?.Message);
+                    company, createHeaderResult.GetError()?.Message);
 
-                return Result<LedgerJournalHeader>.Fail(createHeaderResult);
+                return Result.Fail<LedgerJournalHeader>(createHeaderResult.Errors);
             }
 
             _logger.LogInformation("Created journal header with batch number {BatchNumber}.",
@@ -225,10 +226,10 @@ namespace IntegratoR.SampleFunction.Functions
                 var dimensionOrder = await _mediator.Send(
                     new GetDimensionOrdersQuery(_foSettings.DimensionFormatName, _foSettings.DimensionHierarchyType));
 
-                if (dimensionOrder.IsFailure)
+                if (dimensionOrder.IsFailed)
                 {
-                    _logger.LogError("Failed to retrieve dimension order: {Error}", dimensionOrder.Error?.Message);
-                    return Result<List<LedgerJournalLine>>.Fail(dimensionOrder.Error!);
+                    _logger.LogError("Failed to retrieve dimension order: {Error}", dimensionOrder.GetError()?.Message);
+                    return Result.Fail<List<LedgerJournalLine>>(dimensionOrder.Errors);
                 }
 
                 foreach (RelionLedgerJournalLine line in lines)
@@ -242,9 +243,9 @@ namespace IntegratoR.SampleFunction.Functions
                     var ledgerAccountMapping = await _mediator.Send(
                         new GetLedgerAccountMappingQuery(line.AccountNum, ifrs));
 
-                    if (ledgerAccountMapping.IsFailure)
+                    if (ledgerAccountMapping.IsFailed)
                     {
-                        var error = new Error(
+                        var error = new IntegrationError(
                             "MapLinesActivity.LedgerAccountMappingFailed",
                             $"Failed to retrieve ledger account mapping for Relion Account {line.AccountNum} and IFRS {ifrs} for EntryNo {line.EntryNo}.",
                             ErrorType.Failure);
@@ -275,11 +276,11 @@ namespace IntegratoR.SampleFunction.Functions
                         var relionAccountMapping = await _mediator.Send(
                             new GetRelionLedgerAccountMappingQuery(EntryNo: line.EntryNo));
 
-                        if (relionAccountMapping.IsFailure)
+                        if (relionAccountMapping.IsFailed)
                         {
                             _logger.LogError(
                                 "Failed to retrieve Relion ledger account mapping for EntryNo {EntryNo}: {Error}",
-                                line.EntryNo, relionAccountMapping.Error?.Message);
+                                line.EntryNo, relionAccountMapping.GetError()?.Message);
                         }
                         else if (!string.IsNullOrEmpty(relionAccountMapping?.Value?.LedgerAccountNo))
                         {
@@ -355,9 +356,9 @@ namespace IntegratoR.SampleFunction.Functions
                         var taxGroup = await _mediator.Send(
                             new GetTaxGroupMappingQuery(postingTypeEnum, line.PostingGroup));
 
-                        if (taxGroup.IsFailure)
+                        if (taxGroup.IsFailed)
                         {
-                            var error = new Error(
+                            var error = new IntegrationError(
                                 "MapLinesActivity.TaxGroupMappingFailed",
                                 $"Failed to retrieve tax group mapping for PostingType {postingTypeEnum} and PostingGroup {line.PostingGroup} for EntryNo {line.EntryNo}.",
                                 ErrorType.Failure);
@@ -372,7 +373,7 @@ namespace IntegratoR.SampleFunction.Functions
                         // Validate VAT posting groups
                         if (string.IsNullOrEmpty(line.VATBusPostingGroup) || string.IsNullOrEmpty(line.VATProdPostingGroup))
                         {
-                            var error = new Error(
+                            var error = new IntegrationError(
                                 "MapLinesActivity.MissingTaxPostingGroups",
                                 $"Missing VAT posting groups for EntryNo {line.EntryNo}. VATBusPostingGroup: '{line.VATBusPostingGroup}', VATProdPostingGroup: '{line.VATProdPostingGroup}'.",
                                 ErrorType.Failure);
@@ -388,9 +389,9 @@ namespace IntegratoR.SampleFunction.Functions
                         var itemTaxGroup = await _mediator.Send(
                             new GetItemTaxGroupMappingQuery(line.VATBusPostingGroup, line.VATProdPostingGroup));
 
-                        if (itemTaxGroup.IsFailure)
+                        if (itemTaxGroup.IsFailed)
                         {
-                            var error = new Error(
+                            var error = new IntegrationError(
                                 "MapLinesActivity.ItemTaxGroupMappingFailed",
                                 $"Failed to retrieve item tax group mapping for VATBusPostingGroup {line.VATBusPostingGroup} and VATProdPostingGroup {line.VATProdPostingGroup} for EntryNo {line.EntryNo}.",
                                 ErrorType.Failure);
@@ -433,18 +434,18 @@ namespace IntegratoR.SampleFunction.Functions
                     "Successfully mapped {MappedCount} of {TotalCount} lines",
                     mappedLines.Count, lines.Count);
 
-                return Result<List<LedgerJournalLine>>.Ok(mappedLines);
+                return Result.Ok(mappedLines);
             }
             catch (Exception ex)
             {
-                var error = new Error(
+                var error = new IntegrationError(
                     "MapLinesActivity.UnexpectedError",
                     $"Unexpected error during line mapping: {ex.Message}",
                     ErrorType.Failure,
                     ex);
 
                 _logger.LogError(ex, "Unexpected error during line mapping");
-                return Result<List<LedgerJournalLine>>.Fail(error);
+                return Result.Fail<List<LedgerJournalLine>>(error);
             }
         }
 
@@ -489,9 +490,9 @@ namespace IntegratoR.SampleFunction.Functions
 
             var result = await _relionService.GetNewJournalLinesAsync(importDate);
 
-            if (result.IsFailure)
+            if (result.IsFailed)
             {
-                _logger.LogError("Failed to fetch journal lines from Relion: {Error}", result.Error?.Message);
+                _logger.LogError("Failed to fetch journal lines from Relion: {Error}", result.GetError()?.Message);
                 return result;
             }
 
@@ -529,18 +530,18 @@ namespace IntegratoR.SampleFunction.Functions
                 _logger.LogInformation("Prepared blob content for {BlobName} ({Size} bytes)",
                     input.BlobName, contentBytes.Length);
 
-                return Result<WriteJournalLinesActivityResult>.Ok(activityResult);
+                return Result.Ok(activityResult);
             }
             catch (Exception ex)
             {
-                var error = new Error(
+                var error = new IntegrationError(
                     "WriteBlob.SerializationFailed",
                     $"Failed to serialize journal lines: {ex.Message}",
                     ErrorType.Failure,
                     ex);
 
                 _logger.LogError(ex, "Failed to serialize journal lines");
-                return Result<WriteJournalLinesActivityResult>.Fail(error);
+                return Result.Fail<WriteJournalLinesActivityResult>(error);
             }
         }
     }

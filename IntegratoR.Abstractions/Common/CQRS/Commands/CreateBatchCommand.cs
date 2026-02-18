@@ -22,7 +22,7 @@ namespace IntegratoR.Abstractions.Common.CQRS.Commands
         {
             return new Dictionary<string, object>
             {
-                { "Count", Entities.Count() } 
+                { "Count", Entities.Count() }
             };
         }
     }

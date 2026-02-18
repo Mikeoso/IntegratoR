@@ -1,5 +1,4 @@
 ﻿using IntegratoR.Abstractions.Interfaces.Queries;
-using IntegratoR.Abstractions.Interfaces.Results;
 
 namespace IntegratoR.Abstractions.Interfaces.Queries;
 

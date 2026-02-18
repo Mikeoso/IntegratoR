@@ -1,4 +1,4 @@
-﻿using IntegratoR.Abstractions.Common.Results;
+﻿using FluentResults;
 using IntegratoR.RELion.Domain.Models;
 
 namespace IntegratoR.RELion.Interfaces.Services;

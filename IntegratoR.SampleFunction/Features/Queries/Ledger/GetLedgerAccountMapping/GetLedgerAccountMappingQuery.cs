@@ -1,4 +1,4 @@
-﻿using IntegratoR.Abstractions.Common.Results;
+﻿using FluentResults;
 using IntegratoR.Abstractions.Interfaces.Queries;
 using IntegratoR.SampleFunction.Domain.Entities.Ledger;
 using System;

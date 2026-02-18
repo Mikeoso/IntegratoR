@@ -1,4 +1,5 @@
-﻿using IntegratoR.Abstractions.Common.Results;
+﻿using FluentResults;
+using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.OData.FO.Domain.Entities.LedgerJournal;
 using IntegratoR.RELion.Domain.Models;
 using IntegratoR.SampleFunction.Domain.DTOs.Activities;
@@ -68,10 +69,10 @@ public static class JournalOrchestrators
             nameof(JournalActivities.ReadBlobActivity),
             blobName);
 
-        if (contentResult.IsFailure)
+        if (contentResult.IsFailed)
         {
             logger.LogError("Failed to read blob {BlobName}: {Error}",
-                blobName, contentResult.Error?.Message);
+                blobName, contentResult.GetError()?.Message);
             return;
         }
 
@@ -83,10 +84,10 @@ public static class JournalOrchestrators
             nameof(JournalActivities.ParseJournalFileActivity),
             contentResult.Value);
 
-        if (linesResult.IsFailure)
+        if (linesResult.IsFailed)
         {
             logger.LogError("Failed to parse blob {BlobName}: {Error}",
-                blobName, linesResult.Error?.Message);
+                blobName, linesResult.GetError()?.Message);
             return;
         }
 
@@ -125,11 +126,11 @@ public static class JournalOrchestrators
 
         // STEP 6: Aggregation - Collect results and determine overall status
         var results = processingTasks.Select(t => t.Result).ToList();
-        var failedTasks = results.Where(r => r.IsFailure).ToList();
+        var failedTasks = results.Where(r => r.IsFailed).ToList();
 
         if (failedTasks.Count != 0)
         {
-            var aggregatedErrors = string.Join("; ", failedTasks.Select(r => r?.Error?.Message));
+            var aggregatedErrors = string.Join("; ", failedTasks.Select(r => r?.GetError()?.Message));
             logger.LogError(
                 "Processing failed for {FailedCount} of {TotalCount} companies in file {BlobName}. Errors: {Errors}",
                 failedTasks.Count,
@@ -166,7 +167,7 @@ public static class JournalOrchestrators
 
         if (input == null || string.IsNullOrEmpty(input.Company))
         {
-            var error = new Error(
+            var error = new IntegrationError(
                 "CompanyOrchestrator.InvalidInput",
                 "Input or Company identifier is null or empty.",
                 ErrorType.Validation);
@@ -182,18 +183,18 @@ public static class JournalOrchestrators
             nameof(JournalActivities.CreateJournalHeaderActivity),
             input.Company);
 
-        if (headerResult.IsFailure)
+        if (headerResult.IsFailed)
         {
             logger.LogError("Failed to create journal header for company {Company}: {Error}",
-                input.Company, headerResult.Error?.Message);
-            return Result.Fail(headerResult.Error!);
+                input.Company, headerResult.GetError()?.Message);
+            return Result.Fail(headerResult.Errors);
         }
 
         var journalBatchNumber = headerResult.Value?.JournalBatchNumber;
 
         if (string.IsNullOrEmpty(journalBatchNumber))
         {
-            var error = new Error(
+            var error = new IntegrationError(
                 "CompanyOrchestrator.MissingBatchNumber",
                 "Created journal header is missing batch number.",
                 ErrorType.Failure);
@@ -223,12 +224,12 @@ public static class JournalOrchestrators
             nameof(JournalActivities.MapLinesActivity),
             mappingInput);
 
-        if (mappedLinesResult.IsFailure)
+        if (mappedLinesResult.IsFailed)
         {
             logger.LogError(
                 "Failed to map lines for company {Company}: {Error}",
-                input.Company, mappedLinesResult.Error?.Message);
-            return Result.Fail(mappedLinesResult.Error!);
+                input.Company, mappedLinesResult.GetError()?.Message);
+            return Result.Fail(mappedLinesResult.Errors);
         }
 
         var mappedLines = mappedLinesResult.Value;
@@ -250,11 +251,11 @@ public static class JournalOrchestrators
             nameof(JournalActivities.CreateJournalLinesActivity),
             mappedLines);
 
-        if (createResult.IsFailure)
+        if (createResult.IsFailed)
         {
             logger.LogError(
                 "Failed to create journal lines for company {Company}: {Error}",
-                input.Company, createResult.Error?.Message);
+                input.Company, createResult.GetError()?.Message);
             return createResult;
         }
 
@@ -298,9 +299,9 @@ public static class JournalOrchestrators
             nameof(JournalActivities.GetRelionJournalLinesActivity),
             orchestrationInput.ImportDate);
 
-        if (linesResult.IsFailure)
+        if (linesResult.IsFailed)
         {
-            logger.LogError("Failed to fetch lines from Relion: {Error}", linesResult.Error?.Message);
+            logger.LogError("Failed to fetch lines from Relion: {Error}", linesResult.GetError()?.Message);
             return;
         }
 
@@ -328,10 +329,10 @@ public static class JournalOrchestrators
             nameof(JournalActivities.WriteJournalLinesToBlobActivity),
             writeBlobInput);
 
-        if (writeBlobResult.IsFailure)
+        if (writeBlobResult.IsFailed)
         {
             logger.LogError("Failed to write blob {BlobName}: {Error}",
-                blobName, writeBlobResult.Error?.Message);
+                blobName, writeBlobResult.GetError()?.Message);
             return;
         }
 

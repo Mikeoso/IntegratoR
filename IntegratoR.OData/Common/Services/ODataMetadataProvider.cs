@@ -1,4 +1,5 @@
-﻿using IntegratoR.Abstractions.Common.Results;
+﻿using FluentResults;
+using IntegratoR.Abstractions.Common.Results;
 using Microsoft.Extensions.Logging;
 using System.Xml;
 
@@ -36,7 +37,7 @@ public class ODataMetadataProvider
         if (_cachedMetadata != null)
         {
             _logger.LogDebug("Returning cached metadata.");
-            return Result<string>.Ok(_cachedMetadata);
+            return Result.Ok(_cachedMetadata);
         }
 
         // Resolve the full path
@@ -44,7 +45,7 @@ public class ODataMetadataProvider
 
         if (!File.Exists(resolvedPath))
         {
-            var error = new Error(
+            var error = new IntegrationError(
                 "ODataMetadata.FileNotFound",
                 $"Metadata file not found. Searched paths:\n" +
                 $"  - Configured: {metadataFilePath}\n" +
@@ -54,7 +55,7 @@ public class ODataMetadataProvider
                 ErrorType.NotFound);
 
             _logger.LogError("Metadata file not found at resolved path: {ResolvedPath}", resolvedPath);
-            return Result<string>.Fail(error);
+            return Result.Fail<string>(error);
         }
 
         _logger.LogInformation("Loading OData metadata from: {MetadataFilePath}", resolvedPath);
@@ -69,26 +70,26 @@ public class ODataMetadataProvider
 
             // Validate that it's proper XML
             var validationResult = ValidateXml(xmlContent);
-            if (validationResult.IsFailure)
+            if (validationResult.IsFailed)
             {
-                return Result<string>.Fail(validationResult);
+                return Result.Fail<string>(validationResult.Errors);
             }
 
             _cachedMetadata = xmlContent;
             _logger.LogInformation("Successfully loaded and cached metadata ({Size} bytes)", xmlContent.Length);
 
-            return Result<string>.Ok(_cachedMetadata);
+            return Result.Ok(_cachedMetadata);
         }
         catch (Exception ex)
         {
-            var error = new Error(
+            var error = new IntegrationError(
                 "ODataMetadata.LoadFailed",
                 $"Failed to load metadata from file: {ex.Message}",
                 ErrorType.Failure,
                 ex);
 
             _logger.LogError(ex, "Failed to load metadata from file: {MetadataFilePath}", resolvedPath);
-            return Result<string>.Fail(error);
+            return Result.Fail<string>(error);
         }
     }
 
@@ -184,7 +185,7 @@ public class ODataMetadataProvider
         }
         catch (Exception ex)
         {
-            var error = new Error(
+            var error = new IntegrationError(
                 "ODataMetadata.ValidationFailed",
                 $"XML validation failed: {ex.Message}",
                 ErrorType.Validation,

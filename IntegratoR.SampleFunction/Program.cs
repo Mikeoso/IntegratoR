@@ -1,5 +1,6 @@
 using Azure.Identity;
 using FluentValidation;
+using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.Application.Common.Extensions;
 using IntegratoR.OData.Common.Extensions;
 using IntegratoR.OData.FO.Common.Extensions;
@@ -9,7 +10,15 @@ using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Newtonsoft.Json;
 using System.Reflection;
+
+// Configure Newtonsoft.Json default settings for Durable Task serialization.
+// Durable Functions uses JsonConvert internally for orchestration state.
+JsonConvert.DefaultSettings = () => new JsonSerializerSettings
+{
+    Converters = { new ResultJsonConverter(), new ResultGenericJsonConverter() }
+};
 
 ArgumentNullException keyVaultUriNotSetException = new("KeyVault URI is not set in environment variables.");
 

@@ -1,4 +1,4 @@
-﻿using IntegratoR.Abstractions.Common.Results;
+﻿using FluentResults;
 using IntegratoR.Abstractions.Interfaces.Services;
 using IntegratoR.SampleFunction.Domain.Entities.Tax;
 using IntegratoR.SampleFunction.Features.Queries.Tax.GetTaxGroupMapping;
@@ -34,13 +34,13 @@ namespace IntegratoR.SampleFunction.Features.Queries.Tax.GetTaxGroupMapping
                      x.RelionBusinessGroup == request.BookingGroup,
                 cancellationToken);
 
-            if (result.IsFailure)
+            if (result.IsFailed)
             {
-                return Result<TaxGroupMapping>.Fail(result);
+                return Result.Fail<TaxGroupMapping>(result.Errors);
             }
 
             var taxGroupMapping = result?.Value?.FirstOrDefault();
-            return Result<TaxGroupMapping>.Ok(taxGroupMapping!);
+            return Result.Ok(taxGroupMapping!);
         }
     }
 }

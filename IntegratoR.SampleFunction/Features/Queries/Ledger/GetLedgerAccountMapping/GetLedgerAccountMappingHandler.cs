@@ -1,4 +1,4 @@
-﻿using IntegratoR.Abstractions.Common.Results;
+﻿using FluentResults;
 using IntegratoR.Abstractions.Interfaces.Services;
 using IntegratoR.SampleFunction.Domain.Entities.Ledger;
 using IntegratoR.SampleFunction.Features.Queries.Ledger.GetLedgerAccountMapping;
@@ -45,13 +45,13 @@ namespace IntegratoR.SampleFunction.Features.Queries.Ledger.GetLedgerAccountMapp
                     cancellationToken);
             }
 
-            if (result.IsFailure)
+            if (result.IsFailed)
             {
-                return Result<LedgerAccountMapping>.Fail(result);
+                return Result.Fail<LedgerAccountMapping>(result.Errors);
             }
 
             var ledgerAccountMapping = result?.Value?.FirstOrDefault();
-            return Result<LedgerAccountMapping>.Ok(ledgerAccountMapping!);
+            return Result.Ok(ledgerAccountMapping!);
         }
     }
 }
