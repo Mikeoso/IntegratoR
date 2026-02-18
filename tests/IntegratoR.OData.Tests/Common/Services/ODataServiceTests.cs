@@ -1,5 +1,6 @@
 using FluentAssertions;
 using IntegratoR.Abstractions.Common.Results;
+using IntegratoR.Abstractions.Domain.Entities;
 using IntegratoR.OData.Common.Services;
 using IntegratoR.TestKit.Assertions;
 using IntegratoR.TestKit.Builders;
@@ -7,9 +8,30 @@ using IntegratoR.TestKit.Doubles.Entities;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 using Simple.OData.Client;
+using System.Text.Json.Serialization;
 using Xunit;
 
 namespace IntegratoR.OData.Tests.Common.Services;
+
+/// <summary>
+/// A test entity with a <see cref="JsonIgnoreAttribute"/> decorated property to verify
+/// that <see cref="ODataService{TEntity}"/> excludes such properties from the create payload.
+/// </summary>
+public class TestEntityWithJsonIgnore : BaseEntity<string>
+{
+    /// <summary>Gets or sets the primary key.</summary>
+    public required string Id { get; set; }
+
+    /// <summary>Gets or sets the name, included in payload.</summary>
+    public required string Name { get; set; }
+
+    /// <summary>Gets or sets a property that is excluded from serialisation.</summary>
+    [JsonIgnore]
+    public string? ServerGeneratedField { get; set; }
+
+    /// <inheritdoc/>
+    public override object[] GetCompositeKey() => [Id];
+}
 
 /// <summary>
 /// Tests for <see cref="ODataService{TEntity}"/> covering CRUD, query, batch and payload construction.
@@ -216,6 +238,26 @@ public class ODataServiceTests
         // Assert
         result.Should().BeSuccessful();
         result.Value.Should().HaveCount(1);
+    }
+
+    /// <summary>
+    /// Verifies that FindAsync with a filter expression passes the filter to the OData query.
+    /// </summary>
+    [Fact]
+    public async Task FindAsync_WithFilter_AppliesFilterAndReturnsEntities()
+    {
+        // Arrange
+        var entity = TestEntityBuilder.Default().WithName("Filtered").Build();
+        var filtered = new List<TestEntity> { entity };
+        _boundClient.FindEntriesAsync(Arg.Any<CancellationToken>()).Returns(filtered);
+
+        // Act
+        var result = await _sut.FindAsync(e => e.Name == "Filtered", CancellationToken.None);
+
+        // Assert
+        result.Should().BeSuccessful();
+        result.Value.Should().HaveCount(1);
+        _boundClient.Received(1).Filter(Arg.Any<System.Linq.Expressions.Expression<Func<TestEntity, bool>>>());
     }
 
     /// <summary>
@@ -474,6 +516,44 @@ public class ODataServiceTests
         capturedPayload.Should().NotBeNull();
         capturedPayload!.Should().ContainKey("Name");
         capturedPayload.Should().ContainKey("Description");
+    }
+
+    /// <summary>
+    /// Verifies that CreatePayload excludes properties decorated with <see cref="JsonIgnoreAttribute"/>.
+    /// </summary>
+    [Fact]
+    public async Task AddAsync_EntityWithJsonIgnoreAttribute_ExcludesFieldFromPayload()
+    {
+        // Arrange
+        var jsonIgnoreSut = new ODataService<TestEntityWithJsonIgnore>(
+            _client,
+            Substitute.For<ILogger<ODataService<TestEntityWithJsonIgnore>>>());
+
+        var boundClientJsonIgnore = Substitute.For<IBoundClient<TestEntityWithJsonIgnore>>();
+        _client.For<TestEntityWithJsonIgnore>(null).Returns(boundClientJsonIgnore);
+
+        IDictionary<string, object>? capturedPayload = null;
+        boundClientJsonIgnore
+            .Set(Arg.Do<IDictionary<string, object>>(p => capturedPayload = p))
+            .Returns(boundClientJsonIgnore);
+        boundClientJsonIgnore
+            .InsertEntryAsync(true, Arg.Any<CancellationToken>())
+            .Returns(new TestEntityWithJsonIgnore { Id = "id1", Name = "Name", ServerGeneratedField = "server" });
+
+        var entity = new TestEntityWithJsonIgnore
+        {
+            Id = "id1",
+            Name = "Test Name",
+            ServerGeneratedField = "should-be-excluded"
+        };
+
+        // Act
+        await jsonIgnoreSut.AddAsync(entity, CancellationToken.None);
+
+        // Assert - ServerGeneratedField has [JsonIgnore] so should NOT appear in the payload
+        capturedPayload.Should().NotBeNull();
+        capturedPayload!.Should().ContainKey("Name");
+        capturedPayload.Should().NotContainKey("ServerGeneratedField");
     }
 
     #endregion
