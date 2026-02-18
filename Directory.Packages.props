@@ -30,8 +30,8 @@
   </ItemGroup>
 
   <ItemGroup Label="OData">
-    <PackageVersion Include="Microsoft.OData.Core" Version="7.22.0" />
-    <PackageVersion Include="Microsoft.OData.Edm" Version="7.22.0" />
+    <PackageVersion Include="Microsoft.OData.Core" Version="8.4.3" />
+    <PackageVersion Include="Microsoft.OData.Edm" Version="8.4.3" />
     <PackageVersion Include="Simple.OData.Client" Version="6.0.1" />
     <PackageVersion Include="Simple.OData.V4.Client" Version="6.0.1" />
   </ItemGroup>
