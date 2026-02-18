@@ -122,7 +122,10 @@ public static class ApplicationDependencyInjection
 
             var odataClientSettings = new ODataClientSettings(httpClient)
             {
-                BaseUri = new Uri(settings.Url)
+                BaseUri = new Uri(settings.Url),
+                ReadUntypedAsString = true,
+                IgnoreUnmappedProperties = true,
+                PayloadFormat = ODataPayloadFormat.Json
             };
 
             // Load local metadata if configured

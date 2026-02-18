@@ -170,8 +170,10 @@ public class ODataMetadataProvider
         {
             var settings = new XmlReaderSettings
             {
-                DtdProcessing = DtdProcessing.Parse, // Extra safety
-                XmlResolver = null // No external entity resolution
+                // Parse (not Prohibit) because D365 F&O metadata may contain residual DTD
+                // artifacts after stripping. XmlResolver = null prevents external entity resolution.
+                DtdProcessing = DtdProcessing.Parse,
+                XmlResolver = null
             };
 
             using var stringReader = new StringReader(xmlContent);
