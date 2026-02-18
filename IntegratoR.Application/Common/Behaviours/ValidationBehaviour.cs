@@ -1,6 +1,6 @@
-﻿using FluentValidation;
+﻿using FluentResults;
+using FluentValidation;
 using IntegratoR.Abstractions.Common.Results;
-using IntegratoR.Abstractions.Interfaces.Results;
 using MediatR;
 
 namespace IntegratoR.Application.Common.Behaviours;
@@ -35,7 +35,7 @@ namespace IntegratoR.Application.Common.Behaviours;
 /// </remarks>
 public class ValidationBehaviour<TRequest, TResponse> : IPipelineBehavior<TRequest, TResponse>
     where TRequest : IRequest<TResponse>
-    where TResponse : IResult
+    where TResponse : IResultBase
 {
     private readonly IEnumerable<IValidator<TRequest>> _validators;
 
@@ -79,7 +79,7 @@ public class ValidationBehaviour<TRequest, TResponse> : IPipelineBehavior<TReque
         // If no validators are registered for this request type, skip validation.
         if (!_validators.Any())
         {
-            return await next();
+            return await next().ConfigureAwait(false);
         }
 
         var context = new ValidationContext<TRequest>(request);
@@ -95,15 +95,19 @@ public class ValidationBehaviour<TRequest, TResponse> : IPipelineBehavior<TReque
         {
             // By default, we return the first validation error. This simplifies client error handling.
             var firstFailure = validationFailures.First();
-            var error = new Error("Validation.Error", firstFailure.ErrorMessage, ErrorType.Validation);
+            var error = new IntegrationError("Validation.Error", firstFailure.ErrorMessage, ErrorType.Validation);
 
             // Dynamically create the correct type of failed Result (generic or non-generic).
             var resultType = typeof(TResponse);
             if (resultType.IsGenericType && resultType.GetGenericTypeDefinition() == typeof(Result<>))
             {
                 var genericType = resultType.GetGenericArguments()[0];
-                var failMethod = typeof(Result<>).MakeGenericType(genericType)
-                  .GetMethod(nameof(Result<object>.Fail), new[] { typeof(Error) });
+                var failMethod = typeof(Result)
+                    .GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+                    .First(m => m.Name == "Fail" && m.IsGenericMethod
+                        && m.GetParameters().Length == 1
+                        && m.GetParameters()[0].ParameterType == typeof(IError))
+                    .MakeGenericMethod(genericType);
 
                 return (TResponse)failMethod!.Invoke(null, new object[] { error })!;
             }

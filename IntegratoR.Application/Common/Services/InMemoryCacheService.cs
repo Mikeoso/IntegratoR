@@ -51,7 +51,7 @@ public class InMemoryCacheService : ICacheService
             throw new ArgumentNullException(nameof(cacheKey), "Cache key cannot be null or empty.");
         }
 
-        await _cacheLock.WaitAsync();
+        await _cacheLock.WaitAsync().ConfigureAwait(false);
         try
         {
             return _cache.TryGetValue(cacheKey, out T? value) ? value : default;
@@ -83,7 +83,7 @@ public class InMemoryCacheService : ICacheService
             AbsoluteExpirationRelativeToNow = expirationTime ?? TimeSpan.FromMinutes(30)
         };
 
-        await _cacheLock.WaitAsync();
+        await _cacheLock.WaitAsync().ConfigureAwait(false);
         try
         {
             _cache.Set(cacheKey, value, cacheEntryOptions);
@@ -103,7 +103,7 @@ public class InMemoryCacheService : ICacheService
             throw new ArgumentNullException(nameof(cacheKey), "Cache key cannot be null or empty.");
         }
 
-        await _cacheLock.WaitAsync();
+        await _cacheLock.WaitAsync().ConfigureAwait(false);
         try
         {
             _cache.Remove(cacheKey);

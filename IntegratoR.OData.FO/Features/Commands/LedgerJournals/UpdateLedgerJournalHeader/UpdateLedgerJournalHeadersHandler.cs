@@ -1,4 +1,5 @@
-﻿using IntegratoR.Abstractions.Common.Results;
+﻿using FluentResults;
+using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.OData.FO.Domain.Entities.LedgerJournal;
 using IntegratoR.OData.Interfaces.Services;
 using MediatR;
@@ -21,7 +22,7 @@ public class UpdateLedgerJournalHandler<TEntity> : IRequestHandler<UpdateLedgerJ
     {
         _logger.LogInformation("Updating Ledger Journal Headers in batch...");
 
-        var result = await _service.UpdateBatchAsync(request.LedgerJournalHeaders, cancellationToken);
+        var result = await _service.UpdateBatchAsync(request.LedgerJournalHeaders, cancellationToken).ConfigureAwait(false);
 
         return result.Match(
             onSuccess: () =>

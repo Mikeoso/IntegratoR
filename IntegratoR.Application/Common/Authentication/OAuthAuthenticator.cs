@@ -1,4 +1,5 @@
-﻿using IntegratoR.Abstractions.Common.Results;
+﻿using FluentResults;
+using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.Abstractions.Interfaces.Authentication;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Identity.Client;
@@ -65,7 +66,7 @@ public class OAuthAuthenticator : IAuthenticator
 
         if (_memoryCache.TryGetValue(tokenCacheKey, out string? cachedToken))
         {
-            return Result<string>.Ok(cachedToken!);
+            return Result.Ok(cachedToken!);
         }
 
         try
@@ -79,21 +80,21 @@ public class OAuthAuthenticator : IAuthenticator
             // The "/.default" scope requests all application-level permissions that have been
             // granted to this application registration for the specified resource.
             var scopes = new[] { $"{resource}/.default" };
-            var authResult = await confidentialClientApp.AcquireTokenForClient(scopes).ExecuteAsync();
+            var authResult = await confidentialClientApp.AcquireTokenForClient(scopes).ExecuteAsync().ConfigureAwait(false);
 
             // Proactively expire the cache entry 5 minutes before the actual token expires
             // to avoid using an invalidated token due to clock skew or transit delays.
             var cacheExpiration = authResult.ExpiresOn.Subtract(TimeSpan.FromMinutes(5));
             _memoryCache.Set(tokenCacheKey, authResult.AccessToken, cacheExpiration);
 
-            return Result<string>.Ok(authResult.AccessToken);
+            return Result.Ok(authResult.AccessToken);
         }
         catch (MsalServiceException ex)
         {
             // Catching the specific MSAL exception allows us to create a rich, structured error
             // that is agnostic of the underlying library, providing a stable error contract.
             // The MSAL error code is included for easier debugging.
-            return Result<string>.Fail(new Error($"Auth.Msal.{ex.ErrorCode}", ex.Message, ErrorType.Failure, ex));
+            return Result.Fail<string>(new IntegrationError($"Auth.Msal.{ex.ErrorCode}", ex.Message, ErrorType.Failure, ex));
         }
     }
 }

@@ -1,4 +1,4 @@
-﻿using IntegratoR.Abstractions.Common.Results;
+﻿using FluentResults;
 using IntegratoR.Abstractions.Interfaces.Commands;
 using IntegratoR.Abstractions.Interfaces.Entity;
 using System;

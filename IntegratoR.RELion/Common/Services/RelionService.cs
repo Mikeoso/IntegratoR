@@ -1,4 +1,5 @@
-﻿using IntegratoR.Abstractions.Common.Results;
+﻿using FluentResults;
+using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.RELion.Domain.DTOs;
 using IntegratoR.RELion.Domain.Models;
 using IntegratoR.RELion.Domain.Settings;
@@ -37,15 +38,15 @@ public class RelionService : IRelionService
 
         _logger.LogInformation("Starting to fetch all pages for new journal lines from Relion since {SinceDate}.", since);
 
-        var companyId = await GetCompanyByNameAsync(_settings.Company, cancellationToken);
+        var companyId = await GetCompanyByNameAsync(_settings.Company, cancellationToken).ConfigureAwait(false);
 
-        if (companyId.IsFailure)
+        if (companyId.IsFailed)
         {
-            var error = new Error(
+            var error = new IntegrationError(
                 "RelionService.GetLedgerAccountMappingsAsync.CompanyNotFound",
                 $"Failed to retrieve company information for {_settings.Company}.",
                 ErrorType.Failure);
-            return Result<List<RelionLedgerJournalLine>>.Fail(error);
+            return Result.Fail<List<RelionLedgerJournalLine>>(error);
         }
 
         while (moreRows)
@@ -64,11 +65,11 @@ public class RelionService : IRelionService
                 journalLineFields,
                 cancellationToken,
                 PageSize,
-                recordsToSkip);
+                recordsToSkip).ConfigureAwait(false);
 
-            if (pageResult.IsFailure)
+            if (pageResult.IsFailed)
             {
-                return Result<List<RelionLedgerJournalLine>>.Fail(pageResult);
+                return Result.Fail<List<RelionLedgerJournalLine>>(pageResult.Errors);
             }
 
             var (lines, hasMore) = pageResult.Value;
@@ -84,7 +85,7 @@ public class RelionService : IRelionService
         }
 
         _logger.LogInformation("Finished fetching data. Total lines retrieved: {TotalCount}", allLines.Count);
-        return Result<List<RelionLedgerJournalLine>>.Ok(allLines);
+        return Result.Ok(allLines);
     }
 
     public async Task<Result<RelionLedgerAccountMapping>> GetLedgerAccountMappingsAsync(int entryNo, CancellationToken cancellationToken = default)
@@ -98,15 +99,15 @@ public class RelionService : IRelionService
             Filter = true,
             Value = $"={entryNo}"
         };
-        var companyId = await GetCompanyByNameAsync(_settings.Company, cancellationToken);
+        var companyId = await GetCompanyByNameAsync(_settings.Company, cancellationToken).ConfigureAwait(false);
 
-        if (companyId.IsFailure)
+        if (companyId.IsFailed)
         {
-            var error = new Error(
+            var error = new IntegrationError(
                 "RelionService.GetLedgerAccountMappingsAsync.CompanyNotFound",
                 $"Failed to retrieve company information for {_settings.Company}.",
                 ErrorType.Failure);
-            return Result<RelionLedgerAccountMapping>.Fail(error);
+            return Result.Fail<RelionLedgerAccountMapping>(error);
         }
 
         var pageResult = await QueryAsync<RelionLedgerAccountMapping>(
@@ -116,30 +117,30 @@ public class RelionService : IRelionService
             mappingFields,
             cancellationToken,
             PageSize,
-            0);
+            0).ConfigureAwait(false);
 
-        if (pageResult.IsFailure)
+        if (pageResult.IsFailed)
         {
-            var error = new Error(
+            var error = new IntegrationError(
                 "RelionService.GetLedgerAccountMappingsAsync.Failed",
                 $"Failed to retrieve ledger account mappings from Relion for EntryNo {entryNo}.",
                 ErrorType.Failure);
 
-            return Result<RelionLedgerAccountMapping>.Fail(error);
+            return Result.Fail<RelionLedgerAccountMapping>(error);
         }
 
         var mapping = pageResult.Value.Lines.FirstOrDefault();
 
         if (mapping == null)
         {
-            return Result<RelionLedgerAccountMapping>.Ok(new RelionLedgerAccountMapping
+            return Result.Ok(new RelionLedgerAccountMapping
             {
                 LedgerAccountNo = string.Empty,
                 TaxAccountNo = string.Empty
             });
         }
         _logger.LogInformation("Retrieved Relion Ledger Account Mapping for EntryNo: {EntryNo}", entryNo);
-        return Result<RelionLedgerAccountMapping>.Ok(mapping);
+        return Result.Ok(mapping);
     }
 
     public async Task<Result<RelionCompany>> GetCompanyByNameAsync(string companyName, CancellationToken cancellationToken = default)
@@ -147,26 +148,26 @@ public class RelionService : IRelionService
         _logger.LogInformation("Fetching details for company {CompanyName}.", companyName);
         try
         {
-            var response = await _httpClient.GetAsync($"{_settings.Url}/api/v2.0/companies", cancellationToken);
+            var response = await _httpClient.GetAsync($"{_settings.Url}/api/v2.0/companies", cancellationToken).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
             {
-                return Result<RelionCompany>.Fail(new Error("Relion.ApiError", $"API returned status code {response.StatusCode}.", ErrorType.Failure));
+                return Result.Fail<RelionCompany>(new IntegrationError("Relion.ApiError", $"API returned status code {response.StatusCode}.", ErrorType.Failure));
             }
 
-            var companiesWrapper = JsonConvert.DeserializeObject<RelionCompanyDataWrapper<RelionCompany>>(await response.Content.ReadAsStringAsync(cancellationToken));
+            var companiesWrapper = JsonConvert.DeserializeObject<RelionCompanyDataWrapper<RelionCompany>>(await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false));
             var company = companiesWrapper?.Data.FirstOrDefault(c => c.Name.Equals(companyName, StringComparison.OrdinalIgnoreCase));
 
             if (company is null)
             {
-                return Result<RelionCompany>.Fail(new Error("Relion.CompanyNotFound", $"Company with name '{companyName}' not found.", ErrorType.NotFound));
+                return Result.Fail<RelionCompany>(new IntegrationError("Relion.CompanyNotFound", $"Company with name '{companyName}' not found.", ErrorType.NotFound));
             }
 
-            return Result<RelionCompany>.Ok(company);
+            return Result.Ok(company);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "An unexpected error occurred while fetching company data for {CompanyName}.", companyName);
-            return Result<RelionCompany>.Fail(new Error("Relion.Exception", ex.Message, ErrorType.Failure, ex));
+            return Result.Fail<RelionCompany>(new IntegrationError("Relion.Exception", ex.Message, ErrorType.Failure, ex));
         }
     }
     #endregion
@@ -205,43 +206,35 @@ public class RelionService : IRelionService
                 DefaultValueHandling = DefaultValueHandling.Ignore
             });
 
-            var relionCompany = await GetCompanyByNameAsync(_settings.Company);
-
-            if (relionCompany.IsFailure)
-            {
-                _logger.LogError("Failed to retrieve company information: {Error}", relionCompany.Error);
-                return Result<(List<T>, bool)>.Fail(relionCompany);
-            }
-
             var baseUrl = _settings.Url + string.Format(LEDGER_JOURNAL_ENDPOINT, companyId);
 
-            var response = await _httpClient.PostAsync(baseUrl, new StringContent(jsonPayload, Encoding.UTF8, "application/json"), cancellationToken);
+            var response = await _httpClient.PostAsync(baseUrl, new StringContent(jsonPayload, Encoding.UTF8, "application/json"), cancellationToken).ConfigureAwait(false);
 
             if (!response.IsSuccessStatusCode)
             {
-                var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
+                var errorContent = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
                 _logger.LogError("Failed to fetch data from Relion. Status: {StatusCode}, Response: {Response}", response.StatusCode, errorContent);
-                return Result<(List<T>, bool)>.Fail(new Error("Relion.ApiError", $"API returned status code {response.StatusCode}.", ErrorType.Failure));
+                return Result.Fail<(List<T>, bool)>(new IntegrationError("Relion.ApiError", $"API returned status code {response.StatusCode}.", ErrorType.Failure));
             }
 
-            var content = await response.Content.ReadAsStringAsync(cancellationToken);
+            var content = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
             var responsePayload = JsonConvert.DeserializeObject<RelionResponsePayload>(content);
             var dataEntity = responsePayload?.EntitySet.FirstOrDefault(e => !string.IsNullOrEmpty(e.EncodedResponseJson));
 
             if (dataEntity is null)
             {
-                return Result<(List<T>, bool)>.Ok((new List<T>(), false));
+                return Result.Ok<(List<T>, bool)>((new List<T>(), false));
             }
 
             var decodedJson = Encoding.UTF8.GetString(Convert.FromBase64String(dataEntity.EncodedResponseJson!));
             var wrapper = JsonConvert.DeserializeObject<RelionDataWrapper<T>>(decodedJson);
 
-            return Result<(List<T>, bool)>.Ok((wrapper?.Data ?? new List<T>(), dataEntity.MoreRows));
+            return Result.Ok<(List<T>, bool)>((wrapper?.Data ?? new List<T>(), dataEntity.MoreRows));
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "An unexpected error occurred in QueryAsync for table {TableNumber}.", tableNumber);
-            return Result<(List<T>, bool)>.Fail(new Error("Relion.Exception", ex.Message, ErrorType.Failure, ex));
+            return Result.Fail<(List<T>, bool)>(new IntegrationError("Relion.Exception", ex.Message, ErrorType.Failure, ex));
         }
     }
 }

@@ -1,5 +1,5 @@
 ﻿using IntegratoR.Abstractions.Common.CQRS.Commands;
-using IntegratoR.Abstractions.Common.Results;
+using FluentResults;
 using IntegratoR.Abstractions.Interfaces.Entity;
 using IntegratoR.Abstractions.Interfaces.Services;
 using MediatR;
@@ -23,7 +23,7 @@ namespace IntegratoR.Application.Features.Common.Commands
 
         public async Task<Result<TEntity>> Handle(CreateCommand<TEntity> request, CancellationToken cancellationToken)
         {
-            return await _service.AddAsync(request.Entity, cancellationToken);
+            return await _service.AddAsync(request.Entity, cancellationToken).ConfigureAwait(false);
         }
     }
 }

@@ -1,4 +1,5 @@
-﻿using IntegratoR.Abstractions.Common.Results;
+﻿using FluentResults;
+using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.Abstractions.Interfaces.Services;
 using IntegratoR.SampleFunction.Domain.Entities.Relion;
 using MediatR;
@@ -31,15 +32,15 @@ namespace IntegratoR.SampleFunction.Features.Commands.General.CreateRelionErrorP
 
             var result = await _service.AddAsync(relionErrorProtocol, cancellationToken);
 
-            if (result.IsFailure)
+            if (result.IsFailed)
             {
-                var error = result.Error;
+                var error = result.GetError();
 
-                return Result<bool>.Fail(error!);
+                return Result.Fail<bool>(error!);
             }
 
             _logger.LogInformation("Successfully created RelionErrorProtocol entry with Id: {Id}", request.Id);
-            return result.IsSuccess;
+            return Result.Ok(result.IsSuccess);
         }
     }
 }

@@ -1,5 +1,5 @@
-﻿using IntegratoR.Abstractions.Interfaces.Queries;
-using IntegratoR.Abstractions.Interfaces.Results;
+﻿using FluentResults;
+using IntegratoR.Abstractions.Interfaces.Queries;
 using IntegratoR.Abstractions.Interfaces.Services;
 using MediatR;
 using Microsoft.Extensions.Logging;
@@ -33,7 +33,7 @@ namespace IntegratoR.Application.Common.Behaviours;
 /// </remarks>
 public class CachingBehaviour<TRequest, TResponse> : IPipelineBehavior<TRequest, TResponse>
     where TRequest : IRequest<TResponse>
-    where TResponse : IResult
+    where TResponse : IResultBase
 {
     private readonly ICacheService _cacheService;
     private readonly ILogger<CachingBehaviour<TRequest, TResponse>> _logger;
@@ -66,11 +66,11 @@ public class CachingBehaviour<TRequest, TResponse> : IPipelineBehavior<TRequest,
         // For all other requests, it's a simple passthrough.
         if (request is not ICacheableQuery<TResponse> cacheableQuery)
         {
-            return await next();
+            return await next().ConfigureAwait(false);
         }
 
         // Attempt to retrieve the response from the cache using the key defined in the query.
-        var cachedResponse = await _cacheService.GetAsync<TResponse>(cacheableQuery.CacheKey);
+        var cachedResponse = await _cacheService.GetAsync<TResponse>(cacheableQuery.CacheKey).ConfigureAwait(false);
         if (cachedResponse is not null)
         {
             _logger.LogDebug("Cache HIT for key {CacheKey}. Returning cached response.", cacheableQuery.CacheKey);
@@ -79,14 +79,14 @@ public class CachingBehaviour<TRequest, TResponse> : IPipelineBehavior<TRequest,
 
         // If the item was not in the cache, proceed with executing the actual request handler.
         _logger.LogDebug("Cache MISS for key {CacheKey}. Executing handler.", cacheableQuery.CacheKey);
-        var response = await next();
+        var response = await next().ConfigureAwait(false);
 
         // Only cache the response if the handler executed successfully.
         // This prevents caching failures or "Not Found" results.
         if (response is { IsSuccess: true })
         {
             _logger.LogDebug("Handler executed successfully. Caching response with key {CacheKey} for {CacheDuration}", cacheableQuery.CacheKey, cacheableQuery.CacheDuration);
-            await _cacheService.SetAsync(cacheableQuery.CacheKey, response, cacheableQuery.CacheDuration);
+            await _cacheService.SetAsync(cacheableQuery.CacheKey, response, cacheableQuery.CacheDuration).ConfigureAwait(false);
         }
 
         return response;

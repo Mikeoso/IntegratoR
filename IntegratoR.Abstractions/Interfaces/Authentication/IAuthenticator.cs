@@ -1,4 +1,4 @@
-﻿using IntegratoR.Abstractions.Common.Results;
+﻿using FluentResults;
 
 namespace IntegratoR.Abstractions.Interfaces.Authentication;
 

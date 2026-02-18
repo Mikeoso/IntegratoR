@@ -1,4 +1,5 @@
-﻿using IntegratoR.Abstractions.Interfaces.Authentication;
+﻿using IntegratoR.Abstractions.Common.Results;
+using IntegratoR.Abstractions.Interfaces.Authentication;
 using IntegratoR.OData.Domain.Settings;
 using Microsoft.Extensions.Options;
 using System.Net;
@@ -71,7 +72,7 @@ public class ODataAuthenticationHandler : DelegatingHandler
     {
         if (_settings.AuthMode == ODataAuthMode.OAuth)
         {
-            var tokenResult = await _authenticator.GetAccessTokenAsync(_settings.ClientId, _settings.ClientSecret, _settings.TenantId, _settings.Resource);
+            var tokenResult = await _authenticator.GetAccessTokenAsync(_settings.ClientId, _settings.ClientSecret, _settings.TenantId, _settings.Resource).ConfigureAwait(false);
 
             if (tokenResult.IsSuccess)
             {
@@ -81,7 +82,7 @@ public class ODataAuthenticationHandler : DelegatingHandler
             {
                 return new HttpResponseMessage(HttpStatusCode.Unauthorized)
                 {
-                    ReasonPhrase = $"Failed to acquire F&O OAuth token: {tokenResult.Error?.Message}"
+                    ReasonPhrase = $"Failed to acquire F&O OAuth token: {tokenResult.GetError()?.Message}"
                 };
             }
         }
@@ -94,6 +95,6 @@ public class ODataAuthenticationHandler : DelegatingHandler
                 request.Headers.Add(header.Key, header.Value);
             }
         }
-        return await base.SendAsync(request, cancellationToken);
+        return await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
     }
 }

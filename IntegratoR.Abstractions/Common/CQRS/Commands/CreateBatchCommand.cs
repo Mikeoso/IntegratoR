@@ -1,4 +1,4 @@
-﻿using IntegratoR.Abstractions.Common.Results;
+﻿using FluentResults;
 using IntegratoR.Abstractions.Interfaces.Commands;
 using IntegratoR.Abstractions.Interfaces.Entity;
 using System;
@@ -22,7 +22,7 @@ namespace IntegratoR.Abstractions.Common.CQRS.Commands
         {
             return new Dictionary<string, object>
             {
-                { "Count", Entities.Count() } 
+                { "Count", Entities.Count() }
             };
         }
     }

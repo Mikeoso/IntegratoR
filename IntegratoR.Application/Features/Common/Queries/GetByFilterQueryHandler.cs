@@ -1,48 +1,39 @@
-﻿using MediatR;
+using MediatR;
 using IntegratoR.Abstractions.Interfaces.Services;
 using IntegratoR.Abstractions.Interfaces.Entity;
-using Microsoft.Extensions.Logging;
 using IntegratoR.Abstractions.Common.Results;
+using Microsoft.Extensions.Logging;
+using FluentResults;
 using IntegratoR.Abstractions.Common.CQRS.Queries;
 
 namespace IntegratoR.Application.Features.Common.Queries;
-
-// FILE-LEVEL DOCUMENTATION
-// ---------------------------------------------------------------------------------------------
-// <remarks>
-// This file defines a generic CQRS query handler. This pattern is highly effective for reducing
-// boilerplate code by handling a common query shape (e.g., "get by filter") for any entity
-// type, rather than requiring a separate handler for each entity.
-// </remarks>
-// ---------------------------------------------------------------------------------------------
 
 /// <summary>
 /// A reusable, generic MediatR query handler responsible for processing the <see cref="GetByFilterQuery{TEntity}"/>.
 /// It retrieves a collection of entities of a specified type that match a given filter expression.
 /// </summary>
-/// <typeparam name="TEntity">The type of the entity being queried. Must be a class that implements <see cref="IEntity{TKey}"/>.</typeparam>
-/// <typeparam name="TKey">The type of the primary key for the entity.</typeparam>
+/// <typeparam name="TEntity">The type of the entity being queried. Must be a class that implements <see cref="IEntity"/>.</typeparam>
 /// <remarks>
 /// This class leverages C# generics to provide a single implementation for a common data retrieval scenario.
 /// When a request like `GetByFilterQuery&lt;Customer&gt;` is dispatched via MediatR, the dependency injection
-/// container will automatically construct an instance of `GetByFilterQueryHandler&lt;Customer, TKey&gt;`
-/// and inject the corresponding `IService&lt;Customer, TKey&gt;`.
+/// container will automatically construct an instance of `GetByFilterQueryHandler&lt;Customer&gt;`
+/// and inject the corresponding `IService&lt;Customer&gt;`.
 ///
 /// The handler's role is simply to delegate the data access to the injected service, which in turn
 /// is responsible for translating the LINQ expression into the appropriate OData `$filter` query for D365 F&O.
 /// </remarks>
-public class GetByFilterQueryHandler<TEntity, TKey> : IRequestHandler<GetByFilterQuery<TEntity>, Result<IEnumerable<TEntity>>>
+public class GetByFilterQueryHandler<TEntity> : IRequestHandler<GetByFilterQuery<TEntity>, Result<IEnumerable<TEntity>>>
     where TEntity : class, IEntity
 {
     private readonly IService<TEntity> _service;
-    private readonly ILogger<GetByFilterQueryHandler<TEntity, TKey>> _logger;
+    private readonly ILogger<GetByFilterQueryHandler<TEntity>> _logger;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="GetByFilterQueryHandler{TEntity, TKey}"/> class.
+    /// Initializes a new instance of the <see cref="GetByFilterQueryHandler{TEntity}"/> class.
     /// </summary>
     /// <param name="logger">The logger for diagnostics.</param>
     /// <param name="service">The generic repository/service for the specified entity type.</param>
-    public GetByFilterQueryHandler(ILogger<GetByFilterQueryHandler<TEntity, TKey>> logger, IService<TEntity> service)
+    public GetByFilterQueryHandler(ILogger<GetByFilterQueryHandler<TEntity>> logger, IService<TEntity> service)
     {
         _service = service;
         _logger = logger;
@@ -62,18 +53,19 @@ public class GetByFilterQueryHandler<TEntity, TKey> : IRequestHandler<GetByFilte
     {
         _logger.LogInformation("Handling GetByFilterQuery for {EntityType} with filter: {Filter}", typeof(TEntity).Name, request.Filter.ToString());
 
-        var entitiesResult = await _service.FindAsync(request.Filter, cancellationToken);
+        var entitiesResult = await _service.FindAsync(request.Filter, cancellationToken).ConfigureAwait(false);
 
         return entitiesResult.Match(
-            onSuccess: entity =>
+            onSuccess: entities =>
             {
-                _logger.LogDebug("Retrieved {Count} entities of type {EntityType}", entitiesResult.Value?.Count() ?? 0, typeof(TEntity).Name);
+                var result = entities as ICollection<TEntity> ?? entities.ToList();
+                _logger.LogDebug("Retrieved {Count} entities of type {EntityType}", result.Count, typeof(TEntity).Name);
 
-                return Result<IEnumerable<TEntity>>.Ok(entity);
+                return Result.Ok<IEnumerable<TEntity>>(result);
             },
             onFailure: _ =>
             {
-                return Result<IEnumerable<TEntity>>.Fail(entitiesResult);
+                return Result.Fail<IEnumerable<TEntity>>(entitiesResult.Errors);
             });
     }
 }

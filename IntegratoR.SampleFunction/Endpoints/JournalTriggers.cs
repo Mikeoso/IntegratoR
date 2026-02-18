@@ -1,4 +1,5 @@
 ﻿using Azure;
+using FluentResults;
 using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.RELion.Domain.DTOs;
 using IntegratoR.RELion.Domain.Models;
@@ -74,7 +75,7 @@ namespace IntegratoR.SampleFunction.Endpoints
             {
                 response = req.CreateResponse(HttpStatusCode.BadRequest);
 
-                var error = new Error("QueueJournalProcessing.NoRequestBody",
+                var error = new IntegrationError("QueueJournalProcessing.NoRequestBody",
                     "There was no request body provided for the http trigger",
                     ErrorType.Validation);
                 _logger.LogError("Validation error in QueueJournalProcessing_HTTPTrigger: {Error}", JsonConvert.SerializeObject(error));
@@ -89,7 +90,7 @@ namespace IntegratoR.SampleFunction.Endpoints
             {
                 response = req.CreateResponse(HttpStatusCode.BadRequest);
 
-                var error = new Error("QueueJournalProcessing.InvalidBody",
+                var error = new IntegrationError("QueueJournalProcessing.InvalidBody",
                     "Request Body could not be parsed",
                     ErrorType.Validation);
                 _logger.LogError("Validation error in QueueJournalProcessing_HTTPTrigger: {Error}", JsonConvert.SerializeObject(error));
@@ -109,7 +110,7 @@ namespace IntegratoR.SampleFunction.Endpoints
             {
                 response = req.CreateResponse(HttpStatusCode.BadRequest);
 
-                var error = new Error("QueueJournalProcessing.WrongBusinessEvent",
+                var error = new IntegrationError("QueueJournalProcessing.WrongBusinessEvent",
                     "Business event is unknown or not supported by this function",
                     ErrorType.Validation);
                 await response.WriteStringAsync(error.ToString());

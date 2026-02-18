@@ -1,4 +1,5 @@
-﻿using IntegratoR.Abstractions.Common.Results;
+﻿using FluentResults;
+using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.OData.FO.Domain.Entities.LedgerJournal;
 using IntegratoR.OData.Interfaces.Services;
 using MediatR;
@@ -21,7 +22,7 @@ public class CreateLedgerJournalLinesHandler<TEntity> : IRequestHandler<CreateLe
     {
         _logger.LogInformation("Creating {Count} Ledger Journal Lines in F&O.", request.LedgerJournalLines.Count());
 
-        var addResult = await _service.AddBatchAsync(request.LedgerJournalLines, cancellationToken);
+        var addResult = await _service.AddBatchAsync(request.LedgerJournalLines, cancellationToken).ConfigureAwait(false);
 
         return addResult.Match(
             onSuccess: () =>

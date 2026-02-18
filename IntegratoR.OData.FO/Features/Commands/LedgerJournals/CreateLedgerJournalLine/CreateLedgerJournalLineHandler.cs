@@ -1,4 +1,5 @@
-﻿using IntegratoR.Abstractions.Common.Results;
+﻿using FluentResults;
+using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.Abstractions.Interfaces.Services;
 using IntegratoR.OData.FO.Domain.Entities.LedgerJournal;
 using MediatR;
@@ -23,7 +24,7 @@ public class CreateLedgerJournalLineHandler<TEntity> : IRequestHandler<CreateLed
             request.LedgerJournalLine.JournalBatchNumber,
             request.LedgerJournalLine.DataAreaId);
 
-        var addResult = await _service.AddAsync(request.LedgerJournalLine, cancellationToken);
+        var addResult = await _service.AddAsync(request.LedgerJournalLine, cancellationToken).ConfigureAwait(false);
 
         return addResult.Match(
             onSuccess: entity =>
@@ -33,8 +34,8 @@ public class CreateLedgerJournalLineHandler<TEntity> : IRequestHandler<CreateLed
                     entity.LineNumber,
                     entity.JournalBatchNumber,
                     entity.DataAreaId);
-                
-                return Result<TEntity>.Ok(entity);
+
+                return Result.Ok(entity);
             },
             onFailure: error =>
             {
@@ -44,7 +45,7 @@ public class CreateLedgerJournalLineHandler<TEntity> : IRequestHandler<CreateLed
                     request.LedgerJournalLine.DataAreaId,
                     error.Message);
 
-                return Result<TEntity>.Fail(error);
+                return Result.Fail<TEntity>(error);
             });
     }
 }

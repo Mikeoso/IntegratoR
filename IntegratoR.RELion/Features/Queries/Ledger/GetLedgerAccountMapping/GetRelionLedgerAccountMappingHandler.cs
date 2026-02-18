@@ -1,4 +1,4 @@
-﻿using IntegratoR.Abstractions.Common.Results;
+﻿using FluentResults;
 using IntegratoR.RELion.Domain.Models;
 using IntegratoR.RELion.Features.Queries.Ledger.GetLedgerAccountMapping;
 using IntegratoR.RELion.Interfaces.Services;
@@ -25,7 +25,7 @@ namespace IntegratoR.RELion.Features.Queries.Ledger.GetLedgerAccountMapping
 
         public async Task<Result<RelionLedgerAccountMapping>> Handle(GetRelionLedgerAccountMappingQuery request, CancellationToken cancellationToken)
         {
-            var result = await _relionService.GetLedgerAccountMappingsAsync(request.EntryNo, cancellationToken);
+            var result = await _relionService.GetLedgerAccountMappingsAsync(request.EntryNo, cancellationToken).ConfigureAwait(false);
 
             return result;
         }

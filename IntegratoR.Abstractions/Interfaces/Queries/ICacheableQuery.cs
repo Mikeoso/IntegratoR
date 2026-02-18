@@ -1,5 +1,4 @@
 ﻿using IntegratoR.Abstractions.Interfaces.Queries;
-using IntegratoR.Abstractions.Interfaces.Results;
 
 namespace IntegratoR.Abstractions.Interfaces.Queries;
 
@@ -24,7 +23,7 @@ namespace IntegratoR.Abstractions.Interfaces.Queries;
 /// entry matching the <see cref="CacheKey"/>, and either returns the cached response or executes
 /// the query handler and caches the result for the specified <see cref="CacheDuration"/>.
 /// </remarks>
-public interface ICacheableQuery<TResponse> : IQuery<TResponse> where TResponse : IResult
+public interface ICacheableQuery<TResponse> : IQuery<TResponse>
 {
     /// <summary>
     /// Gets the unique key used to store and retrieve the query's response from the cache.

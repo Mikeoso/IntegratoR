@@ -1,5 +1,5 @@
-﻿using IntegratoR.Abstractions.Common.Results;
-using IntegratoR.Abstractions.Interfaces.Results;
+﻿using FluentResults;
+using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.Abstractions.Interfaces.Services;
 using IntegratoR.OData.FO.Common.Extensions;
 using IntegratoR.OData.FO.Domain.Entities.Dimensions;
@@ -11,7 +11,7 @@ using Microsoft.Extensions.Logging;
 
 namespace IntegratoR.OData.FO.Features.Queries.Dimensions.GetDimensionOrder;
 
-public class GetDimensionOrdersQueryHandler : IRequestHandler<GetDimensionOrdersQuery, IResult<DimensionFormat>>
+public class GetDimensionOrdersQueryHandler : IRequestHandler<GetDimensionOrdersQuery, Result<DimensionFormat>>
 {
     private readonly ILogger<GetDimensionOrdersQueryHandler> _logger;
     private readonly IODataService<DimensionParameters> _dimensionParametersService;
@@ -24,7 +24,7 @@ public class GetDimensionOrdersQueryHandler : IRequestHandler<GetDimensionOrders
         _dimensionIntegrationFormatService = dimensionIntegrationFormatService;
     }
 
-    public async Task<IResult<DimensionFormat>> Handle(GetDimensionOrdersQuery request, CancellationToken cancellationToken)
+    public async Task<Result<DimensionFormat>> Handle(GetDimensionOrdersQuery request, CancellationToken cancellationToken)
     {
         var dimensionFormatName = request.dimensionFormat;
         var dimensionHierarchyType = request.hierarchyType;
@@ -34,22 +34,22 @@ public class GetDimensionOrdersQueryHandler : IRequestHandler<GetDimensionOrders
         var dimensionFormats = await _dimensionIntegrationFormatService.FindAsync(
             x => x.DimensionFormatName == dimensionFormatName &&
             x.DimensionFormatType == dimensionHierarchyType &&
-            x.IsActive == NoYes.Yes, cancellationToken);
+            x.IsActive == NoYes.Yes, cancellationToken).ConfigureAwait(false);
 
-        if (dimensionFormats.IsFailure)
+        if (dimensionFormats.IsFailed)
         {
-            return Result<DimensionFormat>.Fail(new Error(
+            return Result.Fail<DimensionFormat>(new IntegrationError(
                 $"DimensionParameters.QueryFailed",
                 $"No Data returned by the query",
                 ErrorType.Failure));
         }
         var financialDimensionFormat = dimensionFormats.Value?.FirstOrDefault();
 
-        var dimensionParameters = await _dimensionParametersService.FindAll(cancellationToken);
+        var dimensionParameters = await _dimensionParametersService.FindAll(cancellationToken).ConfigureAwait(false);
 
-        if (dimensionParameters.IsFailure)
+        if (dimensionParameters.IsFailed)
         {
-            return Result<DimensionFormat>.Fail(new Error(
+            return Result.Fail<DimensionFormat>(new IntegrationError(
                 $"DimensionParameters.QueryFailed",
                 $"No Data returned by the query",
                 ErrorType.Failure));
@@ -64,6 +64,6 @@ public class GetDimensionOrdersQueryHandler : IRequestHandler<GetDimensionOrders
             Segments = dimensionOrder ?? new List<string>()
         };
 
-        return Result<DimensionFormat>.Ok(dimensionFormat);
+        return Result.Ok(dimensionFormat);
     }
 }

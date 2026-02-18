@@ -1,4 +1,4 @@
-﻿using IntegratoR.Abstractions.Interfaces.Results;
+﻿using FluentResults;
 using IntegratoR.Abstractions.Interfaces.Telemetry;
 using MediatR;
 
@@ -28,7 +28,7 @@ namespace IntegratoR.Abstractions.Interfaces.Commands;
 /// For example, a command to create a new sales order in D365 F&O might implement `ICommand<Result<string>>`
 /// to return the newly generated Sales Order ID on success.
 /// </remarks>
-public interface ICommand<out TResponse> : IRequest<TResponse>, IContext where TResponse : IResult
+public interface ICommand<out TResponse> : IRequest<TResponse>, IContext
 {
 }
 
@@ -45,6 +45,6 @@ public interface ICommand<out TResponse> : IRequest<TResponse>, IContext where T
 /// caller to reliably determine if the operation succeeded or failed, and to access error details
 /// in the case of a failure.
 /// </remarks>
-public interface ICommand : IRequest<IResult>, IContext
+public interface ICommand : IRequest<Result>, IContext
 {
 }

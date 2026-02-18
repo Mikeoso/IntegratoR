@@ -1,4 +1,5 @@
 ﻿using IntegratoR.Abstractions.Common.CQRS.Queries;
+using FluentResults;
 using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.Abstractions.Interfaces.Entity;
 using IntegratoR.Abstractions.Interfaces.Services;
@@ -54,14 +55,14 @@ public class GetByKeyQueryHandler<TEntity> : IRequestHandler<GetByKeyQuery<TEnti
     {
         _logger.LogDebug("Handling GetByKeyQuery for {Entity} with key values: {@CompositeKey}", typeof(TEntity).Name, request.CompositeKey);
 
-        var entityResult = await _service.GetByKeyAsync(request.CompositeKey, cancellationToken);
+        var entityResult = await _service.GetByKeyAsync(request.CompositeKey, cancellationToken).ConfigureAwait(false);
 
         return entityResult.Match(
             onSuccess: entity =>
             {
                 _logger.LogDebug("Successfully retrieved {Entity} with key values: {@CompositeKey}", typeof(TEntity).Name, request.CompositeKey);
-                return Result<TEntity>.Ok(entity);
+                return Result.Ok(entity);
             },
-            onFailure: _ => Result<TEntity>.Fail(entityResult));
+            onFailure: _ => Result.Fail<TEntity>(entityResult.Errors));
     }
 }
