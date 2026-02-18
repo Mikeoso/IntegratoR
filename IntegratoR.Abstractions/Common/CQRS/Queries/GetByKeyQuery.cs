@@ -1,9 +1,9 @@
-﻿using FluentResults;
+using System.Collections.Generic;
+using System.Text.Json;
+using FluentResults;
 using IntegratoR.Abstractions.Interfaces;
 using IntegratoR.Abstractions.Interfaces.Entity;
 using IntegratoR.Abstractions.Interfaces.Queries;
-using System.Collections.Generic;
-using System.Text.Json;
 
 namespace IntegratoR.Abstractions.Common.CQRS.Queries;
 

@@ -1,11 +1,11 @@
-﻿using FluentResults;
-using IntegratoR.Abstractions.Interfaces.Queries;
-using IntegratoR.SampleFunction.Domain.Entities.Ledger;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using FluentResults;
+using IntegratoR.Abstractions.Interfaces.Queries;
+using IntegratoR.SampleFunction.Domain.Entities.Ledger;
 
 namespace IntegratoR.SampleFunction.Features.Queries.Ledger.GetLedgerAccountMapping
 {

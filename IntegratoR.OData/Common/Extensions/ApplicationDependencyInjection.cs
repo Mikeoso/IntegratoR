@@ -1,4 +1,5 @@
-﻿using IntegratoR.Abstractions.Common.Results;
+using System.Net;
+using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.Abstractions.Interfaces.Services;
 using IntegratoR.OData.Common.Authentication;
 using IntegratoR.OData.Common.Services;
@@ -12,7 +13,6 @@ using Polly;
 using Polly.Extensions.Http;
 using Polly.Retry;
 using Simple.OData.Client;
-using System.Net;
 
 namespace IntegratoR.OData.Common.Extensions;
 

@@ -1,10 +1,10 @@
-using MediatR;
-using IntegratoR.Abstractions.Interfaces.Services;
-using IntegratoR.Abstractions.Interfaces.Entity;
-using IntegratoR.Abstractions.Common.Results;
-using Microsoft.Extensions.Logging;
 using FluentResults;
 using IntegratoR.Abstractions.Common.CQRS.Queries;
+using IntegratoR.Abstractions.Common.Results;
+using IntegratoR.Abstractions.Interfaces.Entity;
+using IntegratoR.Abstractions.Interfaces.Services;
+using MediatR;
+using Microsoft.Extensions.Logging;
 
 namespace IntegratoR.Application.Features.Common.Queries;
 

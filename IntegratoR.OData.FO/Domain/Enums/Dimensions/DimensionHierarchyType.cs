@@ -1,4 +1,4 @@
-﻿namespace IntegratoR.OData.FO.Domain.Enums.Dimensions;
+namespace IntegratoR.OData.FO.Domain.Enums.Dimensions;
 
 /// <summary>
 /// Defines the different types of dimension hierarchies and validation structures used in Dynamics 365 Finance and Operations.

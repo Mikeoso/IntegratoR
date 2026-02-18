@@ -1,3 +1,4 @@
+using System.Reflection;
 using Azure.Identity;
 using FluentValidation;
 using IntegratoR.Abstractions.Common.Results;
@@ -11,7 +12,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Newtonsoft.Json;
-using System.Reflection;
 
 // Configure Newtonsoft.Json default settings for Durable Task serialization.
 // Durable Functions uses JsonConvert internally for orchestration state.

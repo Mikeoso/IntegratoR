@@ -1,4 +1,4 @@
-﻿using IntegratoR.RELion.Domain.Models;
+using IntegratoR.RELion.Domain.Models;
 
 namespace IntegratoR.SampleFunction.Domain.DTOs.Orchestrators
 {

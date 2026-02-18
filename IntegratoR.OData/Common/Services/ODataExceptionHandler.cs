@@ -1,11 +1,11 @@
-﻿using FluentResults;
+using System.Diagnostics;
+using System.Net;
+using FluentResults;
 using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.Abstractions.Interfaces.Entity;
 using Microsoft.Extensions.Logging;
 using Polly.Retry;
 using Simple.OData.Client;
-using System.Diagnostics;
-using System.Net;
 
 namespace IntegratoR.OData.Common.Services;
 

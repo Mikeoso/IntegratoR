@@ -1,7 +1,7 @@
-﻿using FluentResults;
+using System.Linq.Expressions;
+using FluentResults;
 using IntegratoR.Abstractions.Interfaces.Entity;
 using IntegratoR.Abstractions.Interfaces.Services;
-using System.Linq.Expressions;
 
 // FILE-LEVEL DOCUMENTATION
 // ---------------------------------------------------------------------------------------------

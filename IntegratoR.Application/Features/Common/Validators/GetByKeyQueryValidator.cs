@@ -13,6 +13,7 @@ public class GetByKeyQueryValidator<TEntity> : AbstractValidator<GetByKeyQuery<T
     public GetByKeyQueryValidator()
     {
         RuleFor(x => x.CompositeKey)
+            .Cascade(CascadeMode.Stop)
             .NotNull().WithMessage("Composite key must not be null.")
             .Must(k => k.Length > 0).WithMessage("Composite key must contain at least one value.")
             .ForEach(key => key

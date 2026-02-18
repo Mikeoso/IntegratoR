@@ -1,4 +1,6 @@
-﻿using Azure;
+using System.Net;
+using System.Text;
+using Azure;
 using FluentResults;
 using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.RELion.Domain.DTOs;
@@ -14,8 +16,6 @@ using Microsoft.DurableTask.Client;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using System.Net;
-using System.Text;
 
 namespace IntegratoR.SampleFunction.Endpoints
 {

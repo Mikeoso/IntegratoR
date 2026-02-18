@@ -1,14 +1,14 @@
-﻿using FluentResults;
-using IntegratoR.RELion.Domain.Models;
-using IntegratoR.RELion.Features.Queries.Ledger.GetLedgerAccountMapping;
-using IntegratoR.RELion.Interfaces.Services;
-using MediatR;
-using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using FluentResults;
+using IntegratoR.RELion.Domain.Models;
+using IntegratoR.RELion.Features.Queries.Ledger.GetLedgerAccountMapping;
+using IntegratoR.RELion.Interfaces.Services;
+using MediatR;
+using Microsoft.Extensions.Logging;
 
 namespace IntegratoR.RELion.Features.Queries.Ledger.GetLedgerAccountMapping
 {

@@ -23,4 +23,8 @@
     <ProjectReference Include="..\IntegratoR.Abstractions\IntegratoR.Abstractions.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="IntegratoR.OData.Tests" />
+  </ItemGroup>
+
 </Project>

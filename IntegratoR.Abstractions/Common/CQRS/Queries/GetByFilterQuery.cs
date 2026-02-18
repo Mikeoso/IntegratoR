@@ -1,7 +1,7 @@
-﻿using FluentResults;
+using System.Linq.Expressions;
+using FluentResults;
 using IntegratoR.Abstractions.Interfaces.Queries;
 using IntegratoR.Abstractions.Interfaces.Telemetry;
-using System.Linq.Expressions;
 
 namespace IntegratoR.Abstractions.Common.CQRS.Queries;
 

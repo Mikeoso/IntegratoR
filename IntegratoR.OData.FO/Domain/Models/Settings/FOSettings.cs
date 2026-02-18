@@ -1,4 +1,4 @@
-﻿using IntegratoR.OData.FO.Domain.Enums.Dimensions;
+using IntegratoR.OData.FO.Domain.Enums.Dimensions;
 
 // FILE-LEVEL DOCUMENTATION
 // ---------------------------------------------------------------------------------------------
