@@ -1,4 +1,4 @@
-﻿using FluentResults;
+using FluentResults;
 using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.OData.FO.Domain.Entities.LedgerJournal;
 using IntegratoR.OData.Interfaces.Services;

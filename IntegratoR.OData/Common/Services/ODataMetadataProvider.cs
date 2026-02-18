@@ -1,7 +1,7 @@
-﻿using FluentResults;
+using System.Xml;
+using FluentResults;
 using IntegratoR.Abstractions.Common.Results;
 using Microsoft.Extensions.Logging;
-using System.Xml;
 
 namespace IntegratoR.OData.Common.Services;
 

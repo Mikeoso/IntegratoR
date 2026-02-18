@@ -1,4 +1,4 @@
-﻿namespace IntegratoR.OData.Common.Annotations;
+namespace IntegratoR.OData.Common.Annotations;
 
 /// <summary>
 /// Provides declarative, property-level metadata to control serialization behavior

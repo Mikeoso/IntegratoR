@@ -1,4 +1,4 @@
-﻿using IntegratoR.OData.FO.Domain.Models.FinancialDimensions;
+using IntegratoR.OData.FO.Domain.Models.FinancialDimensions;
 
 namespace IntegratoR.OData.FO.Builders;
 

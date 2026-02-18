@@ -1,4 +1,4 @@
-﻿using FluentResults;
+using FluentResults;
 using IntegratoR.Abstractions.Interfaces.Commands;
 
 namespace IntegratoR.SampleFunction.Features.Commands.General.CreateRelionErrorProtocol

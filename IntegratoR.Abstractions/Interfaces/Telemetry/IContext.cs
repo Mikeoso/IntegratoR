@@ -1,4 +1,4 @@
-﻿namespace IntegratoR.Abstractions.Interfaces.Telemetry;
+namespace IntegratoR.Abstractions.Interfaces.Telemetry;
 
 /// <summary>
 /// Defines a contract for CQRS requests that can provide

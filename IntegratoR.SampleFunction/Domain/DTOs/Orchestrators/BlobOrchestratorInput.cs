@@ -1,4 +1,4 @@
-﻿namespace IntegratoR.SampleFunction.Domain.DTOs.Orchestrators
+namespace IntegratoR.SampleFunction.Domain.DTOs.Orchestrators
 {
     /// <summary>
     /// Represents the data required to start the journal file processing orchestration.

@@ -1,4 +1,4 @@
-﻿namespace IntegratoR.OData.FO.Domain.Enums.Dimensions;
+namespace IntegratoR.OData.FO.Domain.Enums.Dimensions;
 
 /// <summary>
 /// Specifies the character or character sequence used to separate the segments within a financial dimension string.

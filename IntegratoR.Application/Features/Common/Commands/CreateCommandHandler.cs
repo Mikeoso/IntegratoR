@@ -1,9 +1,9 @@
-﻿using IntegratoR.Abstractions.Common.CQRS.Commands;
+using System.Threading.Tasks;
 using FluentResults;
+using IntegratoR.Abstractions.Common.CQRS.Commands;
 using IntegratoR.Abstractions.Interfaces.Entity;
 using IntegratoR.Abstractions.Interfaces.Services;
 using MediatR;
-using System.Threading.Tasks;
 
 namespace IntegratoR.Application.Features.Common.Commands
 {

@@ -1,4 +1,5 @@
-﻿using Azure.Storage.Blobs;
+using System.Text;
+using Azure.Storage.Blobs;
 using FluentResults;
 using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.OData.FO.Builders;
@@ -23,7 +24,6 @@ using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Newtonsoft.Json;
-using System.Text;
 
 namespace IntegratoR.SampleFunction.Functions
 {

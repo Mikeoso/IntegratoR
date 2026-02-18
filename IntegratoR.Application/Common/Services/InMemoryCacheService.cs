@@ -1,4 +1,4 @@
-﻿using IntegratoR.Abstractions.Interfaces.Services;
+using IntegratoR.Abstractions.Interfaces.Services;
 using Microsoft.Extensions.Caching.Memory;
 
 namespace IntegratoR.Application.Common.Services;

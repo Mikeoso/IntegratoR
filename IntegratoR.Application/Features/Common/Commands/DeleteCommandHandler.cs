@@ -1,11 +1,11 @@
-﻿using IntegratoR.Abstractions.Common.CQRS.Commands;
-using FluentResults;
-using IntegratoR.Abstractions.Interfaces.Entity;
-using IntegratoR.Abstractions.Interfaces.Services;
-using MediatR;
 using System;
 using System.Collections.Generic;
 using System.Text;
+using FluentResults;
+using IntegratoR.Abstractions.Common.CQRS.Commands;
+using IntegratoR.Abstractions.Interfaces.Entity;
+using IntegratoR.Abstractions.Interfaces.Services;
+using MediatR;
 
 namespace IntegratoR.Application.Features.Common.Commands
 {
