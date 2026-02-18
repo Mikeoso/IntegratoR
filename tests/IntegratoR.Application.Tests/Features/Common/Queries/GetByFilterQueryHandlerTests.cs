@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using FluentAssertions;
 using FluentResults;
 using IntegratoR.Abstractions.Common.CQRS.Queries;
@@ -7,7 +8,6 @@ using IntegratoR.TestKit.Assertions;
 using IntegratoR.TestKit.Doubles.Entities;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
-using System.Linq.Expressions;
 using Xunit;
 
 namespace IntegratoR.Application.Tests.Features.Common.Queries;

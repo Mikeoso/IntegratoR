@@ -1,9 +1,9 @@
-﻿using FluentResults;
+using System.Diagnostics;
+using FluentResults;
 using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.Abstractions.Interfaces.Telemetry;
 using MediatR;
 using Microsoft.Extensions.Logging;
-using System.Diagnostics;
 
 namespace IntegratoR.Application.Common.Behaviours;
 

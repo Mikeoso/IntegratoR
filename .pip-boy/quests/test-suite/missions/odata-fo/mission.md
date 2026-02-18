@@ -2,7 +2,7 @@
 codename: "odata-fo"
 title: "OData.FO Tests"
 quest: "test-suite"
-status: planned
+status: completed
 complexity: "M"
 depends_on: ["testkit", "odata"]
 created: "2026-02-18"

@@ -20,6 +20,8 @@
 - `result.Value.Property.Should().Be(x)` works; `result.Value.Should().Be(x)` conflicts with custom ResultAssertionExtensions for complex types -- use FluentAssertions directly on properties
 - xUnit v3 with ImplicitUsings does NOT auto-import `[Fact]`/`[Theory]` -- always add `using Xunit;` explicitly to test files
 - `git stash` can corrupt working tree if there are unstaged changes from other agents -- always check `git status` carefully and restore with `git checkout <file>` if stash pops unexpected diffs
+- F&O batch header update handler is named `UpdateLedgerJournalHandler<TEntity>` (NOT `UpdateLedgerJournalHeadersHandler`) -- `ILogger<>` param uses `UpdateLedgerJournalHeadersCommand<TEntity>` type
+- F&O `UpdateLedgerJournalHeaderHandler` uses `ILogger<UpdateLedgerJournalHeaderCommand<TEntity>>` (the command type), not the handler type
 
 ## Pitfalls
 

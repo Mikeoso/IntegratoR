@@ -1,6 +1,6 @@
-﻿using IntegratoR.Abstractions.Interfaces.Entity;
-using IntegratoR.Abstractions.Interfaces.Telemetry;
 using System.Reflection;
+using IntegratoR.Abstractions.Interfaces.Entity;
+using IntegratoR.Abstractions.Interfaces.Telemetry;
 
 namespace IntegratoR.Abstractions.Domain.Entities;
 

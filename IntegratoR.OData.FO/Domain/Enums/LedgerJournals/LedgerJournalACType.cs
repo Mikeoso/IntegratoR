@@ -1,4 +1,4 @@
-﻿namespace IntegratoR.OData.FO.Domain.Enums.LedgerJournals;
+namespace IntegratoR.OData.FO.Domain.Enums.LedgerJournals;
 
 /// <summary>
 /// Defines the account type for a ledger journal line in Dynamics 365 Finance and Operations.

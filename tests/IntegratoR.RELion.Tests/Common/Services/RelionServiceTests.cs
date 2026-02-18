@@ -1,3 +1,5 @@
+using System.Net;
+using System.Text;
 using FluentAssertions;
 using IntegratoR.RELion.Common.Services;
 using IntegratoR.RELion.Domain.DTOs;
@@ -9,8 +11,6 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Newtonsoft.Json;
 using NSubstitute;
-using System.Net;
-using System.Text;
 using Xunit;
 
 namespace IntegratoR.RELion.Tests.Common.Services;

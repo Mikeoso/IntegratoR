@@ -2,7 +2,7 @@
 codename: "relion"
 title: "RELion Tests"
 quest: "test-suite"
-status: planned
+status: completed
 complexity: "L"
 depends_on: ["testkit"]
 created: "2026-02-18"

@@ -1,9 +1,9 @@
+using System.Text;
+using System.Text.Json;
 using FluentAssertions;
 using IntegratoR.Application.Common.Services;
 using Microsoft.Extensions.Caching.Distributed;
 using NSubstitute;
-using System.Text;
-using System.Text.Json;
 using Xunit;
 
 namespace IntegratoR.Application.Tests.Common.Services;

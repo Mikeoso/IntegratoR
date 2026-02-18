@@ -1,4 +1,4 @@
-﻿using FluentResults;
+using FluentResults;
 using IntegratoR.Abstractions.Interfaces.Queries;
 using IntegratoR.OData.FO.Domain.Enums.Dimensions;
 using IntegratoR.OData.FO.Domain.Models.FinancialDimensions;

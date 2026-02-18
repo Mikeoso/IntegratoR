@@ -1,4 +1,4 @@
-﻿using IntegratoR.OData.FO.Domain.Models.Settings;
+using IntegratoR.OData.FO.Domain.Models.Settings;
 using IntegratoR.OData.FO.Features.Commands.LedgerJournals.CreateLedgerJournalHeader;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;

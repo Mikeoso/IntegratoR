@@ -2,7 +2,7 @@
 codename: "abstractions"
 title: "Abstractions Tests"
 quest: "test-suite"
-status: planned
+status: completed
 complexity: "M"
 depends_on: ["testkit"]
 created: "2026-02-18"

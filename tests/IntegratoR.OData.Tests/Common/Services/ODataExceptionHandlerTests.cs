@@ -1,3 +1,4 @@
+using System.Net;
 using FluentAssertions;
 using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.OData.Common.Services;
@@ -9,7 +10,6 @@ using NSubstitute;
 using Polly;
 using Polly.Retry;
 using Simple.OData.Client;
-using System.Net;
 using Xunit;
 
 namespace IntegratoR.OData.Tests.Common.Services;

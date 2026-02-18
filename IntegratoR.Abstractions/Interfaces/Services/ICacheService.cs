@@ -1,4 +1,4 @@
-﻿namespace IntegratoR.Abstractions.Interfaces.Services;
+namespace IntegratoR.Abstractions.Interfaces.Services;
 
 /// <summary>
 /// Defines a generic contract for an application caching service, abstracting the underlying

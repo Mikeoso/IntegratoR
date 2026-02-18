@@ -1,4 +1,4 @@
-﻿namespace IntegratoR.OData.FO.Domain.Enums.General;
+namespace IntegratoR.OData.FO.Domain.Enums.General;
 
 /// <summary>
 /// Defines a boolean-like choice between 'No' and 'Yes'.

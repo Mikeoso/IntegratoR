@@ -1,4 +1,4 @@
-﻿namespace IntegratoR.OData.FO.Domain.Enums.LedgerJournals;
+namespace IntegratoR.OData.FO.Domain.Enums.LedgerJournals;
 
 /// <summary>
 /// Defines the posting layer for a financial transaction in Dynamics 365 Finance and Operations.

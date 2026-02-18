@@ -1,4 +1,4 @@
-﻿using FluentResults;
+using FluentResults;
 using IntegratoR.Abstractions.Interfaces.Telemetry;
 using MediatR;
 

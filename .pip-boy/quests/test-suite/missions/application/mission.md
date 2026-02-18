@@ -2,7 +2,7 @@
 codename: "application"
 title: "Application Tests"
 quest: "test-suite"
-status: planned
+status: completed
 complexity: "L"
 depends_on: ["testkit"]
 created: "2026-02-18"

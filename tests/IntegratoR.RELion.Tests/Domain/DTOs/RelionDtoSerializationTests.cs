@@ -1,8 +1,8 @@
+using System.Text;
 using FluentAssertions;
 using IntegratoR.RELion.Domain.DTOs;
 using IntegratoR.RELion.Domain.Models;
 using Newtonsoft.Json;
-using System.Text;
 using Xunit;
 
 namespace IntegratoR.RELion.Tests.Domain.DTOs;

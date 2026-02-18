@@ -1,8 +1,8 @@
-﻿using IntegratoR.Abstractions.Domain.Entities;
-using IntegratoR.OData.FO.Domain.Enums.Dimensions;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Text.Json.Serialization;
+using IntegratoR.Abstractions.Domain.Entities;
+using IntegratoR.OData.FO.Domain.Enums.Dimensions;
 
 namespace IntegratoR.OData.FO.Domain.Entities.Dimensions;
 

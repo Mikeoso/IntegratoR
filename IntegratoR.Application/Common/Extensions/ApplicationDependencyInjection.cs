@@ -1,4 +1,5 @@
-﻿using FluentValidation;
+using System.Reflection;
+using FluentValidation;
 using IntegratoR.Abstractions.Interfaces.Authentication;
 using IntegratoR.Abstractions.Interfaces.Services;
 using IntegratoR.Application.Common.Authentication;
@@ -6,7 +7,6 @@ using IntegratoR.Application.Common.Behaviours;
 using IntegratoR.Application.Common.Services;
 using MediatR;
 using Microsoft.Extensions.DependencyInjection;
-using System.Reflection;
 
 namespace IntegratoR.Application.Common.Extensions;
 

@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using FluentAssertions;
 using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.Abstractions.Domain.Entities;
@@ -8,7 +9,6 @@ using IntegratoR.TestKit.Doubles.Entities;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 using Simple.OData.Client;
-using System.Text.Json.Serialization;
 using Xunit;
 
 namespace IntegratoR.OData.Tests.Common.Services;

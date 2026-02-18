@@ -1,9 +1,9 @@
+using System.Linq.Expressions;
 using FluentAssertions;
 using IntegratoR.Abstractions.Common.CQRS.Commands;
 using IntegratoR.Abstractions.Common.CQRS.Queries;
 using IntegratoR.Application.Features.Common.Validators;
 using IntegratoR.TestKit.Doubles.Entities;
-using System.Linq.Expressions;
 using Xunit;
 
 namespace IntegratoR.Application.Tests.Features.Common.Validators;

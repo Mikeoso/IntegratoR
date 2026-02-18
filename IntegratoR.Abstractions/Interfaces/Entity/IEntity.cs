@@ -1,4 +1,4 @@
-﻿namespace IntegratoR.Abstractions.Interfaces.Entity;
+namespace IntegratoR.Abstractions.Interfaces.Entity;
 
 /// <summary>
 /// Defines the foundational contract for all domain entities, ensuring each has a strongly-typed primary key.

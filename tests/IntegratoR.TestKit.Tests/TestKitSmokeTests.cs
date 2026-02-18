@@ -1,10 +1,10 @@
+using System.Net;
 using FluentAssertions;
 using FluentResults;
 using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.TestKit.Assertions;
 using IntegratoR.TestKit.Builders;
 using IntegratoR.TestKit.Fakes;
-using System.Net;
 using Xunit;
 
 namespace IntegratoR.TestKit.Tests;

@@ -1,3 +1,4 @@
+using System.Net;
 using FluentAssertions;
 using FluentResults;
 using IntegratoR.Abstractions.Interfaces.Authentication;
@@ -6,7 +7,6 @@ using IntegratoR.RELion.Domain.Settings;
 using IntegratoR.TestKit.Fakes;
 using Microsoft.Extensions.Options;
 using NSubstitute;
-using System.Net;
 using Xunit;
 
 namespace IntegratoR.RELion.Tests.Common.Authentication;

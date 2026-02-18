@@ -1,9 +1,9 @@
-﻿using FluentResults;
-using IntegratoR.Abstractions.Interfaces.Commands;
-using IntegratoR.Abstractions.Interfaces.Entity;
 using System;
 using System.Collections.Generic;
 using System.Text;
+using FluentResults;
+using IntegratoR.Abstractions.Interfaces.Commands;
+using IntegratoR.Abstractions.Interfaces.Entity;
 
 namespace IntegratoR.Abstractions.Common.CQRS.Commands
 {
