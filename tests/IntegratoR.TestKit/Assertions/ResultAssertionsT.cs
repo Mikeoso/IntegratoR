@@ -35,9 +35,12 @@ public sealed class ResultAssertions<T> : ReferenceTypeAssertions<Result<T>, Res
     {
         CurrentAssertionChain
             .BecauseOf(because, becauseArgs)
-            .ForCondition(Subject.IsSuccess)
+            .ForCondition(Subject is not null)
+            .FailWith("Expected a result{reason}, but found <null>.")
+            .Then
+            .ForCondition(Subject!.IsSuccess)
             .FailWith("Expected result to be successful{reason}, but it failed with: {0}",
-                string.Join(", ", Subject.Errors.Select(e => e.Message)));
+                string.Join(", ", Subject!.Errors.Select(e => e.Message)));
 
         return new AndConstraint<ResultAssertions<T>>(this);
     }
@@ -52,7 +55,10 @@ public sealed class ResultAssertions<T> : ReferenceTypeAssertions<Result<T>, Res
     {
         CurrentAssertionChain
             .BecauseOf(because, becauseArgs)
-            .ForCondition(Subject.IsFailed)
+            .ForCondition(Subject is not null)
+            .FailWith("Expected a result{reason}, but found <null>.")
+            .Then
+            .ForCondition(Subject!.IsFailed)
             .FailWith("Expected result to have failed{reason}, but it succeeded.");
 
         return new AndConstraint<ResultAssertions<T>>(this);
@@ -67,7 +73,12 @@ public sealed class ResultAssertions<T> : ReferenceTypeAssertions<Result<T>, Res
     /// <returns>An <see cref="AndConstraint{T}"/> for chaining further assertions.</returns>
     public AndConstraint<ResultAssertions<T>> HaveErrorCode(string expectedCode, string because = "", params object[] becauseArgs)
     {
-        var error = Subject.Errors.OfType<IntegrationError>().FirstOrDefault();
+        CurrentAssertionChain
+            .BecauseOf(because, becauseArgs)
+            .ForCondition(Subject is not null)
+            .FailWith("Expected a result{reason}, but found <null>.");
+
+        var error = Subject!.Errors.OfType<IntegrationError>().FirstOrDefault();
 
         CurrentAssertionChain
             .BecauseOf(because, becauseArgs)
@@ -89,7 +100,12 @@ public sealed class ResultAssertions<T> : ReferenceTypeAssertions<Result<T>, Res
     /// <returns>An <see cref="AndConstraint{T}"/> for chaining further assertions.</returns>
     public AndConstraint<ResultAssertions<T>> HaveErrorType(ErrorType expectedType, string because = "", params object[] becauseArgs)
     {
-        var error = Subject.Errors.OfType<IntegrationError>().FirstOrDefault();
+        CurrentAssertionChain
+            .BecauseOf(because, becauseArgs)
+            .ForCondition(Subject is not null)
+            .FailWith("Expected a result{reason}, but found <null>.");
+
+        var error = Subject!.Errors.OfType<IntegrationError>().FirstOrDefault();
 
         CurrentAssertionChain
             .BecauseOf(because, becauseArgs)
@@ -113,12 +129,15 @@ public sealed class ResultAssertions<T> : ReferenceTypeAssertions<Result<T>, Res
     {
         CurrentAssertionChain
             .BecauseOf(because, becauseArgs)
-            .ForCondition(Subject.IsSuccess)
-            .FailWith("Expected result to be successful{reason}, but it failed with: {0}",
-                string.Join(", ", Subject.Errors.Select(e => e.Message)))
+            .ForCondition(Subject is not null)
+            .FailWith("Expected a result{reason}, but found <null>.")
             .Then
-            .ForCondition(EqualityComparer<T>.Default.Equals(Subject.Value, expected))
-            .FailWith("Expected result value to be {0}{reason}, but found {1}.", expected, Subject.Value);
+            .ForCondition(Subject!.IsSuccess)
+            .FailWith("Expected result to be successful{reason}, but it failed with: {0}",
+                string.Join(", ", Subject!.Errors.Select(e => e.Message)))
+            .Then
+            .ForCondition(EqualityComparer<T>.Default.Equals(Subject!.Value, expected))
+            .FailWith("Expected result value to be {0}{reason}, but found {1}.", expected, Subject!.Value);
 
         return new AndConstraint<ResultAssertions<T>>(this);
     }

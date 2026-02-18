@@ -4,7 +4,7 @@ namespace IntegratoR.TestKit.Fakes;
 
 /// <summary>
 /// A configurable implementation of <see cref="ICacheableQuery{TResponse}"/> for use in
-/// <see cref="IntegratoR.Application.Common.Behaviours.CachingBehaviour{TRequest,TResponse}"/> tests.
+/// <c>CachingBehaviour</c> tests.
 /// Allows tests to control the cache key, duration, and key values without creating real query types.
 /// </summary>
 /// <typeparam name="TResponse">The response type of the cacheable query.</typeparam>

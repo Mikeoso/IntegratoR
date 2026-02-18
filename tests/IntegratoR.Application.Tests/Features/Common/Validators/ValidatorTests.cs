@@ -76,12 +76,12 @@ public class ValidatorTests
         var validator = new CreateBatchCommandValidator<TestEntity>();
         var command = new CreateBatchCommand<TestEntity>(null!);
 
-        // Act -- the Must(e => e.Any()) predicate is evaluated on null, throwing an exception
-        // because the NotNull() rule does not short-circuit chained Must() in FluentValidation
-        var act = () => validator.Validate(command);
+        // Act
+        var result = validator.Validate(command);
 
         // Assert
-        act.Should().Throw<Exception>();
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainSingle(e => e.PropertyName == "Entities");
     }
 
     [Fact]
@@ -162,12 +162,12 @@ public class ValidatorTests
         var validator = new UpdateBatchCommandValidator<TestEntity>();
         var command = new UpdateBatchCommand<TestEntity>(null!);
 
-        // Act -- Must(e => e.Any()) is evaluated on null causing an exception
-        // because NotNull() does not short-circuit chained Must() in FluentValidation
-        var act = () => validator.Validate(command);
+        // Act
+        var result = validator.Validate(command);
 
         // Assert
-        act.Should().Throw<Exception>();
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainSingle(e => e.PropertyName == "Entities");
     }
 
     [Fact]
@@ -248,12 +248,12 @@ public class ValidatorTests
         var validator = new DeleteBatchCommandValidator<TestEntity>();
         var command = new DeleteBatchCommand<TestEntity>(null!);
 
-        // Act -- Must(e => e.Any()) is evaluated on null causing an exception
-        // because NotNull() does not short-circuit chained Must() in FluentValidation
-        var act = () => validator.Validate(command);
+        // Act
+        var result = validator.Validate(command);
 
         // Assert
-        act.Should().Throw<Exception>();
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainSingle(e => e.PropertyName == "Entities");
     }
 
     [Fact]
@@ -296,12 +296,12 @@ public class ValidatorTests
         var validator = new GetByKeyQueryValidator<TestEntity>();
         var query = new GetByKeyQuery<TestEntity>(null!);
 
-        // Act -- Must(k => k.Length > 0) throws NullReferenceException because
-        // NotNull() does not short-circuit chained Must() in FluentValidation 12
-        var act = () => validator.Validate(query);
+        // Act
+        var result = validator.Validate(query);
 
         // Assert
-        act.Should().Throw<Exception>();
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainSingle(e => e.PropertyName == "CompositeKey");
     }
 
     [Fact]

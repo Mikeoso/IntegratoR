@@ -91,14 +91,7 @@ public class ApplicationDependencyInjectionTests
         // Assert -- FluentValidation registers validators; verify service provider can be built
         provider.Should().NotBeNull();
 
-        // Verify at least 1 validator is present (concrete type validators from Application assembly)
-        var validators = services.Where(d =>
-            d.ServiceType.IsGenericType &&
-            d.ServiceType.GetGenericTypeDefinition().FullName == "FluentValidation.IValidator`1")
-            .ToList();
-
-        // Note: open-generic validators aren't picked up by AddValidatorsFromAssembly,
-        // but concrete ones are. The service collection still has validators for concrete requests.
-        validators.Count.Should().BeGreaterThanOrEqualTo(0);
+        // Assert -- service provider builds successfully with all registrations
+        provider.Should().NotBeNull();
     }
 }

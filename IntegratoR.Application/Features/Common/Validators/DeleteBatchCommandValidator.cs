@@ -13,6 +13,7 @@ public class DeleteBatchCommandValidator<TEntity> : AbstractValidator<DeleteBatc
     public DeleteBatchCommandValidator()
     {
         RuleFor(x => x.Entities)
+            .Cascade(CascadeMode.Stop)
             .NotNull().WithMessage("Entities collection must not be null.")
             .Must(e => e.Any()).WithMessage("Entities collection must not be empty.");
     }
