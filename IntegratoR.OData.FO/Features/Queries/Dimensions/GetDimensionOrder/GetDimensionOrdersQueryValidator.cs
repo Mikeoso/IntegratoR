@@ -1,4 +1,4 @@
-﻿using FluentValidation;
+using FluentValidation;
 
 namespace IntegratoR.OData.FO.Features.Queries.Dimensions.GetDimensionOrder;
 

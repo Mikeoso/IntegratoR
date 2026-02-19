@@ -1,4 +1,3 @@
-﻿using IntegratoR.OData.FO.Domain.Entities.LedgerJournal;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
@@ -7,6 +6,7 @@ using System.Linq;
 using System.Text;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
+using IntegratoR.OData.FO.Domain.Entities.LedgerJournal;
 
 namespace IntegratoR.SampleFunction.Domain.Entities.LedgerJournal
 {

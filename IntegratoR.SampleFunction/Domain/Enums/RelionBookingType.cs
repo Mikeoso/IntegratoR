@@ -1,4 +1,4 @@
-﻿namespace IntegratoR.SampleFunction.Domain.Enums
+namespace IntegratoR.SampleFunction.Domain.Enums
 {
     public enum RelionBookingType
     {

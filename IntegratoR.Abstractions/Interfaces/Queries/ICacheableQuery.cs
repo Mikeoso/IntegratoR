@@ -1,4 +1,4 @@
-﻿using IntegratoR.Abstractions.Interfaces.Queries;
+using IntegratoR.Abstractions.Interfaces.Queries;
 
 namespace IntegratoR.Abstractions.Interfaces.Queries;
 

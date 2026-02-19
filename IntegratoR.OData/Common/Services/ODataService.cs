@@ -1,4 +1,9 @@
-﻿using FluentResults;
+using System.Collections.Concurrent;
+using System.ComponentModel.DataAnnotations.Schema;
+using System.Linq.Expressions;
+using System.Reflection;
+using System.Text.Json.Serialization;
+using FluentResults;
 using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.Abstractions.Interfaces.Entity;
 using IntegratoR.OData.Common.Annotations;
@@ -6,11 +11,6 @@ using IntegratoR.OData.Interfaces.Services;
 using Microsoft.Extensions.Logging;
 using Polly.Retry;
 using Simple.OData.Client;
-using System.Collections.Concurrent;
-using System.ComponentModel.DataAnnotations.Schema;
-using System.Linq.Expressions;
-using System.Reflection;
-using System.Text.Json.Serialization;
 
 namespace IntegratoR.OData.Common.Services;
 

@@ -1,10 +1,10 @@
-﻿using IntegratoR.RELion.Common.Authentication;
+using System.Reflection;
+using IntegratoR.RELion.Common.Authentication;
 using IntegratoR.RELion.Common.Services;
 using IntegratoR.RELion.Domain.Settings;
 using IntegratoR.RELion.Interfaces.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using System.Reflection;
 
 namespace IntegratoR.RELion.Common.Extensions;
 

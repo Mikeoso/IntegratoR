@@ -1,6 +1,6 @@
-﻿using FluentResults;
-using IntegratoR.Abstractions.Interfaces.Entity;
 using System.Linq.Expressions;
+using FluentResults;
+using IntegratoR.Abstractions.Interfaces.Entity;
 
 namespace IntegratoR.Abstractions.Interfaces.Services;
 

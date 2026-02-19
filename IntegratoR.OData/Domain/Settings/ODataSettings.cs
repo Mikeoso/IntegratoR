@@ -1,4 +1,4 @@
-﻿namespace IntegratoR.OData.Domain.Settings;
+namespace IntegratoR.OData.Domain.Settings;
 
 /// <summary>
 /// Encapsulates all configuration settings required to connect and authenticate with a

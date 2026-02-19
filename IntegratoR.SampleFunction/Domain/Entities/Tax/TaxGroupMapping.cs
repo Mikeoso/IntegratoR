@@ -1,8 +1,8 @@
-﻿using IntegratoR.Abstractions.Domain.Entities;
-using IntegratoR.SampleFunction.Domain.Enums;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Text.Json.Serialization;
+using IntegratoR.Abstractions.Domain.Entities;
+using IntegratoR.SampleFunction.Domain.Enums;
 
 namespace IntegratoR.SampleFunction.Domain.Entities.Tax;
 

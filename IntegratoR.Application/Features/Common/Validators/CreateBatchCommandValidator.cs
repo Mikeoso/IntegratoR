@@ -13,6 +13,7 @@ public class CreateBatchCommandValidator<TEntity> : AbstractValidator<CreateBatc
     public CreateBatchCommandValidator()
     {
         RuleFor(x => x.Entities)
+            .Cascade(CascadeMode.Stop)
             .NotNull().WithMessage("Entities collection must not be null.")
             .Must(e => e.Any()).WithMessage("Entities collection must not be empty.");
     }

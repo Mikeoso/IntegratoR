@@ -1,4 +1,5 @@
-﻿using FluentResults;
+using System.Text;
+using FluentResults;
 using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.RELion.Domain.DTOs;
 using IntegratoR.RELion.Domain.Models;
@@ -7,7 +8,6 @@ using IntegratoR.RELion.Interfaces.Services;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Newtonsoft.Json;
-using System.Text;
 
 namespace IntegratoR.RELion.Common.Services;
 

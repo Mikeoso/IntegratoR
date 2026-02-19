@@ -1,12 +1,12 @@
-﻿using FluentResults;
-using IntegratoR.Abstractions.Interfaces.Queries;
-using IntegratoR.SampleFunction.Domain.Entities.Tax;
-using IntegratoR.SampleFunction.Domain.Enums;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using FluentResults;
+using IntegratoR.Abstractions.Interfaces.Queries;
+using IntegratoR.SampleFunction.Domain.Entities.Tax;
+using IntegratoR.SampleFunction.Domain.Enums;
 
 namespace IntegratoR.SampleFunction.Features.Queries.Tax.GetTaxGroupMapping
 {

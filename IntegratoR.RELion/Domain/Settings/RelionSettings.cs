@@ -1,4 +1,4 @@
-﻿using IntegratoR.RELion.Domain.Settings;
+using IntegratoR.RELion.Domain.Settings;
 
 namespace IntegratoR.RELion.Domain.Settings;
 

@@ -1,5 +1,5 @@
-﻿using IntegratoR.Abstractions.Common.CQRS.Queries;
 using FluentResults;
+using IntegratoR.Abstractions.Common.CQRS.Queries;
 using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.Abstractions.Interfaces.Entity;
 using IntegratoR.Abstractions.Interfaces.Services;

@@ -1,4 +1,4 @@
-﻿using IntegratoR.RELion.Domain.DTOs;
+using IntegratoR.RELion.Domain.DTOs;
 using Newtonsoft.Json;
 
 namespace IntegratoR.RELion.Domain.DTOs;

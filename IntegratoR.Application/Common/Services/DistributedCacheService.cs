@@ -1,6 +1,6 @@
+using System.Text.Json;
 using IntegratoR.Abstractions.Interfaces.Services;
 using Microsoft.Extensions.Caching.Distributed;
-using System.Text.Json;
 
 namespace IntegratoR.Application.Common.Services;
 

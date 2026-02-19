@@ -1,4 +1,4 @@
-﻿namespace IntegratoR.OData.FO.Domain.Models.FinancialDimensions;
+namespace IntegratoR.OData.FO.Domain.Models.FinancialDimensions;
 
 /// <summary>
 /// Represents the parsed structure of a financial dimension format.

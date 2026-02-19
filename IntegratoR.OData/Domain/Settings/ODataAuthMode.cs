@@ -1,4 +1,4 @@
-﻿// FILE-LEVEL DOCUMENTATION
+// FILE-LEVEL DOCUMENTATION
 // ---------------------------------------------------------------------------------------------
 // <remarks>
 // This file defines a configuration enum that specifies the authentication strategy for the

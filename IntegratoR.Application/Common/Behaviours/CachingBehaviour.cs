@@ -1,4 +1,4 @@
-﻿using FluentResults;
+using FluentResults;
 using IntegratoR.Abstractions.Interfaces.Queries;
 using IntegratoR.Abstractions.Interfaces.Services;
 using MediatR;
