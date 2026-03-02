@@ -25,7 +25,7 @@
 
   <ItemGroup Label="Authentication">
     <PackageVersion Include="Microsoft.Identity.Client" Version="4.82.1" />
-    <PackageVersion Include="Azure.Identity" Version="1.17.1" />
+    <PackageVersion Include="Azure.Identity" Version="1.18.0" />
     <PackageVersion Include="Azure.Extensions.AspNetCore.Configuration.Secrets" Version="1.4.0" />
   </ItemGroup>
 
