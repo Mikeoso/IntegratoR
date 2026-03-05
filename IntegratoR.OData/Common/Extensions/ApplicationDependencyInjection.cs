@@ -1,6 +1,4 @@
 using System.Net;
-using IntegratoR.Abstractions.Common.Results;
-using IntegratoR.Abstractions.Interfaces.Services;
 using IntegratoR.OData.Common.Authentication;
 using IntegratoR.OData.Common.Services;
 using IntegratoR.OData.Domain.Settings;
@@ -9,10 +7,11 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using PanoramicData.OData.Client;
+using PanoramicData.OData.Client.Exceptions;
 using Polly;
 using Polly.Extensions.Http;
 using Polly.Retry;
-using Simple.OData.Client;
 
 namespace IntegratoR.OData.Common.Extensions;
 
@@ -51,10 +50,6 @@ public static class ApplicationDependencyInjection
 
     private static void AddODataDependencies(this IServiceCollection services)
     {
-        // Enable DTD processing for D365 F&O metadata (required for $metadata endpoint)
-        // Note: Only enables parsing, not external entity resolution (safe)
-        AppContext.SetSwitch("Switch.System.Xml.AllowDefaultResolver", true);
-
         // Register supporting services
         services.AddTransient<ODataAuthenticationHandler>();
         services.AddSingleton<ODataMetadataProvider>();
@@ -109,55 +104,33 @@ public static class ApplicationDependencyInjection
                         durationOfBreak: TimeSpan.FromSeconds(settings.CircuitBreakerDurationSeconds));
             });
 
-        // Register Simple.OData.Client with metadata handling
-        services.AddSingleton<IODataClient>(serviceProvider =>
+        // Register PanoramicData ODataClient
+        services.AddSingleton(serviceProvider =>
         {
             var settings = serviceProvider.GetRequiredService<IOptions<ODataSettings>>().Value;
-            var logger = serviceProvider.GetRequiredService<ILogger<IODataClient>>();
+            var logger = serviceProvider.GetRequiredService<ILogger<ODataClient>>();
 
             var httpClient = serviceProvider.GetRequiredService<IHttpClientFactory>()
                 .CreateClient("ODataClient");
 
             httpClient.Timeout = TimeSpan.FromSeconds(settings.Timeout);
 
-            var odataClientSettings = new ODataClientSettings(httpClient)
+            var options = new ODataClientOptions
             {
-                BaseUri = new Uri(settings.Url),
-                ReadUntypedAsString = true,
-                IgnoreUnmappedProperties = true,
-                PayloadFormat = ODataPayloadFormat.Json
+                BaseUrl = settings.Url,
+                HttpClient = httpClient
             };
 
-            // Load local metadata if configured
-            if (!string.IsNullOrEmpty(settings.MetadataFilePath))
-            {
-                var metadataProvider = serviceProvider.GetRequiredService<ODataMetadataProvider>();
-                var metadataResult = metadataProvider.LoadMetadata(settings.MetadataFilePath);
+            logger.LogInformation("OData client configured with base URL: {BaseUrl}", settings.Url);
 
-                if (metadataResult.IsSuccess)
-                {
-                    // Set metadata as string - Simple.OData.Client will parse it
-                    odataClientSettings.MetadataDocument = metadataResult.Value;
+            return new ODataClient(options);
+        });
 
-                    logger.LogInformation(
-                        "OData client configured with local metadata from: {MetadataFilePath}",
-                        settings.MetadataFilePath);
-                }
-                else
-                {
-                    logger.LogError(
-                        "Failed to load local metadata file from {MetadataFilePath}. Error: {Error}. Falling back to server metadata.",
-                        settings.MetadataFilePath,
-                        metadataResult.GetError()?.Message);
-                    // Don't set MetadataDocument - let it fetch from server
-                }
-            }
-            else
-            {
-                logger.LogInformation("OData client will fetch metadata from server on first request.");
-            }
-
-            return new ODataClient(odataClientSettings);
+        // Register the adapter that wraps PanoramicData's ODataClient
+        services.AddSingleton<IODataClientAdapter>(serviceProvider =>
+        {
+            var client = serviceProvider.GetRequiredService<ODataClient>();
+            return new ODataClientAdapter(client);
         });
 
         // Register AsyncRetryPolicy for OData operations (in addition to HTTP retries)
@@ -174,7 +147,7 @@ public static class ApplicationDependencyInjection
             var logger = loggerFactory?.CreateLogger("IntegratoR.OData.Retry");
 
             return Policy
-                .Handle<WebRequestException>(ex => IsTransientError(ex.Code))
+                .Handle<ODataClientException>(ex => IsTransientError(ex.StatusCode))
                 .Or<TaskCanceledException>()
                 .WaitAndRetryAsync(
                     settings.RetryCount,
@@ -190,7 +163,7 @@ public static class ApplicationDependencyInjection
         });
 
         // Register repository services
-        services.AddScoped(typeof(IService<>), typeof(ODataService<>));
+        services.AddScoped(typeof(IntegratoR.Abstractions.Interfaces.Services.IService<>), typeof(ODataService<>));
         services.AddScoped(typeof(IODataService<>), typeof(ODataService<>));
         services.AddScoped(typeof(IODataBatchService<>), typeof(ODataService<>));
     }
@@ -208,17 +181,17 @@ public static class ApplicationDependencyInjection
     /// <summary>
     /// Determines if an HTTP status code represents a transient error worth retrying.
     /// </summary>
-    private static bool IsTransientError(HttpStatusCode statusCode)
+    private static bool IsTransientError(int? statusCode)
     {
         return statusCode switch
         {
-            HttpStatusCode.RequestTimeout => true,
-            HttpStatusCode.TooManyRequests => true,
-            HttpStatusCode.InternalServerError => true,
-            HttpStatusCode.BadGateway => true,
-            HttpStatusCode.ServiceUnavailable => true,
-            HttpStatusCode.GatewayTimeout => true,
-            _ when ((int)statusCode >= 500) => true,
+            408 => true, // RequestTimeout
+            429 => true, // TooManyRequests
+            500 => true, // InternalServerError
+            502 => true, // BadGateway
+            503 => true, // ServiceUnavailable
+            504 => true, // GatewayTimeout
+            >= 500 => true,
             _ => false
         };
     }

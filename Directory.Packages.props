@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
-    <CentralPackageTransitivePinningEnabled>false</CentralPackageTransitivePinningEnabled>
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
   </PropertyGroup>
 
   <ItemGroup Label="Core">
@@ -30,10 +30,7 @@
   </ItemGroup>
 
   <ItemGroup Label="OData">
-    <PackageVersion Include="Microsoft.OData.Core" Version="7.22.0" />
-    <PackageVersion Include="Microsoft.OData.Edm" Version="7.22.0" />
-    <PackageVersion Include="Simple.OData.Client" Version="6.0.1" />
-    <PackageVersion Include="Simple.OData.V4.Client" Version="6.0.1" />
+    <PackageVersion Include="PanoramicData.OData.Client" Version="10.0.55" />
   </ItemGroup>
 
   <ItemGroup Label="Resilience">

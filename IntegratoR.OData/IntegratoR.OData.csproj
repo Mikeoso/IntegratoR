@@ -10,12 +10,9 @@
     <PackageReference Include="Microsoft.Extensions.Http.Polly" />
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
     <PackageReference Include="Microsoft.Identity.Client" />
-    <PackageReference Include="Microsoft.OData.Core" />
-    <PackageReference Include="Microsoft.OData.Edm" />
+    <PackageReference Include="PanoramicData.OData.Client" />
     <PackageReference Include="Polly" />
     <PackageReference Include="Polly.Extensions.Http" />
-    <PackageReference Include="Simple.OData.Client" />
-    <PackageReference Include="Simple.OData.V4.Client" />
     <PackageReference Include="StackExchange.Redis" />
   </ItemGroup>
 

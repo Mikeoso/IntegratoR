@@ -4,8 +4,8 @@ using FluentResults;
 using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.Abstractions.Interfaces.Entity;
 using Microsoft.Extensions.Logging;
+using PanoramicData.OData.Client.Exceptions;
 using Polly.Retry;
-using Simple.OData.Client;
 
 namespace IntegratoR.OData.Common.Services;
 
@@ -204,7 +204,14 @@ public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
     {
         var error = exception switch
         {
-            WebRequestException webEx => CreateWebRequestError(context, elapsed, webEx, attemptCount),
+            ODataUnauthorizedException unauthorizedEx
+                => CreateODataClientError(context, elapsed, (int)HttpStatusCode.Unauthorized, unauthorizedEx, attemptCount),
+            ODataForbiddenException forbiddenEx
+                => CreateODataClientError(context, elapsed, (int)HttpStatusCode.Forbidden, forbiddenEx, attemptCount),
+            ODataConcurrencyException concurrencyEx
+                => CreateODataClientError(context, elapsed, (int)HttpStatusCode.PreconditionFailed, concurrencyEx, attemptCount),
+            ODataClientException clientEx
+                => CreateODataClientError(context, elapsed, clientEx.StatusCode, clientEx, attemptCount),
             TaskCanceledException tcEx when !cancellationToken.IsCancellationRequested
                 => CreateTimeoutError(context, elapsed, tcEx, attemptCount),
             OperationCanceledException ocEx => CreateCancellationError(context, elapsed, ocEx, attemptCount),
@@ -226,29 +233,32 @@ public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
         return (TResult)(object)Result.Fail(error);
     }
 
-    private IntegrationError CreateWebRequestError(
+    private IntegrationError CreateODataClientError(
         OperationContext context,
         TimeSpan elapsed,
-        WebRequestException exception,
+        int? statusCode,
+        Exception exception,
         int attemptCount)
     {
-        var (errorCode, errorMessage, errorType) = exception.Code switch
+        var code = statusCode ?? 0;
+
+        var (errorCode, errorMessage, errorType) = code switch
         {
-            HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden =>
+            401 or 403 =>
                 ("Unauthorized", $"Authentication failed: {exception.Message}", ErrorType.Failure),
-            HttpStatusCode.BadRequest =>
+            400 =>
                 ("ValidationFailed", $"Validation failed: {exception.Message}", ErrorType.Validation),
-            HttpStatusCode.NotFound =>
+            404 =>
                 ("NotFound", "Entity was not found", ErrorType.NotFound),
-            HttpStatusCode.Conflict =>
+            409 =>
                 ("Conflict", $"Conflict occurred: {exception.Message}", ErrorType.Conflict),
-            HttpStatusCode.PreconditionFailed =>
+            412 =>
                 ("ConcurrencyConflict", "Entity modified by another user", ErrorType.Conflict),
-            HttpStatusCode.TooManyRequests =>
+            429 =>
                 ("RateLimitExceeded", "Rate limit exceeded", ErrorType.Failure),
-            HttpStatusCode.ServiceUnavailable or HttpStatusCode.GatewayTimeout =>
+            503 or 504 =>
                 ("ServiceUnavailable", $"Service unavailable: {exception.Message}", ErrorType.Failure),
-            _ when ((int)exception.Code >= 500) =>
+            >= 500 =>
                 ("ServerError", $"Server error: {exception.Message}", ErrorType.Failure),
             _ => ($"{context.OperationName}Failed", $"Operation failed: {exception.Message}", ErrorType.Failure)
         };
@@ -259,7 +269,7 @@ public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
             "{Operation} on {EntityType} failed after {ElapsedMs}ms and {Attempts} attempt(s). " +
             "StatusCode: {StatusCode}",
             context.OperationName, context.EntityType, elapsed.TotalMilliseconds,
-            attemptCount, exception.Code);
+            attemptCount, statusCode);
 
         return new IntegrationError($"{context.EntityType}.{errorCode}", errorMessage, errorType, exception);
     }
@@ -383,12 +393,3 @@ internal record OperationContext(
     string OperationName,
     string EntityType,
     object[]? EntityKey = null);
-
-/// <summary>
-/// Exception thrown when an OData entity is not found.
-/// Used to distinguish NotFound scenarios from other errors for proper handling.
-/// </summary>
-internal class ODataNotFoundException : Exception
-{
-    public ODataNotFoundException(string message) : base(message) { }
-}

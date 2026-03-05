@@ -9,8 +9,8 @@ using IntegratoR.Abstractions.Interfaces.Entity;
 using IntegratoR.OData.Common.Annotations;
 using IntegratoR.OData.Interfaces.Services;
 using Microsoft.Extensions.Logging;
+using PanoramicData.OData.Client.Exceptions;
 using Polly.Retry;
-using Simple.OData.Client;
 
 namespace IntegratoR.OData.Common.Services;
 
@@ -23,19 +23,22 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
     where TEntity : class, IEntity
 {
     private static readonly ConcurrentDictionary<Type, CachedPropertyMetadata[]> PropertyMetadataCache = new();
+    private static readonly ConcurrentDictionary<Type, string> EntitySetNameCache = new();
 
-    private readonly IODataClient _client;
+    private readonly IODataClientAdapter _client;
     private readonly ILogger<ODataService<TEntity>> _logger;
     private readonly ODataExceptionHandler<TEntity> _exceptionHandler;
+    private readonly string _entitySetName;
 
     public ODataService(
-        IODataClient client,
+        IODataClientAdapter client,
         ILogger<ODataService<TEntity>> logger,
         AsyncRetryPolicy? retryPolicy = null)
     {
         _client = client;
         _logger = logger;
         _exceptionHandler = new ODataExceptionHandler<TEntity>(logger, retryPolicy);
+        _entitySetName = ResolveEntitySetName();
     }
 
     #region IService Implementation
@@ -52,9 +55,7 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
                     typeof(TEntity).Name, payload);
 
                 return await _client
-                    .For<TEntity>()
-                    .Set(payload)
-                    .InsertEntryAsync(true, cancellationToken)
+                    .CreateAsync<TEntity>(_entitySetName, payload, cancellationToken)
                     .ConfigureAwait(false);
             },
             entityKey: () => entity.GetCompositeKey(),
@@ -70,16 +71,15 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
             operationName: "Find",
             operation: async () =>
             {
-                var query = _client.For<TEntity>();
-
                 if (filter is not null)
                 {
-                    query = query.Filter(filter);
                     _logger.LogDebug("Executing FindAsync for {EntityType} with filter: {Filter}",
                         typeof(TEntity).Name, filter.ToString());
                 }
 
-                return await query.FindEntriesAsync(cancellationToken).ConfigureAwait(false);
+                return await _client
+                    .FindEntriesAsync<TEntity>(_entitySetName, filter, cancellationToken: cancellationToken)
+                    .ConfigureAwait(false);
             },
             cancellationToken: cancellationToken);
     }
@@ -102,10 +102,10 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
                 _logger.LogDebug("Retrieving {EntityType} by key: {@KeyValues}",
                     typeof(TEntity).Name, keyValues);
 
+                var key = BuildCompositeKeyObject(keyValues);
+
                 var entity = await _client
-                    .For<TEntity>()
-                    .Key(keyValues)
-                    .FindEntryAsync(cancellationToken)
+                    .FindByKeyAsync<TEntity>(_entitySetName, key, cancellationToken)
                     .ConfigureAwait(false);
 
                 if (entity is null)
@@ -138,11 +138,10 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
                 _logger.LogDebug("Updating {EntityType} with key {@Key}",
                     typeof(TEntity).Name, entity.GetCompositeKey());
 
+                var key = BuildCompositeKeyObject(entity.GetCompositeKey());
+
                 return await _client
-                    .For<TEntity>()
-                    .Key(entity)
-                    .Set(entity)
-                    .UpdateEntryAsync(cancellationToken)
+                    .UpdateAsync<TEntity>(_entitySetName, key, entity, cancellationToken)
                     .ConfigureAwait(false);
             },
             entityKey: () => entity.GetCompositeKey(),
@@ -167,10 +166,10 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
                 _logger.LogDebug("Deleting {EntityType} with key {@Key}",
                     typeof(TEntity).Name, entity.GetCompositeKey());
 
+                var key = BuildCompositeKeyObject(entity.GetCompositeKey());
+
                 await _client
-                    .For<TEntity>()
-                    .Key(entity)
-                    .DeleteEntryAsync(cancellationToken)
+                    .DeleteAsync(_entitySetName, key, cancellationToken)
                     .ConfigureAwait(false);
             },
             entityKey: () => entity.GetCompositeKey(),
@@ -194,18 +193,9 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
     {
         return _exceptionHandler.ExecuteCollectionAsync(
             operationName: "Query",
-            operation: async () =>
-            {
-                var query = _client.For<TEntity>();
-
-                if (filter is not null) query = query.Filter(filter);
-                if (expand is not null) query = query.Expand(expand);
-                if (select is not null) query = query.Select(select);
-                if (skip.HasValue) query = query.Skip(skip.Value);
-                if (top.HasValue) query = query.Top(top.Value);
-
-                return await query.FindEntriesAsync(cancellationToken).ConfigureAwait(false);
-            },
+            operation: async () => await _client
+                .FindEntriesAsync<TEntity>(_entitySetName, filter, expand, select, skip, top, cancellationToken)
+                .ConfigureAwait(false),
             cancellationToken: cancellationToken);
     }
 
@@ -215,8 +205,7 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
         return _exceptionHandler.ExecuteCollectionAsync(
             operationName: "FindAll",
             operation: async () => await _client
-                .For<TEntity>()
-                .FindEntriesAsync(cancellationToken)
+                .FindEntriesAsync<TEntity>(_entitySetName, cancellationToken: cancellationToken)
                 .ConfigureAwait(false),
             cancellationToken: cancellationToken);
     }
@@ -228,12 +217,9 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
     {
         return _exceptionHandler.ExecuteScalarAsync(
             operationName: "Count",
-            operation: async () =>
-            {
-                var query = _client.For<TEntity>();
-                if (filter is not null) query = query.Filter(filter);
-                return await query.Count().FindScalarAsync<int>(cancellationToken).ConfigureAwait(false);
-            },
+            operation: async () => await _client
+                .CountAsync<TEntity>(_entitySetName, filter, cancellationToken)
+                .ConfigureAwait(false),
             cancellationToken: cancellationToken);
     }
 
@@ -250,14 +236,9 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
             operationName: "AddBatch",
             operation: async () =>
             {
-                var batch = new ODataBatch(_client);
-                foreach (var entity in entities)
-                {
-                    batch += c => c.For<TEntity>()
-                        .Set(entity)
-                        .InsertEntryAsync(cancellationToken);
-                }
-                await batch.ExecuteAsync(cancellationToken).ConfigureAwait(false);
+                await _client
+                    .BatchCreateAsync<TEntity>(_entitySetName, entities, cancellationToken)
+                    .ConfigureAwait(false);
             },
             entityKey: () => new object[] { $"{entities.Count()} entities" },
             cancellationToken: cancellationToken);
@@ -272,14 +253,10 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
             operationName: "DeleteBatch",
             operation: async () =>
             {
-                var batch = new ODataBatch(_client);
-                foreach (var entity in entities)
-                {
-                    batch += c => c.For<TEntity>()
-                        .Key(entity.GetCompositeKey())
-                        .DeleteEntryAsync(cancellationToken);
-                }
-                await batch.ExecuteAsync(cancellationToken).ConfigureAwait(false);
+                var keys = entities.Select(e => BuildCompositeKeyObject(e.GetCompositeKey()));
+                await _client
+                    .BatchDeleteAsync(_entitySetName, keys, cancellationToken)
+                    .ConfigureAwait(false);
             },
             entityKey: () => new object[] { $"{entities.Count()} entities" },
             cancellationToken: cancellationToken);
@@ -294,15 +271,11 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
             operationName: "UpdateBatch",
             operation: async () =>
             {
-                var batch = new ODataBatch(_client);
-                foreach (var entity in entities)
-                {
-                    batch += c => c.For<TEntity>()
-                        .Key(entity.GetCompositeKey())
-                        .Set(entity)
-                        .UpdateEntryAsync(cancellationToken);
-                }
-                await batch.ExecuteAsync(cancellationToken).ConfigureAwait(false);
+                var items = entities.Select(e =>
+                    (BuildCompositeKeyObject(e.GetCompositeKey()), e));
+                await _client
+                    .BatchUpdateAsync<TEntity>(_entitySetName, items, cancellationToken)
+                    .ConfigureAwait(false);
             },
             entityKey: () => new object[] { $"{entities.Count()} entities" },
             cancellationToken: cancellationToken);
@@ -311,6 +284,51 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
     #endregion
 
     #region Helper Methods
+
+    /// <summary>
+    /// Resolves the OData entity set name from the <see cref="TableAttribute"/> on the entity type.
+    /// Falls back to the pluralised type name if the attribute is not present.
+    /// </summary>
+    private static string ResolveEntitySetName()
+    {
+        return EntitySetNameCache.GetOrAdd(typeof(TEntity), type =>
+        {
+            var tableAttr = type.GetCustomAttribute<TableAttribute>();
+            return tableAttr?.Name ?? $"{type.Name}s";
+        });
+    }
+
+    /// <summary>
+    /// Builds a composite key object from key values by mapping them to key property names.
+    /// For single keys, returns the value directly. For composite keys, returns a dictionary.
+    /// </summary>
+    private static object BuildCompositeKeyObject(object[] keyValues)
+    {
+        if (keyValues.Length == 1)
+        {
+            return keyValues[0];
+        }
+
+        var keyProperties = typeof(TEntity)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .Where(p => p.GetCustomAttribute<System.ComponentModel.DataAnnotations.KeyAttribute>() is not null)
+            .ToArray();
+
+        if (keyProperties.Length == keyValues.Length)
+        {
+            var keyDict = new Dictionary<string, object>();
+            for (var i = 0; i < keyProperties.Length; i++)
+            {
+                var jsonName = keyProperties[i].GetCustomAttribute<System.Text.Json.Serialization.JsonPropertyNameAttribute>()?.Name
+                    ?? keyProperties[i].Name;
+                keyDict[jsonName] = keyValues[i];
+            }
+            return keyDict;
+        }
+
+        // Fallback: return first value if key property count doesn't match
+        return keyValues[0];
+    }
 
     private static Dictionary<string, object> CreatePayload(TEntity entity, bool isCreateOperation)
     {
