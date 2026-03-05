@@ -52,6 +52,9 @@ local.settings.json
 secrets.json
 CLAUDE.local.md
 
+# Claude Code local settings
+.claude/settings.local.json
+
 # OS files
 Thumbs.db
 .DS_Store
