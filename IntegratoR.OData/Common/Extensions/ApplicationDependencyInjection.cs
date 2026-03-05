@@ -140,7 +140,8 @@ public static class ApplicationDependencyInjection
 
             if (!settings.EnableRetries)
             {
-                return (AsyncRetryPolicy)null!;
+                return Policy.Handle<Exception>(_ => false)
+                    .WaitAndRetryAsync(0, _ => TimeSpan.Zero);
             }
 
             var loggerFactory = serviceProvider.GetService<ILoggerFactory>();
@@ -187,11 +188,7 @@ public static class ApplicationDependencyInjection
         {
             408 => true, // RequestTimeout
             429 => true, // TooManyRequests
-            500 => true, // InternalServerError
-            502 => true, // BadGateway
-            503 => true, // ServiceUnavailable
-            504 => true, // GatewayTimeout
-            >= 500 => true,
+            >= 500 => true, // All server errors (500, 502, 503, 504, etc.)
             _ => false
         };
     }

@@ -24,6 +24,7 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
 {
     private static readonly ConcurrentDictionary<Type, CachedPropertyMetadata[]> PropertyMetadataCache = new();
     private static readonly ConcurrentDictionary<Type, string> EntitySetNameCache = new();
+    private static readonly ConcurrentDictionary<Type, PropertyInfo[]> KeyPropertyCache = new();
 
     private readonly IODataClientAdapter _client;
     private readonly ILogger<ODataService<TEntity>> _logger;
@@ -232,15 +233,17 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
         IEnumerable<TEntity> entities,
         CancellationToken cancellationToken = default)
     {
+        var entityList = entities as IList<TEntity> ?? entities.ToList();
+
         return _exceptionHandler.ExecuteNonQueryAsync(
             operationName: "AddBatch",
             operation: async () =>
             {
                 await _client
-                    .BatchCreateAsync<TEntity>(_entitySetName, entities, cancellationToken)
+                    .BatchCreateAsync<TEntity>(_entitySetName, entityList, cancellationToken)
                     .ConfigureAwait(false);
             },
-            entityKey: () => new object[] { $"{entities.Count()} entities" },
+            entityKey: () => new object[] { $"{entityList.Count} entities" },
             cancellationToken: cancellationToken);
     }
 
@@ -249,16 +252,18 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
         IEnumerable<TEntity> entities,
         CancellationToken cancellationToken = default)
     {
+        var entityList = entities as IList<TEntity> ?? entities.ToList();
+
         return _exceptionHandler.ExecuteNonQueryAsync(
             operationName: "DeleteBatch",
             operation: async () =>
             {
-                var keys = entities.Select(e => BuildCompositeKeyObject(e.GetCompositeKey()));
+                var keys = entityList.Select(e => BuildCompositeKeyObject(e.GetCompositeKey()));
                 await _client
                     .BatchDeleteAsync(_entitySetName, keys, cancellationToken)
                     .ConfigureAwait(false);
             },
-            entityKey: () => new object[] { $"{entities.Count()} entities" },
+            entityKey: () => new object[] { $"{entityList.Count} entities" },
             cancellationToken: cancellationToken);
     }
 
@@ -267,17 +272,19 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
         IEnumerable<TEntity> entities,
         CancellationToken cancellationToken = default)
     {
+        var entityList = entities as IList<TEntity> ?? entities.ToList();
+
         return _exceptionHandler.ExecuteNonQueryAsync(
             operationName: "UpdateBatch",
             operation: async () =>
             {
-                var items = entities.Select(e =>
+                var items = entityList.Select(e =>
                     (BuildCompositeKeyObject(e.GetCompositeKey()), e));
                 await _client
                     .BatchUpdateAsync<TEntity>(_entitySetName, items, cancellationToken)
                     .ConfigureAwait(false);
             },
-            entityKey: () => new object[] { $"{entities.Count()} entities" },
+            entityKey: () => new object[] { $"{entityList.Count} entities" },
             cancellationToken: cancellationToken);
     }
 
@@ -302,17 +309,17 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
     /// Builds a composite key object from key values by mapping them to key property names.
     /// For single keys, returns the value directly. For composite keys, returns a dictionary.
     /// </summary>
-    private static object BuildCompositeKeyObject(object[] keyValues)
+    private object BuildCompositeKeyObject(object[] keyValues)
     {
         if (keyValues.Length == 1)
         {
             return keyValues[0];
         }
 
-        var keyProperties = typeof(TEntity)
-            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
-            .Where(p => p.GetCustomAttribute<System.ComponentModel.DataAnnotations.KeyAttribute>() is not null)
-            .ToArray();
+        var keyProperties = KeyPropertyCache.GetOrAdd(typeof(TEntity), type =>
+            type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+                .Where(p => p.GetCustomAttribute<System.ComponentModel.DataAnnotations.KeyAttribute>() is not null)
+                .ToArray());
 
         if (keyProperties.Length == keyValues.Length)
         {
@@ -327,6 +334,10 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
         }
 
         // Fallback: return first value if key property count doesn't match
+        _logger.LogWarning(
+            "Key property count mismatch for {EntityType}: expected {Expected} key properties but received {Actual} values. " +
+            "Falling back to first key value. Check [Key] attributes on the entity.",
+            typeof(TEntity).Name, keyProperties.Length, keyValues.Length);
         return keyValues[0];
     }
 

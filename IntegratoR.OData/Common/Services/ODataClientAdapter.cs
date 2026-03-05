@@ -11,6 +11,9 @@ namespace IntegratoR.OData.Common.Services;
 /// </summary>
 public class ODataClientAdapter : IODataClientAdapter
 {
+    private static readonly System.Text.Json.JsonSerializerOptions CaseInsensitiveOptions =
+        new() { PropertyNameCaseInsensitive = true };
+
     private readonly ODataClient _client;
 
     public ODataClientAdapter(ODataClient client)
@@ -36,8 +39,7 @@ public class ODataClientAdapter : IODataClientAdapter
 
             // PanoramicData returns the created entity as the same type — deserialize from the response
             var json = System.Text.Json.JsonSerializer.Serialize(jsonResult);
-            return System.Text.Json.JsonSerializer.Deserialize<TEntity>(json,
-                new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+            return System.Text.Json.JsonSerializer.Deserialize<TEntity>(json, CaseInsensitiveOptions)!;
         }
 
         // If the payload is already a TEntity, use direct serialization

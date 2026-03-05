@@ -1,5 +1,7 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Net;
+using System.Reflection;
 using FluentResults;
 using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.Abstractions.Interfaces.Entity;
@@ -23,6 +25,8 @@ namespace IntegratoR.OData.Common.Services;
 /// </remarks>
 public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
 {
+    private static readonly ConcurrentDictionary<Type, MethodInfo> FailMethodCache = new();
+
     private readonly ILogger _logger;
     private readonly string _entityTypeName;
     private readonly AsyncRetryPolicy? _retryPolicy;
@@ -75,11 +79,7 @@ public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
                 var result = await operation().ConfigureAwait(false);
                 return result as IList<TEntity> ?? result.ToList();
             },
-            result =>
-            {
-                LogSuccess(context, TimeSpan.Zero, result.Count);
-                return Result.Ok<IEnumerable<TEntity>>(result);
-            },
+            result => Result.Ok<IEnumerable<TEntity>>(result),
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -218,19 +218,7 @@ public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
             _ => CreateUnexpectedError(context, elapsed, exception, attemptCount)
         };
 
-        if (typeof(TResult).IsGenericType)
-        {
-            var genericType = typeof(TResult).GetGenericArguments()[0];
-            var failMethod = typeof(Result)
-                .GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
-                .First(m => m.Name == "Fail" && m.IsGenericMethod
-                    && m.GetParameters().Length == 1
-                    && m.GetParameters()[0].ParameterType == typeof(IError))
-                .MakeGenericMethod(genericType);
-            return (TResult)failMethod!.Invoke(null, new object[] { error })!;
-        }
-
-        return (TResult)(object)Result.Fail(error);
+        return CreateFailResult<TResult>(error);
     }
 
     private IntegrationError CreateODataClientError(
@@ -293,19 +281,7 @@ public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
             ErrorType.NotFound,
             exception);
 
-        if (typeof(TResult).IsGenericType)
-        {
-            var genericType = typeof(TResult).GetGenericArguments()[0];
-            var failMethod = typeof(Result)
-                .GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
-                .First(m => m.Name == "Fail" && m.IsGenericMethod
-                    && m.GetParameters().Length == 1
-                    && m.GetParameters()[0].ParameterType == typeof(IError))
-                .MakeGenericMethod(genericType);
-            return (TResult)failMethod!.Invoke(null, new object[] { error })!;
-        }
-
-        return (TResult)(object)Result.Fail(error);
+        return CreateFailResult<TResult>(error);
     }
 
     private IntegrationError CreateTimeoutError(
@@ -359,6 +335,24 @@ public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
             $"An unexpected error occurred: {exception.Message}",
             ErrorType.Failure,
             exception);
+    }
+
+    private static TResult CreateFailResult<TResult>(IError error) where TResult : IResultBase
+    {
+        if (typeof(TResult).IsGenericType)
+        {
+            var genericType = typeof(TResult).GetGenericArguments()[0];
+            var failMethod = FailMethodCache.GetOrAdd(genericType, type =>
+                typeof(Result)
+                    .GetMethods(BindingFlags.Public | BindingFlags.Static)
+                    .First(m => m.Name == "Fail" && m.IsGenericMethod
+                        && m.GetParameters().Length == 1
+                        && m.GetParameters()[0].ParameterType == typeof(IError))
+                    .MakeGenericMethod(type));
+            return (TResult)failMethod.Invoke(null, [error])!;
+        }
+
+        return (TResult)(object)Result.Fail(error);
     }
 
     private void LogSuccess(
