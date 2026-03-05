@@ -62,11 +62,31 @@ libraryName: "Polly"
 | Timeout | `"timeout strategy optimistic pessimistic"` |
 | DI with HttpClient | `"AddResilienceHandler HttpClient integration"` |
 
-### Simple.OData.Client
+### PanoramicData.OData.Client
+
+```
+libraryName: "PanoramicData.OData.Client"
+```
+
+| Task | Query |
+|------|-------|
+| CRUD operations | `"CreateAsync GetByKeyAsync UpdateAsync DeleteAsync CRUD"` |
+| Batch operations | `"CreateBatch CreateChangeset batch atomic operations"` |
+| Filtering (LINQ) | `"Filter LINQ expression strongly typed filtering"` |
+| Filtering (string) | `"Filter raw OData filter string query"` |
+| Query builder | `"For Select Expand OrderBy Skip Top Count query"` |
+| Pagination | `"GetAllAsync automatic pagination next link"` |
+| Exception handling | `"ODataNotFoundException ODataClientException typed exceptions"` |
+| Configuration | `"ODataClientOptions BaseUrl ConfigureRequest JsonSerializerOptions"` |
+| Authentication | `"ConfigureRequest Authorization Bearer token headers"` |
+
+### Simple.OData.Client (REPLACED — use PanoramicData.OData.Client)
 
 ```
 libraryName: "Simple.OData.Client"
 ```
+
+> **Note:** Simple.OData.Client 6.0.1 is unmaintained (last commit May 2024). Replaced by PanoramicData.OData.Client in the IntegratoR codebase.
 
 | Task | Query |
 |------|-------|

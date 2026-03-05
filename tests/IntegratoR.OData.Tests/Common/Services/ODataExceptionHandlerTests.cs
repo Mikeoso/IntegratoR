@@ -7,9 +7,9 @@ using IntegratoR.TestKit.Builders;
 using IntegratoR.TestKit.Doubles.Entities;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
+using PanoramicData.OData.Client.Exceptions;
 using Polly;
 using Polly.Retry;
-using Simple.OData.Client;
 using Xunit;
 
 namespace IntegratoR.OData.Tests.Common.Services;
@@ -179,28 +179,86 @@ public class ODataExceptionHandlerTests
     }
 
     /// <summary>
-    /// Verifies that WebRequestException with various HTTP status codes maps to the correct IntegrationError code and type.
+    /// Verifies that ODataUnauthorizedException maps to the Unauthorized error code.
+    /// </summary>
+    [Fact]
+    public async Task HandleException_ODataUnauthorizedException_MapsToUnauthorizedError()
+    {
+        // Arrange
+        var handler = CreateHandler();
+
+        // Act
+        var result = await handler.ExecuteAsync(
+            "Test",
+            () => throw new ODataUnauthorizedException("Unauthorized access"),
+            cancellationToken: CancellationToken.None);
+
+        // Assert
+        result.Should().BeFailed();
+        result.Should().HaveErrorCode("TestEntity.Unauthorized");
+        result.Should().HaveErrorType(ErrorType.Failure);
+    }
+
+    /// <summary>
+    /// Verifies that ODataForbiddenException maps to the Unauthorized error code.
+    /// </summary>
+    [Fact]
+    public async Task HandleException_ODataForbiddenException_MapsToUnauthorizedError()
+    {
+        // Arrange
+        var handler = CreateHandler();
+
+        // Act
+        var result = await handler.ExecuteAsync(
+            "Test",
+            () => throw new ODataForbiddenException("Forbidden access"),
+            cancellationToken: CancellationToken.None);
+
+        // Assert
+        result.Should().BeFailed();
+        result.Should().HaveErrorCode("TestEntity.Unauthorized");
+        result.Should().HaveErrorType(ErrorType.Failure);
+    }
+
+    /// <summary>
+    /// Verifies that ODataConcurrencyException maps to ConcurrencyConflict error.
+    /// </summary>
+    [Fact]
+    public async Task HandleException_ODataConcurrencyException_MapsToConcurrencyConflictError()
+    {
+        // Arrange
+        var handler = CreateHandler();
+
+        // Act
+        var result = await handler.ExecuteAsync(
+            "Test",
+            () => throw new ODataConcurrencyException("ETag mismatch", "https://test.example.com"),
+            cancellationToken: CancellationToken.None);
+
+        // Assert
+        result.Should().BeFailed();
+        result.Should().HaveErrorCode("TestEntity.ConcurrencyConflict");
+        result.Should().HaveErrorType(ErrorType.Conflict);
+    }
+
+    /// <summary>
+    /// Verifies that ODataClientException with various HTTP status codes maps to the correct IntegrationError code and type.
     /// </summary>
     [Theory]
-    [InlineData(HttpStatusCode.Unauthorized, "TestEntity.Unauthorized", ErrorType.Failure)]
     [InlineData(HttpStatusCode.BadRequest, "TestEntity.ValidationFailed", ErrorType.Validation)]
     [InlineData(HttpStatusCode.NotFound, "TestEntity.NotFound", ErrorType.NotFound)]
     [InlineData(HttpStatusCode.Conflict, "TestEntity.Conflict", ErrorType.Conflict)]
-    [InlineData(HttpStatusCode.PreconditionFailed, "TestEntity.ConcurrencyConflict", ErrorType.Conflict)]
     [InlineData(HttpStatusCode.TooManyRequests, "TestEntity.RateLimitExceeded", ErrorType.Failure)]
     [InlineData(HttpStatusCode.ServiceUnavailable, "TestEntity.ServiceUnavailable", ErrorType.Failure)]
     [InlineData(HttpStatusCode.InternalServerError, "TestEntity.ServerError", ErrorType.Failure)]
-    public async Task HandleException_WebRequestException_MapsToCorrectError(
+    public async Task HandleException_ODataClientException_MapsToCorrectError(
         HttpStatusCode statusCode,
         string expectedErrorCode,
         ErrorType expectedType)
     {
         // Arrange
         var handler = CreateHandler();
-        var exception = WebRequestException.CreateFromStatusCode(
-            statusCode,
-            WebRequestExceptionMessageSource.ReasonPhrase,
-            $"HTTP {(int)statusCode} error");
+        var exception = new ODataClientException($"HTTP {(int)statusCode} error", (int)statusCode, "", "https://test.example.com");
 
         // Act
         var result = await handler.ExecuteAsync(
