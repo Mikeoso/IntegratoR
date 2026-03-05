@@ -68,12 +68,8 @@ Always verify when:
 - Package name doesn't follow conventions (`Azure.*` for .NET, `azure-*` for Python)
 - Using an API for the first time
 
-## Validation Workflow
+## Workflow
 
-Before generating code using Microsoft SDKs, verify it's correct:
-
-1. **Confirm method or package exists** — `microsoft_docs_search(query: "[ClassName] [MethodName] [Namespace]")`
-2. **Fetch full details** (for overloads/complex params) — `microsoft_docs_fetch(url: "...")`
+1. **Confirm method exists** — `microsoft_docs_search(query: "[ClassName] [MethodName] [Namespace]")`
+2. **Fetch full details** (if needed) — `microsoft_docs_fetch(url: "...")`
 3. **Find working sample** — `microsoft_code_sample_search(query: "[task]", language: "[lang]")`
-
-For simple lookups, step 1 alone may suffice. For complex API usage, complete all three steps.
