@@ -22,7 +22,7 @@ namespace IntegratoR.OData.Common.Authentication;
 /// </summary>
 /// <remarks>
 /// This handler is designed to be registered with an <c>IHttpClientFactory</c> when configuring
-/// the typed HttpClient used by the OData client (e.g., Simple.OData.Client). Once registered,
+/// the typed HttpClient used by the OData client (e.g., PanoramicData.OData.Client). Once registered,
 /// it transparently handles authentication for every request.
 ///
 /// It supports two primary authentication modes based on the provided <see cref="ODataSettings"/>:
