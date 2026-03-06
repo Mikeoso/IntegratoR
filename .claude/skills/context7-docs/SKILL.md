@@ -81,7 +81,7 @@ query-docs(libraryId: "/resolved-id", query: "custom validator async validation 
 ### API Usage Verification
 
 ```
-resolve-library-id(libraryName: "Simple.OData.Client", query: "batch operations OData v4")
+resolve-library-id(libraryName: "PanoramicData.OData.Client", query: "batch operations OData v4")
 query-docs(libraryId: "/resolved-id", query: "batch create update operations OData v4 entities")
 ```
 

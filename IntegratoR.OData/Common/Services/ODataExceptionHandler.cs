@@ -1,11 +1,13 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Net;
+using System.Reflection;
 using FluentResults;
 using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.Abstractions.Interfaces.Entity;
 using Microsoft.Extensions.Logging;
+using PanoramicData.OData.Client.Exceptions;
 using Polly.Retry;
-using Simple.OData.Client;
 
 namespace IntegratoR.OData.Common.Services;
 
@@ -23,6 +25,8 @@ namespace IntegratoR.OData.Common.Services;
 /// </remarks>
 public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
 {
+    private static readonly ConcurrentDictionary<Type, MethodInfo> FailMethodCache = new();
+
     private readonly ILogger _logger;
     private readonly string _entityTypeName;
     private readonly AsyncRetryPolicy? _retryPolicy;
@@ -75,11 +79,7 @@ public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
                 var result = await operation().ConfigureAwait(false);
                 return result as IList<TEntity> ?? result.ToList();
             },
-            result =>
-            {
-                LogSuccess(context, TimeSpan.Zero, result.Count);
-                return Result.Ok<IEnumerable<TEntity>>(result);
-            },
+            result => Result.Ok<IEnumerable<TEntity>>(result),
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -204,51 +204,49 @@ public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
     {
         var error = exception switch
         {
-            WebRequestException webEx => CreateWebRequestError(context, elapsed, webEx, attemptCount),
+            ODataUnauthorizedException unauthorizedEx
+                => CreateODataClientError(context, elapsed, (int)HttpStatusCode.Unauthorized, unauthorizedEx, attemptCount),
+            ODataForbiddenException forbiddenEx
+                => CreateODataClientError(context, elapsed, (int)HttpStatusCode.Forbidden, forbiddenEx, attemptCount),
+            ODataConcurrencyException concurrencyEx
+                => CreateODataClientError(context, elapsed, (int)HttpStatusCode.PreconditionFailed, concurrencyEx, attemptCount),
+            ODataClientException clientEx
+                => CreateODataClientError(context, elapsed, clientEx.StatusCode, clientEx, attemptCount),
             TaskCanceledException tcEx when !cancellationToken.IsCancellationRequested
                 => CreateTimeoutError(context, elapsed, tcEx, attemptCount),
             OperationCanceledException ocEx => CreateCancellationError(context, elapsed, ocEx, attemptCount),
             _ => CreateUnexpectedError(context, elapsed, exception, attemptCount)
         };
 
-        if (typeof(TResult).IsGenericType)
-        {
-            var genericType = typeof(TResult).GetGenericArguments()[0];
-            var failMethod = typeof(Result)
-                .GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
-                .First(m => m.Name == "Fail" && m.IsGenericMethod
-                    && m.GetParameters().Length == 1
-                    && m.GetParameters()[0].ParameterType == typeof(IError))
-                .MakeGenericMethod(genericType);
-            return (TResult)failMethod!.Invoke(null, new object[] { error })!;
-        }
-
-        return (TResult)(object)Result.Fail(error);
+        return CreateFailResult<TResult>(error);
     }
 
-    private IntegrationError CreateWebRequestError(
+    private IntegrationError CreateODataClientError(
         OperationContext context,
         TimeSpan elapsed,
-        WebRequestException exception,
+        int? statusCode,
+        Exception exception,
         int attemptCount)
     {
-        var (errorCode, errorMessage, errorType) = exception.Code switch
+        var code = statusCode ?? 0;
+
+        var (errorCode, errorMessage, errorType) = code switch
         {
-            HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden =>
+            401 or 403 =>
                 ("Unauthorized", $"Authentication failed: {exception.Message}", ErrorType.Failure),
-            HttpStatusCode.BadRequest =>
+            400 =>
                 ("ValidationFailed", $"Validation failed: {exception.Message}", ErrorType.Validation),
-            HttpStatusCode.NotFound =>
+            404 =>
                 ("NotFound", "Entity was not found", ErrorType.NotFound),
-            HttpStatusCode.Conflict =>
+            409 =>
                 ("Conflict", $"Conflict occurred: {exception.Message}", ErrorType.Conflict),
-            HttpStatusCode.PreconditionFailed =>
+            412 =>
                 ("ConcurrencyConflict", "Entity modified by another user", ErrorType.Conflict),
-            HttpStatusCode.TooManyRequests =>
+            429 =>
                 ("RateLimitExceeded", "Rate limit exceeded", ErrorType.Failure),
-            HttpStatusCode.ServiceUnavailable or HttpStatusCode.GatewayTimeout =>
+            503 or 504 =>
                 ("ServiceUnavailable", $"Service unavailable: {exception.Message}", ErrorType.Failure),
-            _ when ((int)exception.Code >= 500) =>
+            >= 500 =>
                 ("ServerError", $"Server error: {exception.Message}", ErrorType.Failure),
             _ => ($"{context.OperationName}Failed", $"Operation failed: {exception.Message}", ErrorType.Failure)
         };
@@ -259,7 +257,7 @@ public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
             "{Operation} on {EntityType} failed after {ElapsedMs}ms and {Attempts} attempt(s). " +
             "StatusCode: {StatusCode}",
             context.OperationName, context.EntityType, elapsed.TotalMilliseconds,
-            attemptCount, exception.Code);
+            attemptCount, statusCode);
 
         return new IntegrationError($"{context.EntityType}.{errorCode}", errorMessage, errorType, exception);
     }
@@ -283,19 +281,7 @@ public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
             ErrorType.NotFound,
             exception);
 
-        if (typeof(TResult).IsGenericType)
-        {
-            var genericType = typeof(TResult).GetGenericArguments()[0];
-            var failMethod = typeof(Result)
-                .GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
-                .First(m => m.Name == "Fail" && m.IsGenericMethod
-                    && m.GetParameters().Length == 1
-                    && m.GetParameters()[0].ParameterType == typeof(IError))
-                .MakeGenericMethod(genericType);
-            return (TResult)failMethod!.Invoke(null, new object[] { error })!;
-        }
-
-        return (TResult)(object)Result.Fail(error);
+        return CreateFailResult<TResult>(error);
     }
 
     private IntegrationError CreateTimeoutError(
@@ -351,6 +337,24 @@ public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
             exception);
     }
 
+    private static TResult CreateFailResult<TResult>(IError error) where TResult : IResultBase
+    {
+        if (typeof(TResult).IsGenericType)
+        {
+            var genericType = typeof(TResult).GetGenericArguments()[0];
+            var failMethod = FailMethodCache.GetOrAdd(genericType, type =>
+                typeof(Result)
+                    .GetMethods(BindingFlags.Public | BindingFlags.Static)
+                    .First(m => m.Name == "Fail" && m.IsGenericMethod
+                        && m.GetParameters().Length == 1
+                        && m.GetParameters()[0].ParameterType == typeof(IError))
+                    .MakeGenericMethod(type));
+            return (TResult)failMethod.Invoke(null, [error])!;
+        }
+
+        return (TResult)(object)Result.Fail(error);
+    }
+
     private void LogSuccess(
         OperationContext context,
         TimeSpan elapsed,
@@ -383,12 +387,3 @@ internal record OperationContext(
     string OperationName,
     string EntityType,
     object[]? EntityKey = null);
-
-/// <summary>
-/// Exception thrown when an OData entity is not found.
-/// Used to distinguish NotFound scenarios from other errors for proper handling.
-/// </summary>
-internal class ODataNotFoundException : Exception
-{
-    public ODataNotFoundException(string message) : base(message) { }
-}
