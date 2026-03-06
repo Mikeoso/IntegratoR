@@ -1,0 +1,21 @@
+{
+  "env": {
+    "CLAUDE_CODE_ENABLE_TELEMETRY": "1"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(dotnet *)",
+      "Bash(git *)",
+      "Bash(func *)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "command": "dotnet format --include \"$CLAUDE_FILE\" --no-restore --verbosity quiet 2>/dev/null || true",
+        "timeout": 15000
+      }
+    ]
+  }
+}
