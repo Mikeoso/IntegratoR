@@ -1,21 +1,6 @@
 # IntegratoR
 
-.NET 10 integration framework using Clean Architecture, CQRS (MediatR), FluentResults, and Azure Functions (Durable Tasks). Bridges **D365 Finance & Operations** and **RELion** via OData, orchestrating financial journal data flows between the two systems.
-
-## Tech Stack
-
-| Package | Version | Purpose |
-|---|---|---|
-| MediatR | 12.5.0 | CQRS command/query dispatch |
-| FluentResults | 4.0.0 | Result pattern (replaces exceptions for flow control) |
-| FluentValidation | 12.0.0 | Request validation in pipeline |
-| MSAL (Microsoft.Identity.Client) | 4.76.0 | OAuth2 client credentials for D365/RELion |
-| Simple.OData.Client | 6.0.1 | OData v4 entity operations |
-| Polly | 8.5.0 | Retry + circuit breaker resilience |
-| Azure Functions Worker | 2.0.0 | Isolated-process Azure Functions host |
-| Durable Task Extensions | 1.7.1 | Orchestration, activities, fan-out/fan-in |
-| Newtonsoft.Json | 13.0.3 | Durable Functions serialization (required) |
-| StackExchange.Redis | 2.8.16 | Distributed caching |
+.NET 10 integration framework using Clean Architecture, CQRS (MediatR), FluentResults, and Azure Functions (Durable Tasks). Bridges **D365 Finance & Operations** and **RELion** via OData.
 
 ## Project Structure
 
@@ -28,38 +13,25 @@ IntegratoR.RELion             — RELion OData integration and entity models
 IntegratoR.SampleFunction     — Azure Functions host, composition root, orchestrators, activities
 ```
 
-Dependencies point **inward only**. The Function host is the composition root that wires everything together.
+Dependencies point **inward only**. The Function host is the composition root.
 
 ## Key Architectural Decisions
 
-1. **FluentResults over exceptions** — All operations return `Result<T>` or `Result`. Exceptions are reserved for truly unexpected failures. This enables Durable Functions orchestrators to inspect outcomes without try-catch.
-2. **Generic CQRS handlers** — `CreateCommandHandler<TEntity>`, `GetByKeyQueryHandler<TEntity>` etc. work with any entity implementing `IEntity`, reducing boilerplate across D365 entity types.
-3. **Composite keys via `GetCompositeKey()`** — D365 F&O entities often have multi-field keys (DataAreaId + JournalBatchNumber). Every entity must implement `GetCompositeKey()` to enable generic key-based operations.
-4. **Result serialization for Durable Functions** — Custom Newtonsoft.Json converters (`ResultJsonConverter`) serialize `Result<T>` through orchestration replay. Configured globally in `Program.cs` via `JsonConvert.DefaultSettings`.
+1. **FluentResults over exceptions** — All operations return `Result<T>` or `Result`. Exceptions are reserved for truly unexpected failures.
+2. **Generic CQRS handlers** — `CreateCommandHandler<TEntity>`, `GetByKeyQueryHandler<TEntity>` etc. work with any entity implementing `IEntity`.
+3. **Composite keys via `GetCompositeKey()`** — D365 F&O entities often have multi-field keys. Every entity must implement `GetCompositeKey()`.
+4. **Result serialization for Durable Functions** — Custom Newtonsoft.Json converters serialize `Result<T>` through orchestration replay.
 5. **British spelling is intentional** — `Behaviour` not `Behavior` throughout the codebase. Never "correct" this.
-6. **Dual JSON serializers** — System.Text.Json (`[JsonPropertyName]`) for entity models and standard .NET; Newtonsoft.Json (`[JsonProperty]`) for Durable Functions serialization and RELion response payloads. Do not attempt to unify them.
+6. **Dual JSON serializers** — System.Text.Json (`[JsonPropertyName]`) for entity models; Newtonsoft.Json (`[JsonProperty]`) for Durable Functions and RELion payloads. Do not unify them.
 
-## Rules
+## Conventions
 
-Project conventions are defined in `.claude/rules/`:
-
-- **`common/`** — Language-agnostic rules: git workflow, performance, security, testing
-- **`dotnet/`** — .NET-specific rules: coding style, patterns, testing, hooks, security (path-scoped to `*.cs`, `*.csproj`, `*.json`)
-
-## Key Commands
-
-```bash
-dotnet build                          # Build the solution
-dotnet build --no-restore             # Build without restoring packages
-dotnet format --no-restore            # Format code (default rules, no .editorconfig yet)
-dotnet test                           # Run tests (no test projects yet — conventions in rules)
-dotnet list package --vulnerable      # Check for vulnerable dependencies
-func start                           # Run Azure Functions locally (from SampleFunction dir)
-```
+- **Branches:** `feature/<area>/<desc>`, `fix/<area>/<desc>`, `chore/<desc>`
+- **Test naming:** `MethodName_Scenario_ExpectedResult`
+- **Test stack:** xUnit v3, FluentAssertions 8.x, NSubstitute 5.x
+- **Skills:** Use `microsoft-docs` for Azure/service concepts, `microsoft-code-reference` for SDK verification and code samples, `context7-docs` for third-party library docs (MediatR, Polly, FluentValidation, etc.)
 
 ## Canonical Examples
-
-These files are reference implementations for each pattern:
 
 | Pattern | Reference File |
 |---|---|
@@ -73,10 +45,15 @@ These files are reference implementations for each pattern:
 | Result serialization setup | `IntegratoR.SampleFunction/Program.cs` |
 | IntegrationError usage | `IntegratoR.Abstractions/Common/Results/IntegrationError.cs` |
 
+## Commands
+
+```bash
+dotnet build --no-restore             # Build
+dotnet test                           # Run tests
+dotnet format --no-restore            # Format code
+dotnet list package --vulnerable      # Audit dependencies
+```
+
 ## Versioning
 
-This project uses **GitVersion** in `ContinuousDelivery` mode. Never manually edit `<Version>` in `.csproj` files — versions are computed from git history. See `.claude/rules/common/git-workflow.md` for branch naming conventions.
-
-## Personal Preferences
-
-Create a `CLAUDE.local.md` in the project root for personal preferences (editor settings, preferred patterns, etc.). This file is gitignored and will be loaded automatically by Claude Code alongside this file.
+**GitVersion** in `ContinuousDelivery` mode. Never manually edit `<Version>` in `.csproj` files.

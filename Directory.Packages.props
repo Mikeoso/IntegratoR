@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
-    <CentralPackageTransitivePinningEnabled>false</CentralPackageTransitivePinningEnabled>
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
   </PropertyGroup>
 
   <ItemGroup Label="Core">
@@ -25,15 +25,12 @@
 
   <ItemGroup Label="Authentication">
     <PackageVersion Include="Microsoft.Identity.Client" Version="4.82.1" />
-    <PackageVersion Include="Azure.Identity" Version="1.17.1" />
+    <PackageVersion Include="Azure.Identity" Version="1.18.0" />
     <PackageVersion Include="Azure.Extensions.AspNetCore.Configuration.Secrets" Version="1.4.0" />
   </ItemGroup>
 
   <ItemGroup Label="OData">
-    <PackageVersion Include="Microsoft.OData.Core" Version="7.22.0" />
-    <PackageVersion Include="Microsoft.OData.Edm" Version="7.22.0" />
-    <PackageVersion Include="Simple.OData.Client" Version="6.0.1" />
-    <PackageVersion Include="Simple.OData.V4.Client" Version="6.0.1" />
+    <PackageVersion Include="PanoramicData.OData.Client" Version="10.0.55" />
   </ItemGroup>
 
   <ItemGroup Label="Resilience">
@@ -44,7 +41,7 @@
 
   <ItemGroup Label="Azure Functions">
     <PackageVersion Include="Microsoft.Azure.Functions.Worker" Version="2.51.0" />
-    <PackageVersion Include="Microsoft.Azure.Functions.Worker.Extensions.DurableTask" Version="1.14.1" />
+    <PackageVersion Include="Microsoft.Azure.Functions.Worker.Extensions.DurableTask" Version="1.15.0" />
     <PackageVersion Include="Microsoft.Azure.Functions.Worker.Extensions.Http" Version="3.3.0" />
     <PackageVersion Include="Microsoft.Azure.Functions.Worker.Extensions.Storage.Blobs" Version="6.8.0" />
     <PackageVersion Include="Microsoft.Azure.Functions.Worker.Sdk" Version="2.0.7" />
@@ -59,9 +56,9 @@
 
   <ItemGroup Label="Testing">
     <PackageVersion Include="FluentAssertions" Version="8.8.0" />
-    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.0.0" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.3.0" />
     <PackageVersion Include="NSubstitute" Version="5.3.0" />
-    <PackageVersion Include="xunit.v3" Version="3.0.1" />
+    <PackageVersion Include="xunit.v3" Version="3.2.2" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.0.2" />
   </ItemGroup>
 

@@ -29,9 +29,9 @@ Instead, please use [GitHub's private vulnerability reporting](https://github.co
 
 ## Security Best Practices
 
-This project follows security guidelines documented in `.claude/rules/common/security.md`, including:
+This project follows these security guidelines:
 
 - No hardcoded secrets or credentials in source code
 - Short-lived tokens with proactive refresh
 - Input validation at all system boundaries
-- Regular dependency vulnerability audits
+- Regular dependency vulnerability audits (`dotnet list package --vulnerable`)

@@ -4,6 +4,7 @@ using IntegratoR.OData.Common.Authentication;
 using IntegratoR.OData.Common.Extensions;
 using IntegratoR.OData.Common.Services;
 using IntegratoR.OData.Domain.Settings;
+using IntegratoR.OData.Interfaces.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -132,5 +133,25 @@ public class ApplicationDependencyInjectionTests
 
         // Assert
         client.Should().NotBeNull();
+    }
+
+    /// <summary>
+    /// Verifies that IODataClientAdapter is registered as Singleton.
+    /// </summary>
+    [Fact]
+    public void AddODataClient_RegistersODataClientAdapterAsSingleton()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IAuthenticator>(Substitute.For<IAuthenticator>());
+        services.AddODataClient(options => options.Url = "https://test.example.com");
+
+        // Act
+        var descriptor = services.FirstOrDefault(d => d.ServiceType == typeof(IODataClientAdapter));
+
+        // Assert
+        descriptor.Should().NotBeNull();
+        descriptor!.Lifetime.Should().Be(ServiceLifetime.Singleton);
     }
 }

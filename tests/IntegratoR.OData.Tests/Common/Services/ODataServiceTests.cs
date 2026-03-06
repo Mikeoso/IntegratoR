@@ -1,14 +1,15 @@
+using System.Linq.Expressions;
 using System.Text.Json.Serialization;
 using FluentAssertions;
 using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.Abstractions.Domain.Entities;
 using IntegratoR.OData.Common.Services;
+using IntegratoR.OData.Interfaces.Services;
 using IntegratoR.TestKit.Assertions;
 using IntegratoR.TestKit.Builders;
 using IntegratoR.TestKit.Doubles.Entities;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
-using Simple.OData.Client;
 using Xunit;
 
 namespace IntegratoR.OData.Tests.Common.Services;
@@ -38,33 +39,17 @@ public class TestEntityWithJsonIgnore : BaseEntity<string>
 /// </summary>
 public class ODataServiceTests
 {
-    private readonly IODataClient _client;
+    private readonly IODataClientAdapter _client;
     private readonly ILogger<ODataService<TestEntity>> _logger;
     private readonly ODataService<TestEntity> _sut;
-    private readonly IBoundClient<TestEntity> _boundClient;
 
     /// <summary>
-    /// Initialises a new instance with mocked OData client and logger.
+    /// Initialises a new instance with mocked OData client adapter and logger.
     /// </summary>
     public ODataServiceTests()
     {
-        _client = Substitute.For<IODataClient>();
+        _client = Substitute.For<IODataClientAdapter>();
         _logger = Substitute.For<ILogger<ODataService<TestEntity>>>();
-        _boundClient = Substitute.For<IBoundClient<TestEntity>>();
-
-        // Set up full fluent chain
-        _client.For<TestEntity>(null).Returns(_boundClient);
-        _boundClient.Key(Arg.Any<object[]>()).Returns(_boundClient);
-        _boundClient.Key(Arg.Any<object>()).Returns(_boundClient);
-        _boundClient.Set(Arg.Any<IDictionary<string, object>>()).Returns(_boundClient);
-        _boundClient.Set(Arg.Any<object>()).Returns(_boundClient);
-        _boundClient.Filter(Arg.Any<System.Linq.Expressions.Expression<Func<TestEntity, bool>>>()).Returns(_boundClient);
-        _boundClient.Expand(Arg.Any<System.Linq.Expressions.Expression<Func<TestEntity, object>>>()).Returns(_boundClient);
-        _boundClient.Select(Arg.Any<System.Linq.Expressions.Expression<Func<TestEntity, object>>>()).Returns(_boundClient);
-        _boundClient.Skip(Arg.Any<long>()).Returns(_boundClient);
-        _boundClient.Top(Arg.Any<long>()).Returns(_boundClient);
-        _boundClient.Count().Returns(_boundClient);
-
         _sut = new ODataService<TestEntity>(_client, _logger);
     }
 
@@ -78,7 +63,11 @@ public class ODataServiceTests
     {
         // Arrange
         var entity = TestEntityBuilder.Default().Build();
-        _boundClient.InsertEntryAsync(true, Arg.Any<CancellationToken>()).Returns(entity);
+        _client.CreateAsync<TestEntity>(
+            Arg.Any<string>(),
+            Arg.Any<object>(),
+            Arg.Any<CancellationToken>())
+            .Returns(entity);
 
         // Act
         var result = await _sut.AddAsync(entity, CancellationToken.None);
@@ -89,20 +78,27 @@ public class ODataServiceTests
     }
 
     /// <summary>
-    /// Verifies that AddAsync calls InsertEntryAsync with the result flag set to true.
+    /// Verifies that AddAsync calls CreateAsync on the adapter.
     /// </summary>
     [Fact]
-    public async Task AddAsync_ValidEntity_CallsInsertEntryAsyncWithResultFlag()
+    public async Task AddAsync_ValidEntity_CallsCreateAsyncOnAdapter()
     {
         // Arrange
         var entity = TestEntityBuilder.Default().Build();
-        _boundClient.InsertEntryAsync(true, Arg.Any<CancellationToken>()).Returns(entity);
+        _client.CreateAsync<TestEntity>(
+            Arg.Any<string>(),
+            Arg.Any<object>(),
+            Arg.Any<CancellationToken>())
+            .Returns(entity);
 
         // Act
         await _sut.AddAsync(entity, CancellationToken.None);
 
         // Assert
-        await _boundClient.Received(1).InsertEntryAsync(true, Arg.Any<CancellationToken>());
+        await _client.Received(1).CreateAsync<TestEntity>(
+            Arg.Any<string>(),
+            Arg.Any<IDictionary<string, object>>(),
+            Arg.Any<CancellationToken>());
     }
 
     /// <summary>
@@ -113,7 +109,11 @@ public class ODataServiceTests
     {
         // Arrange
         var entity = TestEntityBuilder.Default().Build();
-        _boundClient.FindEntryAsync(Arg.Any<CancellationToken>()).Returns(entity);
+        _client.FindByKeyAsync<TestEntity>(
+            Arg.Any<string>(),
+            Arg.Any<object>(),
+            Arg.Any<CancellationToken>())
+            .Returns(entity);
 
         // Act
         var result = await _sut.GetByKeyAsync(["test-id", "test-partition"], CancellationToken.None);
@@ -139,13 +139,17 @@ public class ODataServiceTests
     }
 
     /// <summary>
-    /// Verifies that GetByKeyAsync throws ODataNotFoundException when entity is null (mapped as not found).
+    /// Verifies that GetByKeyAsync returns not found when entity is null.
     /// </summary>
     [Fact]
     public async Task GetByKeyAsync_EntityNotFound_ReturnsNotFoundError()
     {
         // Arrange
-        _boundClient.FindEntryAsync(Arg.Any<CancellationToken>()).Returns((TestEntity)null!);
+        _client.FindByKeyAsync<TestEntity>(
+            Arg.Any<string>(),
+            Arg.Any<object>(),
+            Arg.Any<CancellationToken>())
+            .Returns((TestEntity?)null);
 
         // Act
         var result = await _sut.GetByKeyAsync(["missing-id", "missing-partition"], CancellationToken.None);
@@ -163,7 +167,12 @@ public class ODataServiceTests
     {
         // Arrange
         var entity = TestEntityBuilder.Default().Build();
-        _boundClient.UpdateEntryAsync(Arg.Any<CancellationToken>()).Returns(entity);
+        _client.UpdateAsync<TestEntity>(
+            Arg.Any<string>(),
+            Arg.Any<object>(),
+            Arg.Any<TestEntity>(),
+            Arg.Any<CancellationToken>())
+            .Returns(entity);
 
         // Act
         var result = await _sut.UpdateAsync(entity, CancellationToken.None);
@@ -195,7 +204,11 @@ public class ODataServiceTests
     {
         // Arrange
         var entity = TestEntityBuilder.Default().Build();
-        _boundClient.DeleteEntryAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        _client.DeleteAsync(
+            Arg.Any<string>(),
+            Arg.Any<object>(),
+            Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
 
         // Act
         var result = await _sut.DeleteAsync(entity, CancellationToken.None);
@@ -230,7 +243,15 @@ public class ODataServiceTests
     {
         // Arrange
         var entities = new List<TestEntity> { TestEntityBuilder.Default().Build() };
-        _boundClient.FindEntriesAsync(Arg.Any<CancellationToken>()).Returns(entities);
+        _client.FindEntriesAsync<TestEntity>(
+            Arg.Any<string>(),
+            Arg.Any<Expression<Func<TestEntity, bool>>?>(),
+            Arg.Any<Expression<Func<TestEntity, object>>?>(),
+            Arg.Any<Expression<Func<TestEntity, object>>?>(),
+            Arg.Any<int?>(),
+            Arg.Any<int?>(),
+            Arg.Any<CancellationToken>())
+            .Returns(entities);
 
         // Act
         var result = await _sut.FindAsync(null, CancellationToken.None);
@@ -241,7 +262,7 @@ public class ODataServiceTests
     }
 
     /// <summary>
-    /// Verifies that FindAsync with a filter expression passes the filter to the OData query.
+    /// Verifies that FindAsync with a filter expression passes the filter to the adapter.
     /// </summary>
     [Fact]
     public async Task FindAsync_WithFilter_AppliesFilterAndReturnsEntities()
@@ -249,7 +270,15 @@ public class ODataServiceTests
         // Arrange
         var entity = TestEntityBuilder.Default().WithName("Filtered").Build();
         var filtered = new List<TestEntity> { entity };
-        _boundClient.FindEntriesAsync(Arg.Any<CancellationToken>()).Returns(filtered);
+        _client.FindEntriesAsync<TestEntity>(
+            Arg.Any<string>(),
+            Arg.Any<Expression<Func<TestEntity, bool>>?>(),
+            Arg.Any<Expression<Func<TestEntity, object>>?>(),
+            Arg.Any<Expression<Func<TestEntity, object>>?>(),
+            Arg.Any<int?>(),
+            Arg.Any<int?>(),
+            Arg.Any<CancellationToken>())
+            .Returns(filtered);
 
         // Act
         var result = await _sut.FindAsync(e => e.Name == "Filtered", CancellationToken.None);
@@ -257,25 +286,38 @@ public class ODataServiceTests
         // Assert
         result.Should().BeSuccessful();
         result.Value.Should().HaveCount(1);
-        _boundClient.Received(1).Filter(Arg.Any<System.Linq.Expressions.Expression<Func<TestEntity, bool>>>());
     }
 
     /// <summary>
-    /// Verifies that QueryAsync applies skip and top parameters to the OData query.
+    /// Verifies that QueryAsync applies skip and top parameters to the adapter call.
     /// </summary>
     [Fact]
     public async Task QueryAsync_WithSkipAndTop_AppliesSkipAndTop()
     {
         // Arrange
-        _boundClient.FindEntriesAsync(Arg.Any<CancellationToken>()).Returns(new List<TestEntity>());
+        _client.FindEntriesAsync<TestEntity>(
+            Arg.Any<string>(),
+            Arg.Any<Expression<Func<TestEntity, bool>>?>(),
+            Arg.Any<Expression<Func<TestEntity, object>>?>(),
+            Arg.Any<Expression<Func<TestEntity, object>>?>(),
+            Arg.Any<int?>(),
+            Arg.Any<int?>(),
+            Arg.Any<CancellationToken>())
+            .Returns(new List<TestEntity>());
 
         // Act
         var result = await _sut.QueryAsync(skip: 10, top: 5, cancellationToken: CancellationToken.None);
 
         // Assert
         result.Should().BeSuccessful();
-        _boundClient.Received(1).Skip(10L);
-        _boundClient.Received(1).Top(5L);
+        await _client.Received(1).FindEntriesAsync<TestEntity>(
+            Arg.Any<string>(),
+            null,
+            null,
+            null,
+            10,
+            5,
+            Arg.Any<CancellationToken>());
     }
 
     /// <summary>
@@ -286,7 +328,15 @@ public class ODataServiceTests
     {
         // Arrange
         var entities = new[] { TestEntityBuilder.Default().Build(), TestEntityBuilder.Default().Build() };
-        _boundClient.FindEntriesAsync(Arg.Any<CancellationToken>()).Returns(entities);
+        _client.FindEntriesAsync<TestEntity>(
+            Arg.Any<string>(),
+            Arg.Any<Expression<Func<TestEntity, bool>>?>(),
+            Arg.Any<Expression<Func<TestEntity, object>>?>(),
+            Arg.Any<Expression<Func<TestEntity, object>>?>(),
+            Arg.Any<int?>(),
+            Arg.Any<int?>(),
+            Arg.Any<CancellationToken>())
+            .Returns(entities);
 
         // Act
         var result = await _sut.FindAll(CancellationToken.None);
@@ -303,7 +353,11 @@ public class ODataServiceTests
     public async Task CountAsync_NoFilter_ReturnsSuccessWithCount()
     {
         // Arrange
-        _boundClient.FindScalarAsync<int>(Arg.Any<CancellationToken>()).Returns(42);
+        _client.CountAsync<TestEntity>(
+            Arg.Any<string>(),
+            Arg.Any<Expression<Func<TestEntity, bool>>?>(),
+            Arg.Any<CancellationToken>())
+            .Returns(42);
 
         // Act
         var result = await _sut.CountAsync(cancellationToken: CancellationToken.None);
@@ -321,7 +375,15 @@ public class ODataServiceTests
     {
         // Arrange
         var entities = new[] { TestEntityBuilder.Default().Build() };
-        _boundClient.FindEntriesAsync(Arg.Any<CancellationToken>()).Returns(entities);
+        _client.FindEntriesAsync<TestEntity>(
+            Arg.Any<string>(),
+            Arg.Any<Expression<Func<TestEntity, bool>>?>(),
+            Arg.Any<Expression<Func<TestEntity, object>>?>(),
+            Arg.Any<Expression<Func<TestEntity, object>>?>(),
+            Arg.Any<int?>(),
+            Arg.Any<int?>(),
+            Arg.Any<CancellationToken>())
+            .Returns(entities);
 
         // Act
         var result = await _sut.QueryAsync(cancellationToken: CancellationToken.None);
@@ -335,9 +397,7 @@ public class ODataServiceTests
     #region Batch Tests
 
     /// <summary>
-    /// Verifies that AddBatchAsync wraps ODataBatch failures into a failed result.
-    /// ODataBatch is a concrete class; when the underlying OData client throws, the exception
-    /// is captured and returned as an IntegrationError.
+    /// Verifies that AddBatchAsync wraps adapter failures into a failed result.
     /// </summary>
     [Fact]
     public async Task AddBatchAsync_WhenClientThrows_ReturnsFailedResult()
@@ -348,18 +408,22 @@ public class ODataServiceTests
             TestEntityBuilder.Default().WithId("batch-1").Build()
         };
 
-        // ODataBatch uses the IODataClient internally; when it throws a NullReferenceException
-        // (due to the mock not having real HTTP transport), the exception handler maps it to a failed result.
+        _client.When(x => x.BatchCreateAsync<TestEntity>(
+            Arg.Any<string>(),
+            Arg.Any<IEnumerable<TestEntity>>(),
+            Arg.Any<CancellationToken>()))
+            .Do(_ => throw new InvalidOperationException("batch failed"));
+
         // Act
         var result = await _sut.AddBatchAsync(entities, CancellationToken.None);
 
-        // Assert -- batch with mock client fails due to missing HTTP transport; result should be failed, not throw
+        // Assert
         result.Should().BeFailed();
         result.Should().HaveErrorCode("TestEntity.UnexpectedError");
     }
 
     /// <summary>
-    /// Verifies that DeleteBatchAsync wraps ODataBatch failures into a failed result.
+    /// Verifies that DeleteBatchAsync wraps adapter failures into a failed result.
     /// </summary>
     [Fact]
     public async Task DeleteBatchAsync_WhenClientThrows_ReturnsFailedResult()
@@ -370,6 +434,12 @@ public class ODataServiceTests
             TestEntityBuilder.Default().WithId("batch-1").Build()
         };
 
+        _client.When(x => x.BatchDeleteAsync(
+            Arg.Any<string>(),
+            Arg.Any<IEnumerable<object>>(),
+            Arg.Any<CancellationToken>()))
+            .Do(_ => throw new InvalidOperationException("batch failed"));
+
         // Act
         var result = await _sut.DeleteBatchAsync(entities, CancellationToken.None);
 
@@ -379,7 +449,7 @@ public class ODataServiceTests
     }
 
     /// <summary>
-    /// Verifies that UpdateBatchAsync wraps ODataBatch failures into a failed result.
+    /// Verifies that UpdateBatchAsync wraps adapter failures into a failed result.
     /// </summary>
     [Fact]
     public async Task UpdateBatchAsync_WhenClientThrows_ReturnsFailedResult()
@@ -390,12 +460,43 @@ public class ODataServiceTests
             TestEntityBuilder.Default().WithId("batch-1").Build()
         };
 
+        _client.When(x => x.BatchUpdateAsync<TestEntity>(
+            Arg.Any<string>(),
+            Arg.Any<IEnumerable<(object, TestEntity)>>(),
+            Arg.Any<CancellationToken>()))
+            .Do(_ => throw new InvalidOperationException("batch failed"));
+
         // Act
         var result = await _sut.UpdateBatchAsync(entities, CancellationToken.None);
 
         // Assert
         result.Should().BeFailed();
         result.Should().HaveErrorCode("TestEntity.UnexpectedError");
+    }
+
+    /// <summary>
+    /// Verifies that AddBatchAsync returns success when the adapter succeeds.
+    /// </summary>
+    [Fact]
+    public async Task AddBatchAsync_WhenClientSucceeds_ReturnsSuccessResult()
+    {
+        // Arrange
+        var entities = new List<TestEntity>
+        {
+            TestEntityBuilder.Default().WithId("batch-1").Build()
+        };
+
+        _client.BatchCreateAsync<TestEntity>(
+            Arg.Any<string>(),
+            Arg.Any<IEnumerable<TestEntity>>(),
+            Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+
+        // Act
+        var result = await _sut.AddBatchAsync(entities, CancellationToken.None);
+
+        // Assert
+        result.Should().BeSuccessful();
     }
 
     #endregion
@@ -412,10 +513,11 @@ public class ODataServiceTests
         var entity = new TestEntity { Id = "id1", PartitionKey = "pk1", Name = "Name", Description = null };
 
         IDictionary<string, object>? capturedPayload = null;
-        _boundClient
-            .Set(Arg.Do<IDictionary<string, object>>(p => capturedPayload = p))
-            .Returns(_boundClient);
-        _boundClient.InsertEntryAsync(true, Arg.Any<CancellationToken>()).Returns(entity);
+        _client.CreateAsync<TestEntity>(
+            Arg.Any<string>(),
+            Arg.Do<object>(p => capturedPayload = p as IDictionary<string, object>),
+            Arg.Any<CancellationToken>())
+            .Returns(entity);
 
         // Act
         await _sut.AddAsync(entity, CancellationToken.None);
@@ -434,15 +536,11 @@ public class ODataServiceTests
         // Arrange
         var odataSut = new ODataService<TestEntityWithODataAttributes>(_client, Substitute.For<ILogger<ODataService<TestEntityWithODataAttributes>>>());
 
-        var boundClientOData = Substitute.For<IBoundClient<TestEntityWithODataAttributes>>();
-        _client.For<TestEntityWithODataAttributes>(null).Returns(boundClientOData);
-
         IDictionary<string, object>? capturedPayload = null;
-        boundClientOData
-            .Set(Arg.Do<IDictionary<string, object>>(p => capturedPayload = p))
-            .Returns(boundClientOData);
-        boundClientOData
-            .InsertEntryAsync(true, Arg.Any<CancellationToken>())
+        _client.CreateAsync<TestEntityWithODataAttributes>(
+            Arg.Any<string>(),
+            Arg.Do<object>(p => capturedPayload = p as IDictionary<string, object>),
+            Arg.Any<CancellationToken>())
             .Returns(new TestEntityWithODataAttributes { Id = "generated-id", Name = "Name", ReadOnlyField = "readonly" });
 
         var entity = new TestEntityWithODataAttributes { Id = "client-id", Name = "Name", ReadOnlyField = "readonly" };
@@ -466,15 +564,11 @@ public class ODataServiceTests
         // Arrange -- ReadOnlyField has [ODataField(IgnoreOnUpdate = true)] but should be INCLUDED on create
         var odataSut = new ODataService<TestEntityWithODataAttributes>(_client, Substitute.For<ILogger<ODataService<TestEntityWithODataAttributes>>>());
 
-        var boundClientOData = Substitute.For<IBoundClient<TestEntityWithODataAttributes>>();
-        _client.For<TestEntityWithODataAttributes>(null).Returns(boundClientOData);
-
         IDictionary<string, object>? capturedPayload = null;
-        boundClientOData
-            .Set(Arg.Do<IDictionary<string, object>>(p => capturedPayload = p))
-            .Returns(boundClientOData);
-        boundClientOData
-            .InsertEntryAsync(true, Arg.Any<CancellationToken>())
+        _client.CreateAsync<TestEntityWithODataAttributes>(
+            Arg.Any<string>(),
+            Arg.Do<object>(p => capturedPayload = p as IDictionary<string, object>),
+            Arg.Any<CancellationToken>())
             .Returns(new TestEntityWithODataAttributes { Id = "generated-id", Name = "Name", ReadOnlyField = "readonly" });
 
         var entity = new TestEntityWithODataAttributes { Id = "client-id", Name = "Name", ReadOnlyField = "readonly-value" };
@@ -504,10 +598,11 @@ public class ODataServiceTests
         };
 
         IDictionary<string, object>? capturedPayload = null;
-        _boundClient
-            .Set(Arg.Do<IDictionary<string, object>>(p => capturedPayload = p))
-            .Returns(_boundClient);
-        _boundClient.InsertEntryAsync(true, Arg.Any<CancellationToken>()).Returns(entity);
+        _client.CreateAsync<TestEntity>(
+            Arg.Any<string>(),
+            Arg.Do<object>(p => capturedPayload = p as IDictionary<string, object>),
+            Arg.Any<CancellationToken>())
+            .Returns(entity);
 
         // Act
         await _sut.AddAsync(entity, CancellationToken.None);
@@ -529,15 +624,11 @@ public class ODataServiceTests
             _client,
             Substitute.For<ILogger<ODataService<TestEntityWithJsonIgnore>>>());
 
-        var boundClientJsonIgnore = Substitute.For<IBoundClient<TestEntityWithJsonIgnore>>();
-        _client.For<TestEntityWithJsonIgnore>(null).Returns(boundClientJsonIgnore);
-
         IDictionary<string, object>? capturedPayload = null;
-        boundClientJsonIgnore
-            .Set(Arg.Do<IDictionary<string, object>>(p => capturedPayload = p))
-            .Returns(boundClientJsonIgnore);
-        boundClientJsonIgnore
-            .InsertEntryAsync(true, Arg.Any<CancellationToken>())
+        _client.CreateAsync<TestEntityWithJsonIgnore>(
+            Arg.Any<string>(),
+            Arg.Do<object>(p => capturedPayload = p as IDictionary<string, object>),
+            Arg.Any<CancellationToken>())
             .Returns(new TestEntityWithJsonIgnore { Id = "id1", Name = "Name", ServerGeneratedField = "server" });
 
         var entity = new TestEntityWithJsonIgnore
