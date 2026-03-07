@@ -8,6 +8,7 @@
     "allow": [
       "Bash(dotnet *)",
       "Bash(git *)",
+      "Bash(gh *)",
       "Bash(func *)",
       "Bash(pwsh *)",
       "Bash(npx *)",
@@ -22,6 +23,18 @@
     ]
   },
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "pwsh -NoProfile -File .claude/scripts/guard-destructive.ps1",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Write|Edit",
@@ -30,6 +43,17 @@
             "type": "command",
             "command": "pwsh -NoProfile -File .claude/scripts/auto-format.ps1",
             "timeout": 15
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "You are evaluating whether Claude should stop. Context: $ARGUMENTS\n\nCheck the conversation for evidence that:\n1. `dotnet build` was run and passed (if code was changed)\n2. Relevant tests were run with `dotnet test` (if code was changed)\n3. Code review was delegated to reviewer agents (if code was changed)\n\nIf NO code was changed (e.g. research, planning, questions), respond {\"ok\": true}.\nIf code was changed and all 3 checks passed, respond {\"ok\": true}.\nIf code was changed and any check is missing, respond {\"ok\": false, \"reason\": \"<what is missing>\"}.",
+            "timeout": 30
           }
         ]
       }
