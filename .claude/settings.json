@@ -8,7 +8,9 @@
     "allow": [
       "Bash(dotnet *)",
       "Bash(git *)",
-      "Bash(func *)"
+      "Bash(func *)",
+      "Bash(pwsh *)",
+      "Bash(npx *)"
     ],
     "deny": [
       "Read(.env)",
