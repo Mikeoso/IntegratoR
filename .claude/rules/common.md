@@ -7,6 +7,11 @@
 
 ## Git Workflow
 
+1. Create a feature branch from `main` before starting work.
+2. Implement changes on the feature branch.
+3. Create a PR targeting `main`.
+4. Push the branch to publish the PR.
+
 - **Branch naming**: `feature/<area>/<desc>`, `fix/<area>/<desc>`, `chore/<desc>`.
 - **Commit style**: Imperative mood, under 72 chars. PRs are squash-merged.
 
