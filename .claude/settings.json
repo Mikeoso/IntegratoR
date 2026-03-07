@@ -1,21 +1,48 @@
 {
   "env": {
-    "CLAUDE_CODE_ENABLE_TELEMETRY": "1"
+    "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
+    "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "0"
   },
   "permissions": {
     "allow": [
       "Bash(dotnet *)",
       "Bash(git *)",
       "Bash(func *)"
+    ],
+    "deny": [
+      "Read(.env)",
+      "Read(.env.*)"
     ]
   },
   "hooks": {
     "PostToolUse": [
       {
         "matcher": "Write|Edit",
-        "command": "dotnet format --include \"$CLAUDE_FILE\" --no-restore --verbosity quiet 2>/dev/null || true",
-        "timeout": 15000
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // empty' | xargs -r -I {} dotnet format --include \"{}\" --no-restore --verbosity quiet 2>/dev/null || true",
+            "timeout": 15
+          }
+        ]
       }
     ]
-  }
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File \"C:\\Users\\Danie\\.claude\\statusline.ps1\"",
+    "padding": 1
+  },
+  "enabledPlugins": {
+    "plugin-dev@claude-settings": true,
+    "claude-code-setup@claude-plugins-official": true,
+    "skill-creator@claude-plugins-official": true
+  },
+  "autoUpdatesChannel": "latest",
+  "enabledMcpjsonServers": [
+    "microsoft-learn",
+    "context7",
+    "sequential-thinking"
+  ]
 }
