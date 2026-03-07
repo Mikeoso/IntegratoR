@@ -7,7 +7,10 @@
     "context7": {
       "type": "stdio",
       "command": "cmd",
-      "args": ["/c", "npx", "-y", "@upstash/context7-mcp", "--api-key", "ctx7sk-c2247b31-e9a8-4877-b11a-6e7608e1b124"]
+      "args": ["/c", "npx", "-y", "@upstash/context7-mcp"],
+      "env": {
+        "CONTEXT7_API_KEY": "${CONTEXT7_API_KEY}"
+      }
     },
     "sequential-thinking": {
       "type": "stdio",

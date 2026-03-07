@@ -22,7 +22,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "jq -r '.tool_input.file_path // empty' | xargs -r -I {} dotnet format --include \"{}\" --no-restore --verbosity quiet 2>/dev/null || true",
+            "command": "pwsh -NoProfile -File .claude/scripts/auto-format.ps1",
             "timeout": 15
           }
         ]
