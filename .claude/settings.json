@@ -31,8 +31,8 @@
   },
   "statusLine": {
     "type": "command",
-    "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File \"C:\\Users\\Danie\\.claude\\statusline.ps1\"",
-    "padding": 1
+    "command": "npx -y ccstatusline@latest --config .ccstatusline/settings.json",
+    "padding": 0
   },
   "enabledPlugins": {
     "plugin-dev@claude-settings": true,
