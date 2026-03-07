@@ -1,21 +1,50 @@
 {
   "env": {
-    "CLAUDE_CODE_ENABLE_TELEMETRY": "1"
+    "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
+    "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "0"
   },
   "permissions": {
     "allow": [
       "Bash(dotnet *)",
       "Bash(git *)",
-      "Bash(func *)"
+      "Bash(func *)",
+      "Bash(pwsh *)",
+      "Bash(npx *)"
+    ],
+    "deny": [
+      "Read(.env)",
+      "Read(.env.*)"
     ]
   },
   "hooks": {
     "PostToolUse": [
       {
         "matcher": "Write|Edit",
-        "command": "dotnet format --include \"$CLAUDE_FILE\" --no-restore --verbosity quiet 2>/dev/null || true",
-        "timeout": 15000
+        "hooks": [
+          {
+            "type": "command",
+            "command": "pwsh -NoProfile -File .claude/scripts/auto-format.ps1",
+            "timeout": 15
+          }
+        ]
       }
     ]
-  }
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "npx -y ccstatusline@latest --config .ccstatusline/settings.json",
+    "padding": 0
+  },
+  "enabledPlugins": {
+    "plugin-dev@claude-settings": true,
+    "claude-code-setup@claude-plugins-official": true,
+    "skill-creator@claude-plugins-official": true
+  },
+  "autoUpdatesChannel": "latest",
+  "enabledMcpjsonServers": [
+    "microsoft-learn",
+    "context7",
+    "sequential-thinking"
+  ]
 }
