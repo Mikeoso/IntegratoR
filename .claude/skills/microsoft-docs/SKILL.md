@@ -1,11 +1,12 @@
 ---
 name: microsoft-docs
-description: Query official Microsoft documentation to understand concepts, find tutorials, and learn how services work. Use for Azure, .NET, Microsoft 365, Windows, Power Platform, and all Microsoft technologies. Get accurate, current information from learn.microsoft.com and other official Microsoft websites—architecture overviews, quickstarts, configuration guides, limits, and best practices.
+description: This skill should be used when the user asks to "look up Microsoft docs", "check Azure documentation", "find a .NET tutorial", "what are the limits for [service]", or needs official Microsoft Learn documentation for Azure, .NET, Microsoft 365, Power Platform, or Windows technologies — architecture overviews, quickstarts, configuration guides, limits, and best practices.
 context: fork
-compatibility: Requires Microsoft Learn MCP Server (https://learn.microsoft.com/api/mcp)
 ---
 
 # Microsoft Docs
+
+**Prerequisite:** Requires Microsoft Learn MCP Server (https://learn.microsoft.com/api/mcp).
 
 ## Tools
 
@@ -28,10 +29,10 @@ compatibility: Requires Microsoft Learn MCP Server (https://learn.microsoft.com/
 Good queries are specific:
 
 ```
-# ❌ Too broad
+# Bad: Too broad
 "Azure Functions"
 
-# ✅ Specific
+# Good: Specific
 "Azure Functions Python v2 programming model"
 "Cosmos DB partition key design best practices"
 "Container Apps scaling rules KEDA"

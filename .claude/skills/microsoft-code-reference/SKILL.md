@@ -1,11 +1,12 @@
 ---
 name: microsoft-code-reference
-description: Look up Microsoft API references, find working code samples, and verify SDK code is correct. Use when working with Azure SDKs, .NET libraries, or Microsoft APIs—to find the right method, check parameters, get working examples, or troubleshoot errors. Catches hallucinated methods, wrong signatures, and deprecated patterns by querying official docs.
+description: This skill should be used when the user asks to "find a code sample", "check if this method exists", "verify SDK method signature", "look up Azure SDK API", "troubleshoot an SDK error", or needs to verify Microsoft API references, find working code examples, or catch hallucinated methods and deprecated patterns.
 context: fork
-compatibility: Requires Microsoft Learn MCP Server (https://learn.microsoft.com/api/mcp)
 ---
 
 # Microsoft Code Reference
+
+**Prerequisite:** Requires Microsoft Learn MCP Server (https://learn.microsoft.com/api/mcp).
 
 ## Tools
 
@@ -49,7 +50,7 @@ Fetch full page when method has multiple overloads or you need complete paramete
 
 ## Error Troubleshooting
 
-Use `microsoft_code_sample_search` to find working code samples and compare with your implementation. For specific errors, use `microsoft_docs_search` and `microsoft_docs_fetch`:
+Use `microsoft_code_sample_search` to find working code samples and compare with the current implementation. For specific errors, use `microsoft_docs_search` and `microsoft_docs_fetch`:
 
 | Error Type | Query |
 |------------|-------|

@@ -83,7 +83,7 @@ Common libraries for reference:
 |---------|-------------|-------|
 | AutoMapper | `"AutoMapper"` | Profile creation, DI, projection |
 | Serilog | `"Serilog"` | Sink configuration, enrichers |
-| xUnit | `"xUnit"` | Theory, InlineData, fixtures |
+| xUnit | `"xUnit"` | Theory, InlineData, fixtures (project uses xUnit v3) |
 | NSubstitute | `"NSubstitute"` | Returns, Received, Arg matching |
 
 ## Tips for Unknown Libraries
