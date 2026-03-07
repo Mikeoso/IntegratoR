@@ -30,7 +30,7 @@ SampleFunction (host/composition root)
 | **Abstractions** | Domain interfaces (`IService<T>`, `ICommand`, `IQuery`), base entities (`BaseEntity<TKey>`), CQRS contracts, `Result` pattern (`IntegrationError`, `ErrorType`) | Core — no DI |
 | **Application** | MediatR pipeline behaviours, generic command/query handlers, `OAuthAuthenticator`, cache services | `services.AddApplicationServices()` |
 | **OData** | Generic OData client via PanoramicData.OData.Client, `ODataService<T>`, auth handler, Polly policies, `ODataFieldAttribute` | `services.AddODataClient(configuration)` |
-| **OData.FO** | D365 F&O entities (LedgerJournalHeader/Line, Dimensions), feature-specific commands/handlers/queries | `services.AddFOServices()` |
+| **OData.FO** | D365 F&O entities (LedgerJournalHeader/Line, Dimensions), feature-specific commands/handlers/queries | `services.AddODataClientFOProxy(configuration)` |
 | **RELion** | RELion API integration with auth handler, service, entities, query handlers | `services.AddRelionClient(configuration)` |
 | **TestKit** | Shared test infrastructure: custom `Result` assertions, test entity builders, fakes | Test helper — no DI |
 

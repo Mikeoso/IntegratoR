@@ -18,18 +18,18 @@ if (-not $command) { exit 0 }
 $commandToCheck = ($command -split "<<'?EOF'?")[0]
 
 # Block push directly to main or master
-if ($commandToCheck -match 'git\s+push\s+\S+\s+(main|master)\b') {
+if ($commandToCheck -match 'git\s+push\b.*\b(main|master)\b') {
     Write-Error "Blocked: cannot push directly to main/master. Use a feature branch and create a PR."
     exit 2
 }
 
 # Block destructive commands
 $destructivePatterns = @(
-    'rm\s+-rf',
+    'rm\s+.*-[rR].*-[fF]|rm\s+.*-[fF].*-[rR]|rm\s+-[rRfF]{2,}',
     'git\s+reset\s+--hard',
-    'git\s+checkout\s+\.\s*$',
+    'git\s+checkout\s+\.(\s|;|&|$)',
     'git\s+clean\s+-[fd]',
-    'git\s+restore\s+\.\s*$'
+    'git\s+restore\s+\.(\s|;|&|$)'
 )
 
 foreach ($pattern in $destructivePatterns) {
