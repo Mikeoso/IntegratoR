@@ -15,6 +15,15 @@
 - **Branch naming**: `feature/<area>/<desc>`, `fix/<area>/<desc>`, `chore/<desc>`.
 - **Commit style**: Imperative mood, under 72 chars. PRs are squash-merged.
 
+## Task Delegation
+
+After implementing or modifying code, delegate review to specialised subagents:
+- Code changes -> use `code-reviewer` subagent
+- Auth, credential, or security-sensitive code -> use `security-reviewer` subagent
+- Before creating PRs -> run both reviewers
+
+Do not perform these reviews directly. Always delegate to the appropriate specialist.
+
 ## Formatting
 
 - `dotnet format` is enforced via a PostToolUse hook that runs automatically on Write/Edit.
@@ -31,3 +40,15 @@
 - Do not create abstractions for one-time operations.
 - Do not add error handling for scenarios that cannot happen.
 - Only validate at system boundaries (user input, external APIs).
+
+## Verification
+
+- Run `dotnet build` before marking work complete.
+- Run relevant tests (`dotnet test` or filtered) to prove changes work.
+- If the change has observable behaviour, demonstrate it — don't just assume correctness.
+
+## Problem Solving
+
+- If an approach fails or produces unexpected results, stop and reassess. Do not patch forward.
+- When fixing bugs, investigate root causes. Do not apply temporary patches or workarounds.
+- Read logs, errors, and failing tests before asking the user for guidance.
