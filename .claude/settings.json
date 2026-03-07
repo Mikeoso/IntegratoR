@@ -10,7 +10,11 @@
       "Bash(git *)",
       "Bash(func *)",
       "Bash(pwsh *)",
-      "Bash(npx *)"
+      "Bash(npx *)",
+      "Read(*)",
+      "Edit(*)",
+      "Create(*)",
+      "Write(*)"
     ],
     "deny": [
       "Read(.env)",
