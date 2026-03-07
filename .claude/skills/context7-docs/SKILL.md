@@ -68,28 +68,28 @@ query-docs(
 
 ```
 resolve-library-id(libraryName: "Polly", query: "configure resilience pipeline with retry and circuit breaker")
-query-docs(libraryId: "/resolved-id", query: "configure resilience pipeline retry circuit breaker dependency injection")
+query-docs(libraryId: "/<id-from-step-1>", query: "configure resilience pipeline retry circuit breaker dependency injection")
 ```
 
 ### Code Examples & Patterns
 
 ```
 resolve-library-id(libraryName: "FluentValidation", query: "create custom validator with async rules")
-query-docs(libraryId: "/resolved-id", query: "custom validator async validation rules example")
+query-docs(libraryId: "/<id-from-step-1>", query: "custom validator async validation rules example")
 ```
 
 ### API Usage Verification
 
 ```
 resolve-library-id(libraryName: "PanoramicData.OData.Client", query: "batch operations OData v4")
-query-docs(libraryId: "/resolved-id", query: "batch create update operations OData v4 entities")
+query-docs(libraryId: "/<id-from-step-1>", query: "batch create update operations OData v4 entities")
 ```
 
 ### Migration & Version Changes
 
 ```
 resolve-library-id(libraryName: "Polly", query: "migrate from Polly v7 to v8")
-query-docs(libraryId: "/resolved-id", query: "migration guide v7 to v8 breaking changes")
+query-docs(libraryId: "/<id-from-step-1>", query: "migration guide v7 to v8 breaking changes")
 ```
 
 ## Validation Workflow
@@ -97,7 +97,7 @@ query-docs(libraryId: "/resolved-id", query: "migration guide v7 to v8 breaking 
 Before generating code using third-party libraries, verify correctness:
 
 1. **Resolve the library** — `resolve-library-id(libraryName: "[package]", query: "[specific need]")`
-2. **Query for patterns** — `query-docs(libraryId: "/resolved-id", query: "[specific API or pattern]")`
+2. **Query for patterns** — `query-docs(libraryId: "/<id-from-step-1>", query: "[specific API or pattern]")`
 3. **Cross-reference with project** — Compare retrieved patterns against existing codebase usage
 
 For simple lookups, steps 1-2 suffice. For complex integrations or unfamiliar APIs, complete all three.
