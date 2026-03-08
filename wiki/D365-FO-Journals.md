@@ -1,0 +1,215 @@
+# D365 F&O Journals
+
+```csharp
+// Create a journal header, build dimension strings, and add lines
+var header = new LedgerJournalHeader
+{
+    DataAreaId = "USMF", JournalName = "GenJrn", Description = "Monthly accruals"
+};
+Result<LedgerJournalHeader> headerResult = await mediator.Send(
+    new CreateLedgerJournalHeaderCommand<LedgerJournalHeader>(header), cancellationToken);
+
+string batchNumber = headerResult.Value.JournalBatchNumber!; // server-generated, e.g. "000234"
+```
+
+## LedgerJournalHeader
+
+`LedgerJournalHeader : BaseEntity<string>` maps to the `LedgerJournalHeaders` OData entity set (`LedgerJournalTable` table). Composite key: `DataAreaId` + `JournalBatchNumber`.
+
+```csharp
+using IntegratoR.OData.FO.Domain.Entities.LedgerJournal;
+using IntegratoR.OData.FO.Features.Commands.LedgerJournals.CreateLedgerJournalHeader;
+
+var header = new LedgerJournalHeader
+{
+    DataAreaId = "USMF",
+    JournalName = "GenJrn",
+    Description = "Vendor invoice accruals",
+    IntegrationKey = "EXT-2026-03-001" // optional idempotency key
+};
+
+Result<LedgerJournalHeader> result = await mediator.Send(
+    new CreateLedgerJournalHeaderCommand<LedgerJournalHeader>(header), cancellationToken);
+// JournalBatchNumber excluded from POST (ODataField IgnoreOnCreate) — F&O assigns it
+```
+
+| Property | Type | Key | ODataField | Description |
+|----------|------|-----|------------|-------------|
+| `DataAreaId` | `string` | Yes | -- | Legal entity / company code |
+| `JournalBatchNumber` | `string?` | Yes | `IgnoreOnCreate` | Server-generated batch number |
+| `JournalName` | `string` | No | -- | Journal name setup identifier (e.g. "GenJrn") |
+| `Description` | `string` | No | -- | User-defined description |
+| `IntegrationKey` | `string?` | No | -- | External system tracking key |
+| `PostingLayer` | `CurrentOperationsTax` | No | -- | Financial posting layer |
+| `IsPosted` | `NoYes` | No | -- | Read-only: whether posted |
+| `JournalTotalDebit` | `decimal` | No | -- | Read-only: sum of line debits |
+| `JournalTotalCredit` | `decimal` | No | -- | Read-only: sum of line credits |
+
+Batch creation uses `CreateLedgerJournalHeadersCommand<LedgerJournalHeader>(headers)` returning `Result<IEnumerable<LedgerJournalHeader>>`.
+
+## LedgerJournalLine
+
+`LedgerJournalLine : BaseEntity<string>` maps to `LedgerJournalLines` (`LedgerJournalTrans` table). Composite key: `DataAreaId` + `JournalBatchNumber` + `LineNumber`.
+
+```csharp
+using IntegratoR.OData.FO.Features.Commands.LedgerJournals.CreateLedgerJournalLine;
+using IntegratoR.OData.FO.Domain.Enums.LedgerJournals;
+
+var debitLine = new LedgerJournalLine
+{
+    DataAreaId = "USMF",
+    JournalBatchNumber = batchNumber,
+    AccountDisplayValue = "110110-001-025",  // main account + dimensions
+    AccountType = LedgerJournalACType.Ledger,
+    CurrencyCode = "USD",
+    DebitAmount = 5000.00m,
+    TransDate = new DateTimeOffset(2026, 3, 31, 0, 0, 0, TimeSpan.Zero),
+    TransactionText = "Rent expense"
+};
+
+var creditLine = new LedgerJournalLine
+{
+    DataAreaId = "USMF",
+    JournalBatchNumber = batchNumber,
+    AccountDisplayValue = "200110-001-025",
+    AccountType = LedgerJournalACType.Ledger,
+    CurrencyCode = "USD",
+    CreditAmount = 5000.00m,
+    TransDate = new DateTimeOffset(2026, 3, 31, 0, 0, 0, TimeSpan.Zero),
+    TransactionText = "Rent accrual"
+};
+
+Result<LedgerJournalLine> debitResult = await mediator.Send(
+    new CreateLedgerJournalLineCommand<LedgerJournalLine>(debitLine), cancellationToken);
+// LineNumber is server-generated (IgnoreOnCreate), e.g. 1.0000
+```
+
+Key properties (most have `IgnoreOnCreate` — F&O populates from defaults):
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `DataAreaId` | `string` | Legal entity (key) |
+| `JournalBatchNumber` | `string` | Parent header (key) |
+| `LineNumber` | `decimal` | Server-generated (key) |
+| `AccountDisplayValue` | `string` | Primary account + dimensions |
+| `AccountType` | `LedgerJournalACType` | Ledger, Customer, Vendor, etc. |
+| `DebitAmount` / `CreditAmount` | `decimal` | Transaction amounts |
+| `CurrencyCode` | `string` | ISO currency code |
+| `TransDate` | `DateTimeOffset` | Transaction date |
+| `OffsetAccountDisplayValue` | `string?` | Offset account + dimensions |
+| `OffsetAccountType` | `LedgerJournalACType` | Offset account type |
+| `DefaultDimensionDisplayValue` | `string?` | Default dimensions on primary account |
+| `TransactionText` | `string?` | Text carried to general ledger |
+| `Voucher` | `string?` | Auto-assigned if omitted |
+| `SalesTaxGroup` / `ItemSalesTaxGroup` | `string?` | Tax groups |
+| `ReverseEntry` | `NoYes` | Reversing entry flag |
+| `ReverseDate` | `DateTimeOffset` | Required if `ReverseEntry = Yes` |
+
+## FinancialDimensionBuilder
+
+`FinancialDimensionBuilder` (`IntegratoR.OData.FO.Builders`) constructs dimension strings in the segment order F&O expects, regardless of the order you call `Add`.
+
+```csharp
+using IntegratoR.OData.FO.Builders;
+using IntegratoR.OData.FO.Domain.Models.FinancialDimensions;
+
+var format = new DimensionFormat { Delimiter = "-", Segments = ["MainAccount", "BusinessUnit", "CostCenter"] };
+
+string account = new FinancialDimensionBuilder()
+    .Initialize(format)             // Initialize(DimensionFormat) -> FinancialDimensionBuilder
+    .Add("MainAccount", "110110")   // Add(string name, string value) -> FinancialDimensionBuilder
+    .Add("CostCenter", "025")
+    .Add("BusinessUnit", "001")
+    .Build();                       // Build() -> string
+// account == "110110-001-025" (ordered by format, not by Add calls)
+```
+
+Missing segments produce empty placeholders: `builder.Add("CostCenter", "CC002").Build()` with the format above yields `"--CC002"`. Null/whitespace names or values are silently ignored. Calling `Build()` without `Initialize` returns `""`.
+
+`Initialize` clears previous state, so the builder is reusable without calling `Clear()` explicitly.
+
+## Querying Dimension Formats
+
+Rather than hardcoding `DimensionFormat`, fetch it from F&O with GetDimensionOrdersQuery. Results are cached for 15 minutes via `ICacheableQuery`.
+
+```csharp
+using IntegratoR.OData.FO.Domain.Enums.Dimensions;
+using IntegratoR.OData.FO.Features.Queries.Dimensions.GetDimensionOrder;
+
+var query = new GetDimensionOrdersQuery(
+    "LedgerDimension",
+    DimensionHierarchyType.DataEntityLedgerDimensionFormat);
+
+Result<DimensionFormat> formatResult = await mediator.Send(query, cancellationToken);
+// CacheKey: "GetDimensionOrdersQuery-LedgerDimension-DataEntityLedgerDimensionFormat"
+
+string accountDisplayValue = new FinancialDimensionBuilder()
+    .Initialize(formatResult.Value)  // e.g. Delimiter="-", Segments=["MainAccount","BusinessUnit","Department","CostCenter"]
+    .Add("MainAccount", "110110")
+    .Add("BusinessUnit", "001")
+    .Add("CostCenter", "025")
+    .Build(); // "110110-001--025"
+```
+
+| Hierarchy Type | Use Case |
+|---|---|
+| `DataEntityDefaultDimensionFormat` | Default dimensions (without main account) |
+| `DataEntityLedgerDimensionFormat` | Ledger dimensions (main account + dimensions) |
+| `AccountStructure` | Chart of accounts structure |
+| `DataEntityBudgetDimensionFormat` | Budget dimensions |
+
+## End-to-End: Journal with Dimensions
+
+```csharp
+// 1. Fetch dimension format from F&O
+Result<DimensionFormat> format = await mediator.Send(
+    new GetDimensionOrdersQuery("LedgerDimension",
+        DimensionHierarchyType.DataEntityLedgerDimensionFormat), cancellationToken);
+
+var dimBuilder = new FinancialDimensionBuilder();
+
+// 2. Create journal header
+var header = new LedgerJournalHeader
+{
+    DataAreaId = "USMF", JournalName = "GenJrn", Description = "March accruals"
+};
+Result<LedgerJournalHeader> headerResult = await mediator.Send(
+    new CreateLedgerJournalHeaderCommand<LedgerJournalHeader>(header), cancellationToken);
+
+string journalId = headerResult.Value.JournalBatchNumber!;
+
+// 3. Build account strings and create lines
+string debitAccount = dimBuilder
+    .Initialize(format.Value)
+    .Add("MainAccount", "110180")
+    .Add("BusinessUnit", "001")
+    .Add("CostCenter", "027")
+    .Build(); // e.g. "110180-001--027"
+
+string creditAccount = dimBuilder
+    .Initialize(format.Value)
+    .Add("MainAccount", "200110")
+    .Add("BusinessUnit", "001")
+    .Build(); // e.g. "200110-001--"
+
+var lines = new List<LedgerJournalLine>
+{
+    new()
+    {
+        DataAreaId = "USMF", JournalBatchNumber = journalId,
+        AccountDisplayValue = debitAccount, AccountType = LedgerJournalACType.Ledger,
+        CurrencyCode = "USD", DebitAmount = 1500.00m,
+        TransDate = new DateTimeOffset(2026, 3, 31, 0, 0, 0, TimeSpan.Zero)
+    },
+    new()
+    {
+        DataAreaId = "USMF", JournalBatchNumber = journalId,
+        AccountDisplayValue = creditAccount, AccountType = LedgerJournalACType.Ledger,
+        CurrencyCode = "USD", CreditAmount = 1500.00m,
+        TransDate = new DateTimeOffset(2026, 3, 31, 0, 0, 0, TimeSpan.Zero)
+    }
+};
+
+Result<IEnumerable<LedgerJournalLine>> lineResults = await mediator.Send(
+    new CreateLedgerJournalLinesCommand<LedgerJournalLine>(lines), cancellationToken);
+```

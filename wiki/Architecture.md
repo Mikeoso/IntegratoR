@@ -1,34 +1,61 @@
 # Architecture
 
-IntegratoR follows Clean Architecture principles with dependencies pointing inward toward the core abstractions layer. This section covers the layer structure, request pipeline, and authentication patterns.
+```
++------------------------------------------------------------------+
+|                        SampleFunction                            |
+|                   (Host / Composition Root)                      |
++----------+----------+-----------+----------+---------------------+
+           |          |           |          |
+           v          v           v          v
++----------+--+  +----+-----+  +-+--------+  +----------+
+| Application |  |   OData  |  | OData.FO |  |  RELion  |
+|             |  |          |  |          |  |          |
+| MediatR     |  | OData    |  | F&O      |  | RELion   |
+| Behaviours  |  | Client   |  | Entities |  | API      |
+| Auth, Cache |  | Polly    |  | Builders |  | Service  |
++------+------+  +----+-----+  +----+-----+  +----+-----+
+       |              |             |              |
+       v              v             v              v
++------------------------------------------------------------------+
+|                        Abstractions                              |
+|                         (Core)                                   |
+|                                                                  |
+|  IService<T>, ICommand, IQuery, BaseEntity<TKey>,               |
+|  IntegrationError, ErrorType, Result pattern                     |
++------------------------------------------------------------------+
+```
 
-## Deep Dives
-
-| Page | Description |
-|------|-------------|
-| [[Architecture-Overview]] | Layer diagram, dependency flow, and project-to-layer mapping |
-| [[Pipeline-Order]] | MediatR pipeline: Logging, Validation, Caching, Handler |
-| [[Authentication-Modes]] | OAuth vs ApiKey -- when to use each |
-
-## Quick Reference
+## Dependency Flow
 
 ```
-SampleFunction (host / composition root)
-    |
-    +-> Application        -> Abstractions (core)
-    +-> OData              -> Abstractions
-    +-> OData.FO           -> OData -> Abstractions
-    +-> RELion             -> Abstractions
+SampleFunction -----> Application -----> Abstractions
+       |                                      ^
+       +------------> OData -----------------+
+       |                 ^                    |
+       +------------> OData.FO --------------+
+       |                                      |
+       +------------> RELion ----------------+
 ```
 
-**Key principles:**
-- Dependencies point inward -- outer layers depend on inner layers, never the reverse
-- The Abstractions layer has zero external dependencies
-- Each layer registers its own services via `ApplicationDependencyInjection` extension methods
-- All service methods return `Result<T>` -- no exceptions for business flow control
+Dependencies point inward. Abstractions depends on nothing (except FluentResults). The host depends on everything as the composition root.
 
-## See Also
+## Projects
 
-- [[Architecture-Overview]] -- detailed layer breakdown
-- [[Pipeline-Order]] -- request pipeline deep dive
-- [[Getting-Started]] -- framework introduction
+| Project | Layer | Purpose | DI Entry Point |
+|---------|-------|---------|----------------|
+| `IntegratoR.Abstractions` | Core | Domain interfaces, base entities, CQRS contracts, Result pattern | No DI (pure contracts) |
+| `IntegratoR.Application` | Application | MediatR pipeline behaviours, generic handlers, auth, cache | `services.AddApplicationServices()` |
+| `IntegratoR.OData` | Infrastructure | Generic OData client, Polly policies, auth handler | `services.AddODataClient(configuration)` |
+| `IntegratoR.OData.FO` | Infrastructure | D365 F&O entities, dimension builders, F&O-specific handlers | `services.AddODataClientFOProxy(configuration)` |
+| `IntegratoR.RELion` | Infrastructure | RELion API client, entities, query handlers | `services.AddRelionClient(configuration)` |
+| `SampleFunction` | Host | Azure Functions triggers, DI composition root | N/A (entry point) |
+| `IntegratoR.TestKit` | Test Support | Fakes, custom assertions, test builders | N/A (test helper) |
+
+## Clean Architecture Mapping
+
+| Clean Architecture Ring | IntegratoR Layer | Contents |
+|------------------------|------------------|----------|
+| **Entities** (innermost) | Abstractions | `BaseEntity<TKey>`, `IEntity`, domain enums |
+| **Use Cases** | Application | Commands, queries, handlers, pipeline behaviours |
+| **Interface Adapters** | OData, OData.FO, RELion | Service implementations, HTTP clients, data mapping |
+| **Frameworks** (outermost) | SampleFunction | Azure Functions host, DI container setup |
