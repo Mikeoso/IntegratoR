@@ -39,7 +39,7 @@ If $ARGUMENTS names a component, layer, or type (e.g., "OData", "CreateCommand",
 5. Never assume users read pages sequentially — every page is a valid entry point.
 6. Never require understanding the architecture to use the framework.
 7. Never use passive/descriptive titles ("Advanced Features") — use action titles ("Batch Multiple Operations").
-8. Always document usage, not implementation — show HOW TO USE, not HOW IT WORKS internally.
+8. Never document implementation — show HOW TO USE, not HOW IT WORKS internally.
 
 ### Landmines
 
@@ -172,12 +172,23 @@ If $ARGUMENTS names a component, layer, or type (e.g., "OData", "CreateCommand",
 
 ---
 
+## Output Target
+
+All documentation is written to the **GitHub wiki** of this repository. Each page becomes a wiki page.
+
+- Use `gh api` or `git` commands to interact with the wiki repository.
+- Wiki page filenames use kebab-case with `.md` extension (e.g., `Create-an-Entity.md`).
+- Hub pages link to other wiki pages using `[[Page-Name]]` wiki-link syntax.
+- The wiki Home page serves as the top-level hub.
+- "See also" links use `[[Page-Name]]` syntax to link between wiki pages.
+
 ## Steps
 
 1. If `$ARGUMENTS` is empty:
    - Read the solution structure: `dotnet sln list` or scan for .csproj files.
    - Read each project's public API surface (key types, commands, queries, services).
    - Generate a documentation plan: list of pages needed, organised as a hub structure, with page type (Getting Started, How-To, Reference, Hub) for each.
+   - Map each planned page to a wiki page name (kebab-case).
    - Output the plan as a markdown document.
 
 2. If `$ARGUMENTS` names a component:
@@ -185,9 +196,10 @@ If $ARGUMENTS names a component, layer, or type (e.g., "OData", "CreateCommand",
    - Read the source code to understand the public API, parameters, usage patterns, and error scenarios.
    - Read existing tests for the component to extract realistic usage examples.
    - Generate documentation following the appropriate template from above.
-   - Include: working code examples, failure examples, DI setup, parameter table, and "See also" links.
+   - Include: working code examples, failure examples, DI setup, parameter table, and "See also" `[[wiki-links]]`.
+   - Write the generated page(s) to the GitHub wiki.
 
 3. After generating:
    - Verify all code examples reference real types and methods from the codebase.
-   - Verify all "See also" links reference pages that exist or are planned.
+   - Verify all "See also" links reference wiki pages that exist or are planned.
    - Check that every page has at least one failure/error example.
