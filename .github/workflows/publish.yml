@@ -40,12 +40,17 @@ jobs:
 
       - name: Set package version
         id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          IS_RELEASE: ${{ inputs.release }}
+          VERSION_STABLE: ${{ steps.gitversion.outputs.majorMinorPatch }}
+          VERSION_PRERELEASE: ${{ steps.gitversion.outputs.semVer }}
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.release }}" == "true" ]]; then
-            echo "version=${{ steps.gitversion.outputs.majorMinorPatch }}" >> $GITHUB_OUTPUT
+          if [[ "$EVENT_NAME" == "workflow_dispatch" && "$IS_RELEASE" == "true" ]]; then
+            echo "version=$VERSION_STABLE" >> $GITHUB_OUTPUT
             echo "is_release=true" >> $GITHUB_OUTPUT
           else
-            echo "version=${{ steps.gitversion.outputs.semVer }}" >> $GITHUB_OUTPUT
+            echo "version=$VERSION_PRERELEASE" >> $GITHUB_OUTPUT
             echo "is_release=false" >> $GITHUB_OUTPUT
           fi
 
@@ -88,7 +93,7 @@ jobs:
   release:
     runs-on: ubuntu-latest
     needs: [pack, publish]
-    if: needs.pack.outputs.is_release == 'true'
+    if: needs.pack.outputs.is_release == 'true' && github.ref == 'refs/heads/main'
     permissions:
       contents: write
     steps:
