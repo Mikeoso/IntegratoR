@@ -34,7 +34,7 @@
   </ItemGroup>
 
   <ItemGroup Label="Resilience">
-    <PackageVersion Include="Polly" Version="8.6.5" />
+    <PackageVersion Include="Polly" Version="8.6.6" />
     <PackageVersion Include="Polly.Extensions.Http" Version="3.0.0" />
     <PackageVersion Include="StackExchange.Redis" Version="2.11.8" />
   </ItemGroup>
