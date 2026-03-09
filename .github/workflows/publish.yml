@@ -18,6 +18,12 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       is_release: ${{ steps.version.outputs.is_release }}
     steps:
+      - name: Validate release branch
+        if: inputs.release && github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::Stable releases can only be created from main. Current ref: $GITHUB_REF"
+          exit 1
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
