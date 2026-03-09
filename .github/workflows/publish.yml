@@ -32,13 +32,13 @@ jobs:
           dotnet-quality: preview
 
       - name: Install GitVersion
-        uses: gitversion/setup@v3
+        uses: gittools/actions/gitversion/setup@v3.1.11
         with:
           versionSpec: '6.x'
 
       - name: Determine version
         id: gitversion
-        uses: gitversion/execute@v3
+        uses: gittools/actions/gitversion/execute@v3.1.11
 
       - name: Restore
         run: dotnet restore
