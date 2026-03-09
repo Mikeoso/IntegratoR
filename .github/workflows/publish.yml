@@ -6,6 +6,12 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish packages to NuGet (only from main)'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   pack:
@@ -38,7 +44,7 @@ jobs:
         run: dotnet restore
 
       - name: Build
-        run: dotnet build --configuration Release --no-restore -p:Version=${{ steps.gitversion.outputs.nuGetVersionV2 }}
+        run: dotnet build --configuration Release --no-restore
 
       - name: Pack
         run: dotnet pack --configuration Release --no-build --output ./nupkgs -p:PackageVersion=${{ steps.gitversion.outputs.nuGetVersionV2 }}
@@ -52,7 +58,7 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     needs: pack
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.publish && github.ref == 'refs/heads/main')
     environment: nuget
     steps:
       - name: Setup .NET
@@ -73,7 +79,7 @@ jobs:
   release:
     runs-on: ubuntu-latest
     needs: [pack, publish]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.publish && github.ref == 'refs/heads/main')
     permissions:
       contents: write
     steps:
