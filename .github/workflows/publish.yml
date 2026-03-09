@@ -88,7 +88,7 @@ jobs:
           dotnet-quality: preview
 
       - name: Download packages
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: nupkgs
           path: ./nupkgs
@@ -104,7 +104,7 @@ jobs:
       contents: write
     steps:
       - name: Download packages
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: nupkgs
           path: ./nupkgs
