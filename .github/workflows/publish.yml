@@ -17,7 +17,6 @@ jobs:
   pack:
     runs-on: ubuntu-latest
     outputs:
-      nuget-version: ${{ steps.gitversion.outputs.nuGetVersionV2 }}
       semver: ${{ steps.gitversion.outputs.semVer }}
     steps:
       - name: Checkout
@@ -32,13 +31,13 @@ jobs:
           dotnet-quality: preview
 
       - name: Install GitVersion
-        uses: gittools/actions/gitversion/setup@v3.1.11
+        uses: gittools/actions/gitversion/setup@v4.3.3
         with:
           versionSpec: '6.x'
 
       - name: Determine version
         id: gitversion
-        uses: gittools/actions/gitversion/execute@v3.1.11
+        uses: gittools/actions/gitversion/execute@v4.3.3
 
       - name: Restore
         run: dotnet restore
@@ -47,7 +46,7 @@ jobs:
         run: dotnet build --configuration Release --no-restore
 
       - name: Pack
-        run: dotnet pack --configuration Release --no-build --output ./nupkgs -p:PackageVersion=${{ steps.gitversion.outputs.nuGetVersionV2 }}
+        run: dotnet pack --configuration Release --no-build --output ./nupkgs -p:PackageVersion=${{ steps.gitversion.outputs.semVer }}
 
       - name: Upload packages
         uses: actions/upload-artifact@v4
