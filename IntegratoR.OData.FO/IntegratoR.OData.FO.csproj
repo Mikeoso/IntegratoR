@@ -5,4 +5,9 @@
     <ProjectReference Include="..\IntegratoR.OData\IntegratoR.OData.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="IntegratoR.Hosting" />
+    <InternalsVisibleTo Include="IntegratoR.OData.FO.Tests" />
+  </ItemGroup>
+
 </Project>

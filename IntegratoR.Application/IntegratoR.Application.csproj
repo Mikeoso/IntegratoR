@@ -14,4 +14,9 @@
     <ProjectReference Include="..\IntegratoR.Abstractions\IntegratoR.Abstractions.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="IntegratoR.Hosting" />
+    <InternalsVisibleTo Include="IntegratoR.Application.Tests" />
+  </ItemGroup>
+
 </Project>

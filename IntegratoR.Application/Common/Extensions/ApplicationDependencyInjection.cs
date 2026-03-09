@@ -24,7 +24,7 @@ namespace IntegratoR.Application.Common.Extensions;
 /// Provides extension methods for configuring and registering the application layer's services
 /// in the dependency injection (DI) container.
 /// </summary>
-public static class ApplicationDependencyInjection
+internal static class ApplicationDependencyInjection
 {
     /// <summary>
     /// Scans the application assembly and registers all of its services, including the full

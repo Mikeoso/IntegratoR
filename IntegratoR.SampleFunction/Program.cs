@@ -1,11 +1,6 @@
 using System.Reflection;
 using Azure.Identity;
-using FluentValidation;
 using IntegratoR.Abstractions.Common.Results;
-using IntegratoR.Application.Common.Extensions;
-using IntegratoR.OData.Common.Extensions;
-using IntegratoR.OData.FO.Common.Extensions;
-using IntegratoR.OData.FO.Features.Commands.LedgerJournals.CreateLedgerJournalHeader;
 using IntegratoR.RELion.Common.Extensions;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Configuration;
@@ -55,13 +50,11 @@ var host = new HostBuilder()
         services.AddApplicationInsightsTelemetryWorkerService();
         services.ConfigureFunctionsApplicationInsights();
 
-        services.AddApplicationServices();
-        services.AddODataClient(context.Configuration);
-        services.AddODataClientFOProxy(context.Configuration);
+        services.AddIntegratoR(context.Configuration, integrator =>
+        {
+            integrator.AddConsumerHandlers(clientAssembly);
+        });
         services.AddRelionClient(context.Configuration);
-
-        services.AddValidatorsFromAssembly(clientAssembly);
-        services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(clientAssembly));
     })
     .Build();
 
