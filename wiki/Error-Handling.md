@@ -93,11 +93,11 @@ IActionResult response = result.Match<LedgerJournalHeader, IActionResult>(
 // IActionResult — 200 OK with entity, or 400/404/409/500 with error message
 ```
 
-**Non-generic `Result`** (returned by batch and delete operations) — `public static TOut Match<TOut>(this Result result, Func<TOut> onSuccess, Func<IntegrationError, TOut> onFailure)`:
+**Non-generic `Result`** (returned by batch operations) — `public static TOut Match<TOut>(this Result result, Func<TOut> onSuccess, Func<IntegrationError, TOut> onFailure)`:
 
 ```csharp
 Result batchResult = await mediator.Send(
-    new DeleteCommand<LedgerJournalHeader>(entity), cancellationToken);
+    new CreateBatchCommand<LedgerJournalHeader>(journals), cancellationToken);
 
 int statusCode = batchResult.Match(
     () => 204,

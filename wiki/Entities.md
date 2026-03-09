@@ -72,13 +72,13 @@ public override IReadOnlyDictionary<string, object> GetLoggingContext()
 [ODataField(IgnoreOnCreate = true)]
 public string? JournalBatchNumber { get; set; }
 
-// Fully read-only -- excluded from both create and update
-[ODataField(IgnoreOnCreate = true, IgnoreOnUpdate = true)]
-public decimal JournalTotalDebit { get; set; }       // server-calculated
+// Server-generated line number -- excluded from create (LedgerJournalLine)
+[ODataField(IgnoreOnCreate = true)]
+public decimal LineNumber { get; set; }               // assigned by D365 number sequence
 
 // Immutable after creation -- included in create, excluded from update
 [ODataField(IgnoreOnUpdate = true)]
-public virtual NoYes IsPosted { get; set; }
+public required string ReadOnlyField { get; set; }    // e.g. a field that cannot change after creation
 ```
 
 The resulting payloads sent by [[Commands|ODataService\<TEntity\>]]:
@@ -90,7 +90,7 @@ The resulting payloads sent by [[Commands|ODataService\<TEntity\>]]:
 
 // PATCH /data/LedgerJournalHeaders(dataAreaId='USMF',JournalBatchNumber='JRN-001')
 // { "Description": "Updated" }
-// IsPosted excluded (IgnoreOnUpdate), JournalTotalDebit excluded (both)
+// ReadOnlyField excluded (IgnoreOnUpdate)
 ```
 
 ## Attribute Reference

@@ -3,6 +3,7 @@
 ```csharp
 using IntegratoR.TestKit.Assertions;
 using IntegratoR.TestKit.Builders;
+using IntegratoR.TestKit.Doubles.Entities;
 using IntegratoR.TestKit.Fakes;
 
 TestEntity entity = TestEntityBuilder.Default().WithId("J-001").Build();
@@ -12,7 +13,7 @@ result.Should().BeSuccessful();
 result.Should().HaveValue(entity);
 ```
 
-Reference `IntegratoR.TestKit` from your test project. It depends on xUnit v3, FluentAssertions, and NSubstitute.
+Reference `IntegratoR.TestKit` from your test project. It depends on FluentAssertions and FluentResults (plus project references to IntegratoR.Abstractions and IntegratoR.OData). Your test project provides its own xUnit and NSubstitute references.
 
 ```xml
 <ProjectReference Include="..\..\tests\IntegratoR.TestKit\IntegratoR.TestKit.csproj" />

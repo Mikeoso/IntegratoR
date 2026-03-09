@@ -9,6 +9,7 @@ var header = new LedgerJournalHeader
 Result<LedgerJournalHeader> headerResult = await mediator.Send(
     new CreateLedgerJournalHeaderCommand<LedgerJournalHeader>(header), cancellationToken);
 
+if (headerResult.IsFailed) return; // handle error
 string batchNumber = headerResult.Value.JournalBatchNumber!; // server-generated, e.g. "000234"
 ```
 
@@ -45,7 +46,7 @@ Result<LedgerJournalHeader> result = await mediator.Send(
 | `JournalTotalDebit` | `decimal` | No | -- | Server-calculated: sum of line debits (not stripped from payload, but D365 ignores client values) |
 | `JournalTotalCredit` | `decimal` | No | -- | Server-calculated: sum of line credits (not stripped from payload, but D365 ignores client values) |
 
-Batch creation uses `CreateLedgerJournalHeadersCommand<LedgerJournalHeader>(headers)` returning `Result<IEnumerable<LedgerJournalHeader>>`.
+Batch creation uses `CreateLedgerJournalHeadersCommand<LedgerJournalHeader>(headers)` returning `Result` (non-generic — batch commands do not return created entities).
 
 ## LedgerJournalLine
 
@@ -59,24 +60,24 @@ var debitLine = new LedgerJournalLine
 {
     DataAreaId = "USMF",
     JournalBatchNumber = batchNumber,
-    AccountDisplayValue = "110110-001-025",  // main account + dimensions
-    AccountType = LedgerJournalACType.Ledger,
-    CurrencyCode = "USD",
+    AccountDisplayValue = "110110-001-025",  // required by C#, excluded from POST payload
+    AccountType = LedgerJournalACType.Ledger, // required by C#, excluded from POST payload
+    CurrencyCode = "USD",                     // required by C#, excluded from POST payload
     DebitAmount = 5000.00m,
-    TransDate = new DateTimeOffset(2026, 3, 31, 0, 0, 0, TimeSpan.Zero),
-    TransactionText = "Rent expense"
+    TransDate = new DateTimeOffset(2026, 3, 31, 0, 0, 0, TimeSpan.Zero), // required by C#, excluded from POST payload
+    TransactionText = "Rent expense"          // excluded from POST payload
 };
 
 var creditLine = new LedgerJournalLine
 {
     DataAreaId = "USMF",
     JournalBatchNumber = batchNumber,
-    AccountDisplayValue = "200110-001-025",
-    AccountType = LedgerJournalACType.Ledger,
-    CurrencyCode = "USD",
+    AccountDisplayValue = "200110-001-025",   // required by C#, excluded from POST payload
+    AccountType = LedgerJournalACType.Ledger, // required by C#, excluded from POST payload
+    CurrencyCode = "USD",                     // required by C#, excluded from POST payload
     CreditAmount = 5000.00m,
-    TransDate = new DateTimeOffset(2026, 3, 31, 0, 0, 0, TimeSpan.Zero),
-    TransactionText = "Rent accrual"
+    TransDate = new DateTimeOffset(2026, 3, 31, 0, 0, 0, TimeSpan.Zero), // required by C#, excluded from POST payload
+    TransactionText = "Rent accrual"          // excluded from POST payload
 };
 
 Result<LedgerJournalLine> debitResult = await mediator.Send(
@@ -176,6 +177,7 @@ var header = new LedgerJournalHeader
 Result<LedgerJournalHeader> headerResult = await mediator.Send(
     new CreateLedgerJournalHeaderCommand<LedgerJournalHeader>(header), cancellationToken);
 
+if (headerResult.IsFailed) return; // handle error
 string journalId = headerResult.Value.JournalBatchNumber!;
 
 // 3. Build account strings and create lines
@@ -197,20 +199,22 @@ var lines = new List<LedgerJournalLine>
     new()
     {
         DataAreaId = "USMF", JournalBatchNumber = journalId,
-        AccountDisplayValue = debitAccount, AccountType = LedgerJournalACType.Ledger,
-        CurrencyCode = "USD", DebitAmount = 1500.00m,
-        TransDate = new DateTimeOffset(2026, 3, 31, 0, 0, 0, TimeSpan.Zero)
+        AccountDisplayValue = debitAccount,                                    // required by C#, excluded from POST payload
+        AccountType = LedgerJournalACType.Ledger,                              // required by C#, excluded from POST payload
+        CurrencyCode = "USD", DebitAmount = 1500.00m,                          // CurrencyCode: excluded from POST payload
+        TransDate = new DateTimeOffset(2026, 3, 31, 0, 0, 0, TimeSpan.Zero)   // required by C#, excluded from POST payload
     },
     new()
     {
         DataAreaId = "USMF", JournalBatchNumber = journalId,
-        AccountDisplayValue = creditAccount, AccountType = LedgerJournalACType.Ledger,
-        CurrencyCode = "USD", CreditAmount = 1500.00m,
-        TransDate = new DateTimeOffset(2026, 3, 31, 0, 0, 0, TimeSpan.Zero)
+        AccountDisplayValue = creditAccount,                                   // required by C#, excluded from POST payload
+        AccountType = LedgerJournalACType.Ledger,                              // required by C#, excluded from POST payload
+        CurrencyCode = "USD", CreditAmount = 1500.00m,                         // CurrencyCode: excluded from POST payload
+        TransDate = new DateTimeOffset(2026, 3, 31, 0, 0, 0, TimeSpan.Zero)   // required by C#, excluded from POST payload
     }
 };
 
-Result<IEnumerable<LedgerJournalLine>> lineResults = await mediator.Send(
+Result lineResults = await mediator.Send(
     new CreateLedgerJournalLinesCommand<LedgerJournalLine>(lines), cancellationToken);
 ```
 

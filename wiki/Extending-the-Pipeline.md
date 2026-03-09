@@ -19,7 +19,7 @@ services.AddTransient(typeof(IPipelineBehavior<,>), typeof(CachingBehaviour<,>))
 // 4. Handler executes business logic
 ```
 
-If logging ran after validation, failed requests would not be logged. If caching ran before validation, invalid requests could return cached results. If caching ran before the handler, every request would bypass the cache.
+If logging ran after validation, failed requests would not be logged. If caching ran before validation, invalid requests could return cached results. Caching runs before the handler so it can short-circuit on cache hits — only cache misses reach the handler.
 
 ## Behaviours
 
@@ -28,7 +28,7 @@ If logging ran after validation, failed requests would not be logged. If caching
 **`ValidationBehaviour<TRequest, TResponse> : IPipelineBehavior<TRequest, TResponse> where TResponse : IResultBase`** — runs all registered `IValidator<TRequest>` instances. On failure, returns `IntegrationError("Validation.Error", message, ErrorType.Validation)` without calling the handler.
 
 ```csharp
-var invalid = new LedgerJournalHeader { JournalBatchNumber = "", DataAreaId = "USMF" };
+var invalid = new LedgerJournalHeader { DataAreaId = "USMF", JournalName = "", Description = "" };
 Result<LedgerJournalHeader> result = await mediator.Send(
     new CreateCommand<LedgerJournalHeader>(invalid), cancellationToken);
 result.IsFailed;            // true
@@ -142,7 +142,7 @@ public record CreateLedgerJournalHeadersCommand<TEntity>(
 
 ```csharp
 var host = new HostBuilder()
-    .ConfigureFunctionsWebApplication()
+    .ConfigureFunctionsWorkerDefaults()
     .ConfigureServices((context, services) =>
     {
         services.AddApplicationServices();                    // pipeline + handlers + validators + cache + auth

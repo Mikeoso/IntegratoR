@@ -98,7 +98,7 @@ Failed results contain `IntegrationError` with typed error codes:
 if (result.IsFailed)
 {
     IntegrationError? error = result.GetError();
-    // error.Code -> "Relion.CompanyNotFound" | "Relion.ApiError" | "Relion.Exception"
+    // error.Code -> "RelionService.GetLedgerAccountMappingsAsync.CompanyNotFound" | "Relion.ApiError" | "Relion.Exception"
     // error.Type -> ErrorType.NotFound | ErrorType.Failure
 }
 ```

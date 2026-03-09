@@ -13,7 +13,7 @@ Result<LedgerJournalHeader> result = await mediator.Send(
 // result.Value.JournalBatchNumber == "00628" (server-generated)
 ```
 
-Commands are CQRS write operations sent through the MediatR pipeline (Logging -> Validation -> Handler). All commands return `FluentResults.Result` types -- never exceptions for business logic errors.
+Commands are CQRS write operations sent through the MediatR pipeline (Logging -> Validation -> Caching -> Handler). All commands return `FluentResults.Result` types -- never exceptions for business logic errors.
 
 ## ICommand\<TResponse\>
 

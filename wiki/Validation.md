@@ -27,7 +27,7 @@ public class CreateLedgerJournalHeaderValidator
 }
 ```
 
-No registration code is needed — the DI container auto-discovers all `AbstractValidator<T>` implementations via [[Getting-Started|`services.AddApplicationServices()`]].
+Validators in the IntegratoR library assemblies are registered by `services.AddApplicationServices()`. Validators in your own consumer assembly must be registered separately via `services.AddValidatorsFromAssembly(clientAssembly)` in your host's DI setup — they are not auto-discovered.
 
 ## Pipeline
 
@@ -52,7 +52,7 @@ Result<LedgerJournalHeader> result = await mediator.Send(
     cancellationToken);
 // result.IsFailed          == true
 // result.GetError().Code    == "Validation.Error"
-// result.GetError().Message == "'Journal Name' must be between 1 and 10 characters."
+// result.GetError().Message == "'Journal Name' must not be empty."
 // result.GetError().Type    == ErrorType.Validation
 ```
 
