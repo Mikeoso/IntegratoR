@@ -30,3 +30,8 @@
 - [[Extending-the-Pipeline]] — Custom commands and pipeline behaviours
 - [[Durable-Functions]] — Durable Functions orchestration patterns
 - [[Testing]] — TestKit fakes and assertion helpers
+
+## See Also
+
+- [IntegratoR on NuGet](https://www.nuget.org/packages?q=IntegratoR) — published packages
+- [[Getting-Started]] — first steps for new users

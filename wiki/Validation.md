@@ -80,3 +80,10 @@ public class UpdateLedgerJournalHeaderValidator
 ```
 
 If multiple validators exist for the same request type, all are executed but only the first failure is returned in the result.
+
+## See Also
+
+- [[Error-Handling]] — `IntegrationError` and `ErrorType` reference
+- [[Extending-the-Pipeline]] — pipeline behaviour order and custom behaviours
+- [[Commands]] — generic commands that validators target
+- [[Testing]] — `HaveErrorCode()` assertions for validation tests

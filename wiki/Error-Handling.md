@@ -122,3 +122,10 @@ if (result.IsFailed)
         Console.WriteLine($"HTTP error: {httpEx.Message}"); // "HTTP error: Service Unavailable"
 }
 ```
+
+## See Also
+
+- [[Validation]] — FluentValidation pipeline and `ErrorType.Validation`
+- [[Commands]] — command error handling patterns
+- [[Resilience]] — retry and circuit breaker for transient failures
+- [[Testing]] — `HaveErrorCode()` and `HaveErrorType()` test assertions

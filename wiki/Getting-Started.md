@@ -141,3 +141,58 @@ Result<IEnumerable<LedgerJournalHeader>> results = await mediator.Send(filter, c
 ```
 
 See [[Queries]] for filter syntax and return types.
+
+## What Just Happened
+
+The steps above assembled a working integration pipeline:
+
+1. **NuGet packages** brought in the framework and its dependencies (MediatR, FluentResults, FluentValidation, Polly).
+2. **`ODataSettings`** configured the HTTP connection and OAuth credentials for your D365 F&O environment.
+3. **`AddApplicationServices()`** registered the MediatR pipeline (Logging -> Validation -> Caching -> Handler), cache service, and OAuth authenticator.
+4. **`AddODataClient()`** registered the generic OData HTTP client with Polly retry/circuit-breaker policies.
+5. **`AddODataClientFOProxy()`** registered the D365 F&O-specific entity handlers and validators.
+6. **The entity** mapped C# properties to OData JSON fields, with `[ODataField(IgnoreOnCreate = true)]` excluding server-generated values from the POST payload.
+7. **`CreateCommand<T>`** sent the entity through the full pipeline — logging the request, validating the entity, then POSTing to D365 and returning a `Result<T>` with the server-populated fields.
+
+## When Things Go Wrong
+
+**Wrong credentials or expired secret:**
+
+```csharp
+Result<LedgerJournalHeader> result = await mediator.Send(command, cancellationToken);
+// result.IsFailed == true
+// result.GetError()?.Code    == "OData.AuthenticationFailed"
+// result.GetError()?.Message == "Failed to acquire OAuth token for resource ..."
+```
+
+Check that `ClientId`, `ClientSecret`, `TenantId`, and `Resource` in `ODataSettings` are correct. Secrets expire — rotate them in Azure Key Vault.
+
+**Missing or wrong `ODataSettings` section:**
+
+The host throws at startup if `Url` is null or empty. Double-check your `appsettings.json` section name matches `"ODataSettings"` exactly.
+
+**Entity validation failure:**
+
+```csharp
+var invalid = new LedgerJournalHeader
+{
+    DataAreaId = "USMF",
+    JournalName = "",           // empty — fails NotEmpty rule
+    Description = "Test"
+};
+
+Result<LedgerJournalHeader> result = await mediator.Send(
+    new CreateCommand<LedgerJournalHeader>(invalid), cancellationToken);
+// result.IsFailed          == true
+// result.GetError()?.Code  == "Validation.Error"
+// result.GetError()?.Type  == ErrorType.Validation
+```
+
+The pipeline short-circuits before reaching D365. See [[Error-Handling]] for the full error model.
+
+## See Also
+
+- [[Azure-Functions-Host]] — production-ready host with Key Vault and Application Insights
+- [[Entities]] — entity definition patterns and `ODataFieldAttribute`
+- [[Commands]] — create, update, and delete operations
+- [[Configuration]] — full settings reference

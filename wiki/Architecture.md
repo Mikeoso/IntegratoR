@@ -59,3 +59,9 @@ Dependencies point inward. Abstractions depends on nothing (except FluentResults
 | **Use Cases** | Application | Commands, queries, handlers, pipeline behaviours |
 | **Interface Adapters** | OData, OData.FO, RELion | Service implementations, HTTP clients, data mapping |
 | **Frameworks** (outermost) | SampleFunction | Azure Functions host, DI container setup |
+
+## See Also
+
+- [[Getting-Started]] — install, configure, and send your first command
+- [[Extending-the-Pipeline]] — pipeline behaviours and custom commands
+- [[Azure-Functions-Host]] — composition root setup

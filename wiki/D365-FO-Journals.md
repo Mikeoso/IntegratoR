@@ -41,9 +41,9 @@ Result<LedgerJournalHeader> result = await mediator.Send(
 | `Description` | `string` | No | -- | User-defined description |
 | `IntegrationKey` | `string?` | No | -- | External system tracking key |
 | `PostingLayer` | `CurrentOperationsTax` | No | -- | Financial posting layer |
-| `IsPosted` | `NoYes` | No | -- | Read-only: whether posted |
-| `JournalTotalDebit` | `decimal` | No | -- | Read-only: sum of line debits |
-| `JournalTotalCredit` | `decimal` | No | -- | Read-only: sum of line credits |
+| `IsPosted` | `NoYes` | No | -- | Server-managed: whether posted (not stripped from payload, but D365 ignores client values) |
+| `JournalTotalDebit` | `decimal` | No | -- | Server-calculated: sum of line debits (not stripped from payload, but D365 ignores client values) |
+| `JournalTotalCredit` | `decimal` | No | -- | Server-calculated: sum of line credits (not stripped from payload, but D365 ignores client values) |
 
 Batch creation uses `CreateLedgerJournalHeadersCommand<LedgerJournalHeader>(headers)` returning `Result<IEnumerable<LedgerJournalHeader>>`.
 
@@ -84,26 +84,26 @@ Result<LedgerJournalLine> debitResult = await mediator.Send(
 // LineNumber is server-generated (IgnoreOnCreate), e.g. 1.0000
 ```
 
-Key properties (most have `IgnoreOnCreate` — F&O populates from defaults):
+Most properties have `[ODataField(IgnoreOnCreate = true)]` — D365 F&O populates them from journal name defaults. Set values on the C# object for use after creation (e.g. logging), but they are excluded from the POST payload. Only `DataAreaId`, `JournalBatchNumber`, `DebitAmount`, and `CreditAmount` are included in the POST.
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `DataAreaId` | `string` | Legal entity (key) |
-| `JournalBatchNumber` | `string` | Parent header (key) |
-| `LineNumber` | `decimal` | Server-generated (key) |
-| `AccountDisplayValue` | `string` | Primary account + dimensions |
-| `AccountType` | `LedgerJournalACType` | Ledger, Customer, Vendor, etc. |
-| `DebitAmount` / `CreditAmount` | `decimal` | Transaction amounts |
-| `CurrencyCode` | `string` | ISO currency code |
-| `TransDate` | `DateTimeOffset` | Transaction date |
-| `OffsetAccountDisplayValue` | `string?` | Offset account + dimensions |
-| `OffsetAccountType` | `LedgerJournalACType` | Offset account type |
-| `DefaultDimensionDisplayValue` | `string?` | Default dimensions on primary account |
-| `TransactionText` | `string?` | Text carried to general ledger |
-| `Voucher` | `string?` | Auto-assigned if omitted |
-| `SalesTaxGroup` / `ItemSalesTaxGroup` | `string?` | Tax groups |
-| `ReverseEntry` | `NoYes` | Reversing entry flag |
-| `ReverseDate` | `DateTimeOffset` | Required if `ReverseEntry = Yes` |
+| Property | Type | ODataField | Description |
+|----------|------|------------|-------------|
+| `DataAreaId` | `string` | -- | Legal entity (key) |
+| `JournalBatchNumber` | `string` | -- | Parent header (key) |
+| `LineNumber` | `decimal` | `IgnoreOnCreate` | Server-generated (key) |
+| `AccountDisplayValue` | `string` | `IgnoreOnCreate` | Primary account + dimensions |
+| `AccountType` | `LedgerJournalACType` | `IgnoreOnCreate` | Ledger, Customer, Vendor, etc. |
+| `DebitAmount` / `CreditAmount` | `decimal` | -- | Transaction amounts (included in POST) |
+| `CurrencyCode` | `string` | `IgnoreOnCreate` | ISO currency code |
+| `TransDate` | `DateTimeOffset` | `IgnoreOnCreate` | Transaction date |
+| `OffsetAccountDisplayValue` | `string?` | `IgnoreOnCreate` | Offset account + dimensions |
+| `OffsetAccountType` | `LedgerJournalACType` | `IgnoreOnCreate` | Offset account type |
+| `DefaultDimensionDisplayValue` | `string?` | `IgnoreOnCreate` | Default dimensions on primary account |
+| `TransactionText` | `string?` | `IgnoreOnCreate` | Text carried to general ledger |
+| `Voucher` | `string?` | `IgnoreOnCreate` | Auto-assigned if omitted |
+| `SalesTaxGroup` / `ItemSalesTaxGroup` | `string?` | `IgnoreOnCreate` | Tax groups |
+| `ReverseEntry` | `NoYes` | `IgnoreOnCreate` | Reversing entry flag |
+| `ReverseDate` | `DateTimeOffset` | `IgnoreOnCreate` | Required if `ReverseEntry = Yes` |
 
 ## FinancialDimensionBuilder
 
@@ -213,3 +213,10 @@ var lines = new List<LedgerJournalLine>
 Result<IEnumerable<LedgerJournalLine>> lineResults = await mediator.Send(
     new CreateLedgerJournalLinesCommand<LedgerJournalLine>(lines), cancellationToken);
 ```
+
+## See Also
+
+- [[Entities]] — `BaseEntity<TKey>` and `ODataFieldAttribute` reference
+- [[Commands]] — generic CRUD commands
+- [[Batch-Operations]] — bulk operations and chunking
+- [[Configuration]] — `FOSettings` and dimension hierarchy types

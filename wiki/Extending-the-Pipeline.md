@@ -160,3 +160,11 @@ To replace the default in-memory cache for scaled-out scenarios, register after 
 services.AddApplicationServices();
 services.AddSingleton<ICacheService, RedisCacheService>(); // overrides InMemoryCacheService
 ```
+
+## See Also
+
+- [[Architecture]] — layer diagram and dependency flow
+- [[Commands]] — generic commands and `IService<T>`
+- [[Validation]] — `ValidationBehaviour` details
+- [[Caching]] — `CachingBehaviour` and `ICacheableQuery`
+- [[D365-FO-Journals]] — specialised command examples

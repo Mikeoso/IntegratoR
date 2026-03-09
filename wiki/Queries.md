@@ -179,3 +179,10 @@ string output = result.Match(
     onSuccess: header => $"Found: {header.JournalBatchNumber}",
     onFailure: error => $"Error: [{error.Code}] {error.Message}");
 ```
+
+## See Also
+
+- [[Commands]] — create, update, and delete operations
+- [[Caching]] — cache query results with `ICacheableQuery`
+- [[Error-Handling]] — `Result<T>` pattern and error types
+- [[Entities]] — entity definition and composite keys

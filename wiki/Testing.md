@@ -166,3 +166,10 @@ public class CreateCommandHandlerTests
     }
 }
 ```
+
+## See Also
+
+- [[Error-Handling]] — `IntegrationError`, `ErrorType`, and `GetError()`
+- [[Caching]] — `ICacheableQuery` (use `TestCacheableQuery` to test)
+- [[Extending-the-Pipeline]] — pipeline behaviours to test
+- [[Commands]] — generic commands used in handler tests

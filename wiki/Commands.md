@@ -99,20 +99,19 @@ D365 F&O treats deleting a non-existent entity as success (HTTP 204), making del
 ### Batch
 
 ```csharp
-var lines = new List<LedgerJournalLine>
+var journals = new List<LedgerJournalHeader>
 {
-    new() { JournalBatchNumber = "JBN-001", LineNumber = 1, DataAreaId = "USMF",
-            AccountDisplayValue = "600100", DebitAmount = 1000m },
-    new() { JournalBatchNumber = "JBN-001", LineNumber = 2, DataAreaId = "USMF",
-            AccountDisplayValue = "200100", CreditAmount = 1000m }
+    new() { DataAreaId = "USMF", JournalName = "GenJrn", Description = "Batch journal 1" },
+    new() { DataAreaId = "USMF", JournalName = "GenJrn", Description = "Batch journal 2" },
+    new() { DataAreaId = "USMF", JournalName = "GenJrn", Description = "Batch journal 3" }
 };
 
 Result result = await mediator.Send(
-    new CreateBatchCommand<LedgerJournalLine>(lines), cancellationToken);
+    new CreateBatchCommand<LedgerJournalHeader>(journals), cancellationToken);
 // result.IsSuccess == true (atomic, all-or-nothing via OData $batch)
 ```
 
-`UpdateBatchCommand<T>` and `DeleteBatchCommand<T>` follow the same pattern.
+Batch commands return non-generic `Result` — server-generated values (e.g. `JournalBatchNumber`) are not returned. [[Queries|Query them]] after the batch completes. `UpdateBatchCommand<T>` and `DeleteBatchCommand<T>` follow the same pattern. See [[Batch-Operations]] for chunking and advanced patterns.
 
 ## IService\<TEntity\>
 
@@ -196,3 +195,11 @@ string message = result.Match(
 ```
 
 `ErrorType` values: `Failure`, `Validation`, `NotFound`, `Conflict`. See [[Error-Handling]] for more detail.
+
+## See Also
+
+- [[Entities]] — define entities with `BaseEntity<TKey>` and `ODataFieldAttribute`
+- [[Queries]] — query by composite key or filter expression
+- [[Batch-Operations]] — bulk create, update, and delete with chunking
+- [[Validation]] — FluentValidation in the MediatR pipeline
+- [[Error-Handling]] — `Result<T>` pattern and `IntegrationError`

@@ -36,7 +36,7 @@ services.AddRelionClient(configuration);       // binds RelionSettings
 
 ## ODataSettings
 
-Bound from the `"ODataSettings"` section. Controls the OData client connection to D365 F&O.
+Bound from the `"ODataSettings"` section. Controls the OData client connection to D365 F&O. Settings are grouped by concern: connection, authentication, and resilience.
 
 **Note:** The `Url` must end with `/data` (e.g. `https://your-environment.operations.dynamics.com/data`).
 
@@ -184,3 +184,10 @@ services.AddODataClient(options =>
   }
 }
 ```
+
+## See Also
+
+- [[Getting-Started]] — minimal configuration for first setup
+- [[Resilience]] — retry and circuit breaker behaviour details
+- [[Azure-Functions-Host]] — production configuration with Key Vault
+- [[RELion]] — RELion-specific connection setup

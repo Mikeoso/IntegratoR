@@ -127,3 +127,9 @@ Result<Customer> updated = await mediator.Send(
 Result<Customer> deleted = await mediator.Send(
     new DeleteCommand<Customer>(customer), ct);
 ```
+
+## See Also
+
+- [[Commands]] — generic CRUD commands and `IService<T>`
+- [[Queries]] — query by key or filter expression
+- [[D365-FO-Journals]] — pre-built D365 F&O journal entities

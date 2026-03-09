@@ -78,3 +78,9 @@ services.AddODataClient(options =>
     options.UseCircuitBreaker = false;
 });
 ```
+
+## See Also
+
+- [[Configuration]] — full OData settings reference including retry properties
+- [[Error-Handling]] — how transient failures surface as `IntegrationError`
+- [[Azure-Functions-Host]] — production host setup

@@ -137,3 +137,10 @@ return Result.Fail<LedgerJournalHeader>(new IntegrationError("Code", "Message", 
 // Avoid throwing (loses structured error context):
 throw new InvalidOperationException("Something went wrong");
 ```
+
+## See Also
+
+- [[Azure-Functions-Host]] — host setup with `ResultJsonConverter` registration
+- [[Error-Handling]] — `Result<T>` pattern and `IntegrationError`
+- [[D365-FO-Journals]] — journal entities used in orchestrations
+- [[Batch-Operations]] — alternative to fan-out for bulk operations

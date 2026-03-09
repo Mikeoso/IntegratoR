@@ -85,3 +85,10 @@ In development, `local.settings.json` provides secrets. In deployed environments
 ## Durable Functions Serialisation
 
 Durable Functions uses `Newtonsoft.Json` to serialise orchestration state. The `ResultJsonConverter` and `ResultGenericJsonConverter` ensure `Result` and `Result<T>` survive round-trip serialisation. Set `JsonConvert.DefaultSettings` **before** building the host.
+
+## See Also
+
+- [[Getting-Started]] — minimal setup for first-time users
+- [[Configuration]] — full settings reference for OData, F&O, and RELion
+- [[Durable-Functions]] — orchestration patterns using the host
+- [[Extending-the-Pipeline]] — `AddApplicationServices()` registration details

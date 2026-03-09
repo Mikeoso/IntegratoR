@@ -97,8 +97,14 @@ Failed results contain `IntegrationError` with typed error codes:
 ```csharp
 if (result.IsFailed)
 {
-    IntegrationError error = result.Errors.OfType<IntegrationError>().First();
+    IntegrationError? error = result.GetError();
     // error.Code -> "Relion.CompanyNotFound" | "Relion.ApiError" | "Relion.Exception"
     // error.Type -> ErrorType.NotFound | ErrorType.Failure
 }
 ```
+
+## See Also
+
+- [[Configuration]] — `RelionSettings` reference and authentication modes
+- [[Error-Handling]] — `IntegrationError` and `GetError()` pattern
+- [[Getting-Started]] — DI registration for RELion

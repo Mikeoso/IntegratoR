@@ -77,3 +77,10 @@ foreach (IEnumerable<LedgerJournalHeader> chunk in journals.Chunk(batchSize))
 ```
 
 Note: chunked batches are **not** atomic across chunks — earlier chunks commit independently, so a mid-way failure leaves partial data you must reconcile.
+
+## See Also
+
+- [[Commands]] — single-entity create, update, and delete
+- [[D365-FO-Journals]] — journal-specific batch patterns
+- [[Error-Handling]] — `Result<T>` pattern and error types
+- [[Durable-Functions]] — orchestrate batches with fan-out/fan-in
