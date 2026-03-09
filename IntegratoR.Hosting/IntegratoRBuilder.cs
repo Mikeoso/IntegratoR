@@ -24,19 +24,25 @@ public sealed class IntegratoRBuilder
 
     /// <summary>
     /// Applies programmatic overrides to the OData connection settings after configuration binding.
+    /// Multiple calls are composed; all delegates run in registration order.
     /// </summary>
     public IntegratoRBuilder ConfigureOData(Action<ODataSettings> configure)
     {
-        ODataPostConfigure = configure;
+        ODataPostConfigure = ODataPostConfigure is null
+            ? configure
+            : ODataPostConfigure + configure;
         return this;
     }
 
     /// <summary>
     /// Applies programmatic overrides to the F&amp;O settings after configuration binding.
+    /// Multiple calls are composed; all delegates run in registration order.
     /// </summary>
     public IntegratoRBuilder ConfigureFO(Action<FOSettings> configure)
     {
-        FOPostConfigure = configure;
+        FOPostConfigure = FOPostConfigure is null
+            ? configure
+            : FOPostConfigure + configure;
         return this;
     }
 }

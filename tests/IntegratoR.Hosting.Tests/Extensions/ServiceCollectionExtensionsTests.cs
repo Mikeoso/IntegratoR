@@ -1,4 +1,5 @@
 using FluentAssertions;
+using FluentValidation;
 using IntegratoR.Abstractions.Interfaces.Authentication;
 using IntegratoR.Abstractions.Interfaces.Services;
 using IntegratoR.OData.Domain.Settings;
@@ -105,9 +106,34 @@ public class ServiceCollectionExtensionsTests
             integrator.AddConsumerHandlers(typeof(ServiceCollectionExtensionsTests).Assembly);
         });
 
-        // Assert — MediatR should be registered with an additional assembly scan
+        // Assert — the dummy validator defined in this assembly should be resolvable
         ServiceProvider provider = services.BuildServiceProvider();
-        provider.GetService<IMediator>().Should().NotBeNull();
+        provider.GetService<IValidator<DummyModel>>().Should().NotBeNull()
+            .And.BeOfType<DummyModelValidator>();
+    }
+
+    [Fact]
+    public void AddIntegratoR_ConfigureODataCalledTwice_ComposesOverrides()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddLogging();
+        IConfiguration configuration = CreateMinimalConfiguration();
+
+        // Act
+        services.AddIntegratoR(configuration, integrator =>
+        {
+            integrator
+                .ConfigureOData(odata => odata.Timeout = 300)
+                .ConfigureOData(odata => odata.RetryCount = 5);
+        });
+
+        // Assert — both overrides should be applied
+        ServiceProvider provider = services.BuildServiceProvider();
+        ODataSettings settings = provider.GetRequiredService<IOptions<ODataSettings>>().Value;
+
+        settings.Timeout.Should().Be(300);
+        settings.RetryCount.Should().Be(5);
     }
 
     [Fact]
@@ -127,5 +153,24 @@ public class ServiceCollectionExtensionsTests
 
         settings.Url.Should().Be("https://test.operations.dynamics.com/data");
         settings.ClientId.Should().Be("test-client-id");
+    }
+}
+
+/// <summary>
+/// Dummy model used to verify FluentValidation assembly scanning.
+/// </summary>
+public class DummyModel
+{
+    public string? Name { get; set; }
+}
+
+/// <summary>
+/// Dummy validator discovered by <c>AddValidatorsFromAssembly</c> during tests.
+/// </summary>
+public class DummyModelValidator : AbstractValidator<DummyModel>
+{
+    public DummyModelValidator()
+    {
+        RuleFor(x => x.Name).NotEmpty();
     }
 }
