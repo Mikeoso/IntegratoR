@@ -21,6 +21,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="IntegratoR.Hosting" />
     <InternalsVisibleTo Include="IntegratoR.OData.Tests" />
   </ItemGroup>
 

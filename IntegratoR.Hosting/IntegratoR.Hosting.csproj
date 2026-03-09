@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\IntegratoR.Application\IntegratoR.Application.csproj" />
+    <ProjectReference Include="..\IntegratoR.OData.FO\IntegratoR.OData.FO.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="IntegratoR.Hosting.Tests" />
+  </ItemGroup>
+
+</Project>

@@ -3,55 +3,54 @@ using IntegratoR.OData.FO.Features.Commands.LedgerJournals.CreateLedgerJournalHe
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace IntegratoR.OData.FO.Common.Extensions
+namespace IntegratoR.OData.FO.Common.Extensions;
+
+/// <summary>
+/// Provides extension methods for <see cref="IServiceCollection"/> to configure and register
+/// the necessary services for the D365 Finance & Operations OData client proxy.
+/// </summary>
+internal static class ApplicationDependencyInjection
 {
     /// <summary>
-    /// Provides extension methods for <see cref="IServiceCollection"/> to configure and register
-    /// the necessary services for the D365 Finance & Operations OData client proxy.
+    /// Adds and configures the D365 F&O OData client services using application configuration.
     /// </summary>
-    public static class ApplicationDependencyInjection
+    /// <param name="services">The <see cref="IServiceCollection"/> to add the services to.</param>
+    /// <param name="configuration">The application's <see cref="IConfiguration"/> instance.</param>
+    /// <returns>The <see cref="IServiceCollection"/> so that additional calls can be chained.</returns>
+    public static IServiceCollection AddODataClientFOProxy(this IServiceCollection services, IConfiguration configuration)
     {
-        /// <summary>
-        /// Adds and configures the D365 F&O OData client services using application configuration.
-        /// </summary>
-        /// <param name="services">The <see cref="IServiceCollection"/> to add the services to.</param>
-        /// <param name="configuration">The application's <see cref="IConfiguration"/> instance.</param>
-        /// <returns>The <see cref="IServiceCollection"/> so that additional calls can be chained.</returns>
-        public static IServiceCollection AddODataClientFOProxy(this IServiceCollection services, IConfiguration configuration)
-        {
-            services.Configure<FOSettings>(configuration.GetSection("FOSettings"));
-            services.AddODataDependenciesFOProxy();
-            return services;
-        }
+        services.Configure<FOSettings>(configuration.GetSection("FOSettings"));
+        services.AddODataDependenciesFOProxy();
+        return services;
+    }
 
-        /// <summary>
-        /// Adds and configures the D365 F&O OData client services using a configuration delegate.
-        /// </summary>
-        /// <param name="services">The <see cref="IServiceCollection"/> to add the services to.</param>
-        /// <param name="foSettings">An <see cref="Action{FOSettings}"/> to configure the F&O settings.</param>
-        /// <returns>The <see cref="IServiceCollection"/> so that additional calls can be chained.</returns>
-        public static IServiceCollection AddODataClientFOProxy(this IServiceCollection services, Action<FOSettings> foSettings)
-        {
-            services.Configure(foSettings);
-            services.AddODataDependenciesFOProxy();
-            return services;
-        }
+    /// <summary>
+    /// Adds and configures the D365 F&O OData client services using a configuration delegate.
+    /// </summary>
+    /// <param name="services">The <see cref="IServiceCollection"/> to add the services to.</param>
+    /// <param name="foSettings">An <see cref="Action{FOSettings}"/> to configure the F&O settings.</param>
+    /// <returns>The <see cref="IServiceCollection"/> so that additional calls can be chained.</returns>
+    public static IServiceCollection AddODataClientFOProxy(this IServiceCollection services, Action<FOSettings> foSettings)
+    {
+        services.Configure(foSettings);
+        services.AddODataDependenciesFOProxy();
+        return services;
+    }
 
-        /// <summary>
-        /// Registers the core dependencies for the OData client proxy, such as MediatR handlers.
-        /// </summary>
-        /// <param name="services">The <see cref="IServiceCollection"/> to add the services to.</param>
-        /// <returns>The <see cref="IServiceCollection"/> so that additional calls can be chained.</returns>
-        private static IServiceCollection AddODataDependenciesFOProxy(this IServiceCollection services)
+    /// <summary>
+    /// Registers the core dependencies for the OData client proxy, such as MediatR handlers.
+    /// </summary>
+    /// <param name="services">The <see cref="IServiceCollection"/> to add the services to.</param>
+    /// <returns>The <see cref="IServiceCollection"/> so that additional calls can be chained.</returns>
+    private static IServiceCollection AddODataDependenciesFOProxy(this IServiceCollection services)
+    {
+        // Register all MediatR handlers
+        services.AddMediatR(cfg =>
         {
-            // Register all MediatR handlers
-            services.AddMediatR(cfg =>
-            {
-                cfg.RegisterGenericHandlers = true;
-                cfg.RegisterServicesFromAssembly(typeof(CreateLedgerJournalHeaderCommand<>).Assembly);
-            });
+            cfg.RegisterGenericHandlers = true;
+            cfg.RegisterServicesFromAssembly(typeof(CreateLedgerJournalHeaderCommand<>).Assembly);
+        });
 
-            return services;
-        }
+        return services;
     }
 }

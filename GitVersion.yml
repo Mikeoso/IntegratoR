@@ -4,11 +4,13 @@
 assembly-versioning-scheme: MajorMinorPatch
 assembly-file-versioning-scheme: MajorMinorPatch
 
+workflow: GitHubFlow/v1
 mode: ContinuousDelivery
+next-version: 1.1.0
 
 branches:
   main:
-    tag: ''
+    label: ''
 
 ignore:
   sha: []

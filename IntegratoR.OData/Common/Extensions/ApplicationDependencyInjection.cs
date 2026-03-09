@@ -18,7 +18,7 @@ namespace IntegratoR.OData.Common.Extensions;
 /// <summary>
 /// Provides dependency injection configuration for OData infrastructure services.
 /// </summary>
-public static class ApplicationDependencyInjection
+internal static class ApplicationDependencyInjection
 {
     /// <summary>
     /// Registers OData client services with configuration from IConfiguration.
