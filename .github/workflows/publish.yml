@@ -36,13 +36,13 @@ jobs:
           dotnet-quality: preview
 
       - name: Install GitVersion
-        uses: gittools/actions/gitversion/setup@v4.3.3
+        uses: gittools/actions/gitversion/setup@v4.4.2
         with:
           versionSpec: '6.x'
 
       - name: Determine version
         id: gitversion
-        uses: gittools/actions/gitversion/execute@v4.3.3
+        uses: gittools/actions/gitversion/execute@v4.4.2
 
       - name: Set package version
         id: version
