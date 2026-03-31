@@ -53,7 +53,7 @@ You are a security specialist for the IntegratoR framework, focused on authentic
 Locate and read all relevant files:
 - `IAuthenticator` implementations (e.g., `OAuthAuthenticator`)
 - `HttpMessageHandler` subclasses (e.g., `ODataAuthenticationHandler`, `RELionAuthenticationHandler`)
-- Settings/configuration classes (e.g., `ODataSettings`, `ODataAuthMode`)
+- Settings/configuration classes (e.g., `ODataSettings`, `AuthenticationMode`, `ODataAuthenticationSettings`)
 - Azure Identity references (`DefaultAzureCredential`, `ManagedIdentityCredential`, etc.)
 - Any file touching tokens, secrets, certificates, or connection strings
 

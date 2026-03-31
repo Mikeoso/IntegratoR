@@ -29,9 +29,10 @@ public class ApplicationDependencyInjectionTests
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["ODataSettings:Url"] = "https://test.operations.dynamics.com/data",
-                ["ODataSettings:ClientId"] = "test-client-id",
-                ["ODataSettings:TenantId"] = "test-tenant-id",
-                ["ODataSettings:Resource"] = "https://test.operations.dynamics.com",
+                ["ODataSettings:Authentication:Mode"] = "OAuth",
+                ["ODataSettings:Authentication:OAuth:ClientId"] = "test-client-id",
+                ["ODataSettings:Authentication:OAuth:TenantId"] = "test-tenant-id",
+                ["ODataSettings:Authentication:OAuth:Resource"] = "https://test.operations.dynamics.com",
             })
             .Build();
 
@@ -46,7 +47,81 @@ public class ApplicationDependencyInjectionTests
         // Assert
         var settings = provider.GetRequiredService<IOptions<ODataSettings>>().Value;
         settings.Url.Should().Be("https://test.operations.dynamics.com/data");
-        settings.ClientId.Should().Be("test-client-id");
+        settings.Authentication.Mode.Should().Be(AuthenticationMode.OAuth);
+        settings.Authentication.OAuth.ClientId.Should().Be("test-client-id");
+    }
+
+    /// <summary>
+    /// Verifies that ApiKey mode settings are correctly bound from IConfiguration.
+    /// </summary>
+    [Fact]
+    public void AddODataClient_WithConfiguration_ApiKeyMode_BindsApiManagementSettings()
+    {
+        // Arrange
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ODataSettings:Url"] = "https://apim.azure-api.net/d365",
+                ["ODataSettings:Authentication:Mode"] = "ApiKey",
+                ["ODataSettings:Authentication:ApiManagement:SubscriptionKey"] = "test-sub-key",
+                ["ODataSettings:Authentication:ApiManagement:SubscriptionHeaderKey"] = "X-Custom-Key",
+                ["ODataSettings:Authentication:ApiManagement:DefaultHeaders:d365foenvironment"] = "UAT",
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IAuthenticator>(Substitute.For<IAuthenticator>());
+
+        // Act
+        services.AddODataClient(config);
+        var provider = services.BuildServiceProvider();
+
+        // Assert
+        var settings = provider.GetRequiredService<IOptions<ODataSettings>>().Value;
+        settings.Authentication.Mode.Should().Be(AuthenticationMode.ApiKey);
+        settings.Authentication.ApiManagement.SubscriptionKey.Should().Be("test-sub-key");
+        settings.Authentication.ApiManagement.SubscriptionHeaderKey.Should().Be("X-Custom-Key");
+        settings.Authentication.ApiManagement.DefaultHeaders.Should().ContainKey("d365foenvironment")
+            .WhoseValue.Should().Be("UAT");
+    }
+
+    /// <summary>
+    /// Verifies that resilience and metadata settings are correctly bound from IConfiguration.
+    /// </summary>
+    [Fact]
+    public void AddODataClient_WithConfiguration_BindsResilienceAndMetadataSettings()
+    {
+        // Arrange
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ODataSettings:Url"] = "https://test.operations.dynamics.com/data",
+                ["ODataSettings:MetadataFilePath"] = "metadata.xml",
+                ["ODataSettings:Resilience:EnableRetries"] = "false",
+                ["ODataSettings:Resilience:RetryCount"] = "5",
+                ["ODataSettings:Resilience:UseCircuitBreaker"] = "false",
+                ["ODataSettings:Resilience:CircuitBreakerThreshold"] = "10",
+                ["ODataSettings:Resilience:CircuitBreakerDurationInSeconds"] = "60",
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IAuthenticator>(Substitute.For<IAuthenticator>());
+
+        // Act
+        services.AddODataClient(config);
+        var provider = services.BuildServiceProvider();
+
+        // Assert
+        var settings = provider.GetRequiredService<IOptions<ODataSettings>>().Value;
+        settings.MetadataFilePath.Should().Be("metadata.xml");
+        settings.Resilience.EnableRetries.Should().BeFalse();
+        settings.Resilience.RetryCount.Should().Be(5);
+        settings.Resilience.UseCircuitBreaker.Should().BeFalse();
+        settings.Resilience.CircuitBreakerThreshold.Should().Be(10);
+        settings.Resilience.CircuitBreakerDurationInSeconds.Should().Be(60);
     }
 
     /// <summary>
@@ -64,14 +139,14 @@ public class ApplicationDependencyInjectionTests
         services.AddODataClient(options =>
         {
             options.Url = "https://action.operations.dynamics.com/data";
-            options.ClientId = "action-client-id";
+            options.Authentication.OAuth.ClientId = "action-client-id";
         });
         var provider = services.BuildServiceProvider();
 
         // Assert
         var settings = provider.GetRequiredService<IOptions<ODataSettings>>().Value;
         settings.Url.Should().Be("https://action.operations.dynamics.com/data");
-        settings.ClientId.Should().Be("action-client-id");
+        settings.Authentication.OAuth.ClientId.Should().Be("action-client-id");
     }
 
     /// <summary>

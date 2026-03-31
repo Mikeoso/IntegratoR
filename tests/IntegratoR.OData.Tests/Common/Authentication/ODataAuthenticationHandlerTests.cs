@@ -29,6 +29,9 @@ public class ODataAuthenticationHandlerTests
         _fakeHandler = new FakeHttpMessageHandler();
     }
 
+    private static ODataSettings CreateOAuthSettings() =>
+        new() { Authentication = new ODataAuthenticationSettings { Mode = AuthenticationMode.OAuth } };
+
     private HttpMessageInvoker CreateInvoker(ODataSettings settings)
     {
         var options = Options.Create(settings);
@@ -52,7 +55,7 @@ public class ODataAuthenticationHandlerTests
 
         _fakeHandler.Queue(HttpStatusCode.OK);
 
-        var settings = new ODataSettings { AuthMode = ODataAuthMode.OAuth };
+        ODataSettings settings = CreateOAuthSettings();
         var invoker = CreateInvoker(settings);
 
         // Act
@@ -77,7 +80,7 @@ public class ODataAuthenticationHandlerTests
         _authenticator.GetAccessTokenAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
             .Returns(Result.Fail<string>(error));
 
-        var settings = new ODataSettings { AuthMode = ODataAuthMode.OAuth };
+        ODataSettings settings = CreateOAuthSettings();
         var invoker = CreateInvoker(settings);
 
         // Act
@@ -100,7 +103,7 @@ public class ODataAuthenticationHandlerTests
         _authenticator.GetAccessTokenAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
             .Returns(Result.Fail<string>(error));
 
-        var settings = new ODataSettings { AuthMode = ODataAuthMode.OAuth };
+        ODataSettings settings = CreateOAuthSettings();
         var invoker = CreateInvoker(settings);
 
         // Act
@@ -125,9 +128,15 @@ public class ODataAuthenticationHandlerTests
 
         var settings = new ODataSettings
         {
-            AuthMode = ODataAuthMode.ApiKey,
-            SubscriptionKey = subscriptionKey,
-            SubscriptionHeaderKey = subscriptionHeaderKey
+            Authentication = new ODataAuthenticationSettings
+            {
+                Mode = AuthenticationMode.ApiKey,
+                ApiManagement = new ODataApiManagementSettings
+                {
+                    SubscriptionKey = subscriptionKey,
+                    SubscriptionHeaderKey = subscriptionHeaderKey
+                }
+            }
         };
         var invoker = CreateInvoker(settings);
 
@@ -152,13 +161,19 @@ public class ODataAuthenticationHandlerTests
 
         var settings = new ODataSettings
         {
-            AuthMode = ODataAuthMode.ApiKey,
-            SubscriptionKey = "test-key",
-            SubscriptionHeaderKey = "Ocp-Apim-Subscription-Key",
-            DefaultHeaders = new Dictionary<string, string>
+            Authentication = new ODataAuthenticationSettings
             {
-                ["X-Custom-Header"] = "custom-value",
-                ["X-Correlation-Id"] = "correlation-123"
+                Mode = AuthenticationMode.ApiKey,
+                ApiManagement = new ODataApiManagementSettings
+                {
+                    SubscriptionKey = "test-key",
+                    SubscriptionHeaderKey = "Ocp-Apim-Subscription-Key",
+                    DefaultHeaders = new Dictionary<string, string>
+                    {
+                        ["X-Custom-Header"] = "custom-value",
+                        ["X-Correlation-Id"] = "correlation-123"
+                    }
+                }
             }
         };
         var invoker = CreateInvoker(settings);
@@ -194,11 +209,17 @@ public class ODataAuthenticationHandlerTests
 
         var settings = new ODataSettings
         {
-            AuthMode = ODataAuthMode.OAuth,
-            ClientId = clientId,
-            ClientSecret = clientSecret,
-            TenantId = tenantId,
-            Resource = resource
+            Authentication = new ODataAuthenticationSettings
+            {
+                Mode = AuthenticationMode.OAuth,
+                OAuth = new ODataOAuthSettings
+                {
+                    ClientId = clientId,
+                    ClientSecret = clientSecret,
+                    TenantId = tenantId,
+                    Resource = resource
+                }
+            }
         };
         var invoker = CreateInvoker(settings);
 

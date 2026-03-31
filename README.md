@@ -33,10 +33,15 @@ Add your D365 connection settings:
 {
   "ODataSettings": {
     "Url": "https://your-environment.operations.dynamics.com/data",
-    "ClientId": "<app-registration-id>",
-    "ClientSecret": "<client-secret>",
-    "TenantId": "<tenant-id>",
-    "Resource": "https://your-environment.operations.dynamics.com"
+    "Authentication": {
+      "Mode": "OAuth",
+      "OAuth": {
+        "ClientId": "<app-registration-id>",
+        "ClientSecret": "<client-secret>",
+        "TenantId": "<tenant-id>",
+        "Resource": "https://your-environment.operations.dynamics.com"
+      }
+    }
   }
 }
 ```
