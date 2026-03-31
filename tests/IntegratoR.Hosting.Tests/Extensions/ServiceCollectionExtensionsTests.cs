@@ -19,6 +19,7 @@ public class ServiceCollectionExtensionsTests
         var configData = new Dictionary<string, string?>
         {
             ["ODataSettings:Url"] = "https://test.operations.dynamics.com/data",
+            ["ODataSettings:Authentication:Mode"] = "OAuth",
             ["ODataSettings:Authentication:OAuth:ClientId"] = "test-client-id",
             ["ODataSettings:Authentication:OAuth:ClientSecret"] = "test-secret",
             ["ODataSettings:Authentication:OAuth:TenantId"] = "test-tenant",
@@ -152,6 +153,7 @@ public class ServiceCollectionExtensionsTests
         ODataSettings settings = provider.GetRequiredService<IOptions<ODataSettings>>().Value;
 
         settings.Url.Should().Be("https://test.operations.dynamics.com/data");
+        settings.Authentication.Mode.Should().Be(AuthenticationMode.OAuth);
         settings.Authentication.OAuth.ClientId.Should().Be("test-client-id");
     }
 }

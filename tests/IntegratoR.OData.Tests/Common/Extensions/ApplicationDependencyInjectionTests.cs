@@ -29,6 +29,7 @@ public class ApplicationDependencyInjectionTests
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["ODataSettings:Url"] = "https://test.operations.dynamics.com/data",
+                ["ODataSettings:Authentication:Mode"] = "OAuth",
                 ["ODataSettings:Authentication:OAuth:ClientId"] = "test-client-id",
                 ["ODataSettings:Authentication:OAuth:TenantId"] = "test-tenant-id",
                 ["ODataSettings:Authentication:OAuth:Resource"] = "https://test.operations.dynamics.com",
@@ -46,6 +47,7 @@ public class ApplicationDependencyInjectionTests
         // Assert
         var settings = provider.GetRequiredService<IOptions<ODataSettings>>().Value;
         settings.Url.Should().Be("https://test.operations.dynamics.com/data");
+        settings.Authentication.Mode.Should().Be(AuthenticationMode.OAuth);
         settings.Authentication.OAuth.ClientId.Should().Be("test-client-id");
     }
 

@@ -79,7 +79,7 @@ Nested under `"Authentication"`. Controls how the OData client authenticates wit
 
 | Setting | Type | Required | Default | Description |
 |---------|------|----------|---------|-------------|
-| `Mode` | `AuthenticationMode` | **Yes** | `ApiKey` | `ApiKey` (via APIM gateway) or `OAuth` (direct client credentials) |
+| `Mode` | `AuthenticationMode` | No | `ApiKey` | `ApiKey` (via APIM gateway) or `OAuth` (direct client credentials) |
 
 #### OAuth 2.0 (when `Mode` is `OAuth`)
 
