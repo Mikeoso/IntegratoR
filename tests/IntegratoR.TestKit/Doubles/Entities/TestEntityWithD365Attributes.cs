@@ -29,6 +29,12 @@ public class TestEntityWithD365Attributes : BaseEntity<string>
     public string? Description { get; set; }
 
     /// <summary>
+    /// Gets or sets the journal name. Required by D365 but nullable in C# to allow testing validation.
+    /// </summary>
+    [ODataField(IsRequired = true, EdmType = "Edm.String")]
+    public string? JournalName { get; set; }
+
+    /// <summary>
     /// Gets or sets the amount. Required field.
     /// </summary>
     [ODataField(IsRequired = true, EdmType = "Edm.Decimal")]

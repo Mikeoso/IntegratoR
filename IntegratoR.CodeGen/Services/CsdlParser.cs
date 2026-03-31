@@ -1,4 +1,4 @@
-using System.Text.RegularExpressions;
+using System.Xml;
 using System.Xml.Linq;
 using IntegratoR.CodeGen.Models;
 
@@ -15,26 +15,37 @@ public static class CsdlParser
 
     private const string D365AnnotationPrefix = "Microsoft.Dynamics.OData.Core.V1.";
 
-    private static readonly Regex DtdPattern = new(@"<!DOCTYPE[^>]*>", RegexOptions.Compiled);
+    private static readonly XmlReaderSettings SafeXmlSettings = new()
+    {
+        DtdProcessing = DtdProcessing.Ignore,
+        XmlResolver = null
+    };
 
     /// <summary>
     /// Loads a CSDL XML file and parses it into a <see cref="CsdlSchema"/>.
-    /// Convenience method that reads the file and parses it in one call.
     /// </summary>
     public static CsdlSchema LoadAndParse(string filePath)
     {
-        string xml = File.ReadAllText(filePath);
-        return Parse(xml);
+        using var stream = File.OpenRead(filePath);
+        using XmlReader reader = XmlReader.Create(stream, SafeXmlSettings);
+        XDocument doc = XDocument.Load(reader);
+        return ParseDocument(doc);
     }
 
     /// <summary>
     /// Parses a CSDL XML string into a <see cref="CsdlSchema"/>.
-    /// Strips DTD declarations to prevent XXE attacks from D365 metadata.
+    /// Uses secure XML settings that ignore DTD declarations to prevent XXE attacks.
     /// </summary>
     public static CsdlSchema Parse(string xml)
     {
-        string sanitised = DtdPattern.Replace(xml, string.Empty);
-        XDocument doc = XDocument.Parse(sanitised);
+        using var stringReader = new StringReader(xml);
+        using XmlReader reader = XmlReader.Create(stringReader, SafeXmlSettings);
+        XDocument doc = XDocument.Load(reader);
+        return ParseDocument(doc);
+    }
+
+    private static CsdlSchema ParseDocument(XDocument doc)
+    {
         XElement schema = doc.Descendants(Edm + "Schema").First();
         string schemaNamespace = schema.Attribute("Namespace")?.Value ?? "";
 

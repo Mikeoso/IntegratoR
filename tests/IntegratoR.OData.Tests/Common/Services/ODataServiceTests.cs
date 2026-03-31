@@ -855,9 +855,9 @@ public class ODataServiceTests
             Arg.Any<string>(),
             Arg.Do<object>(p => capturedPayload = p as IDictionary<string, object>),
             Arg.Any<CancellationToken>())
-            .Returns(new TestEntityWithD365Attributes { DataAreaId = "USMF", Amount = 100m });
+            .Returns(new TestEntityWithD365Attributes { DataAreaId = "USMF", Amount = 100m, JournalName = "GJ" });
 
-        var entity = new TestEntityWithD365Attributes { DataAreaId = "USMF", JournalBatchNumber = "JN-001", Description = "Test", Amount = 100m };
+        var entity = new TestEntityWithD365Attributes { DataAreaId = "USMF", JournalBatchNumber = "JN-001", Description = "Test", Amount = 100m, JournalName = "GJ" };
 
         // Act
         await odataSut.AddAsync(entity, CancellationToken.None);
@@ -871,7 +871,7 @@ public class ODataServiceTests
     }
 
     /// <summary>
-    /// Verifies that IsRequired=true with a null/default value on create returns a validation error.
+    /// Verifies that IsRequired=true with a null value on create returns a validation error.
     /// </summary>
     [Fact]
     public async Task AddAsync_EntityWithMissingRequiredField_ReturnsValidationError()
@@ -879,16 +879,42 @@ public class ODataServiceTests
         // Arrange
         var odataSut = new ODataService<TestEntityWithD365Attributes>(_client, Substitute.For<ILogger<ODataService<TestEntityWithD365Attributes>>>());
 
-        // Amount is required but left at default (0m) which is treated as "empty"
-        var entity = new TestEntityWithD365Attributes { DataAreaId = "USMF", Amount = 0m };
+        // JournalName is required but left null
+        var entity = new TestEntityWithD365Attributes { DataAreaId = "USMF", Amount = 100m, JournalName = null };
 
         // Act
         var result = await odataSut.AddAsync(entity, CancellationToken.None);
 
-        // Assert - Amount is required, but 0m is the default and thus excluded, triggering validation
+        // Assert
         result.Should().BeFailed();
         result.Should().HaveErrorCode("TestEntityWithD365Attributes.RequiredFieldMissing");
         result.Should().HaveErrorType(ErrorType.Validation);
+    }
+
+    /// <summary>
+    /// Verifies that required value-type fields with default value (0m) are included in the payload, not rejected.
+    /// </summary>
+    [Fact]
+    public async Task AddAsync_EntityWithRequiredFieldAtDefaultValue_IncludesInPayload()
+    {
+        // Arrange
+        var odataSut = new ODataService<TestEntityWithD365Attributes>(_client, Substitute.For<ILogger<ODataService<TestEntityWithD365Attributes>>>());
+
+        IDictionary<string, object>? capturedPayload = null;
+        _client.CreateAsync<TestEntityWithD365Attributes>(
+            Arg.Any<string>(),
+            Arg.Do<object>(p => capturedPayload = p as IDictionary<string, object>),
+            Arg.Any<CancellationToken>())
+            .Returns(new TestEntityWithD365Attributes { DataAreaId = "USMF", Amount = 0m, JournalName = "GJ" });
+
+        var entity = new TestEntityWithD365Attributes { DataAreaId = "USMF", Amount = 0m, JournalName = "GJ" };
+
+        // Act
+        await odataSut.AddAsync(entity, CancellationToken.None);
+
+        // Assert — Amount is 0m (default) but IsRequired=true, so it must be included
+        capturedPayload.Should().NotBeNull();
+        capturedPayload!.Should().ContainKey("Amount");
     }
 
     /// <summary>
@@ -917,6 +943,32 @@ public class ODataServiceTests
         capturedPayload!.Should().NotContainKey("Id");
         capturedPayload.Should().ContainKey("Name");
         capturedPayload.Should().ContainKey("ReadOnlyField");
+    }
+
+    /// <summary>
+    /// Verifies that IsRequired validation only fires on create, not on update.
+    /// A null required field on UpdateAsync must not return a validation error.
+    /// </summary>
+    [Fact]
+    public async Task UpdateAsync_EntityWithNullRequiredField_DoesNotValidateIsRequired()
+    {
+        // Arrange — JournalName is [ODataField(IsRequired = true)] but left null
+        var odataSut = new ODataService<TestEntityWithD365Attributes>(_client, Substitute.For<ILogger<ODataService<TestEntityWithD365Attributes>>>());
+
+        _client.UpdateAsync<TestEntityWithD365Attributes>(
+            Arg.Any<string>(),
+            Arg.Any<object>(),
+            Arg.Any<object>(),
+            Arg.Any<CancellationToken>())
+            .Returns(new TestEntityWithD365Attributes { DataAreaId = "USMF", Amount = 100m });
+
+        var entity = new TestEntityWithD365Attributes { DataAreaId = "USMF", Amount = 100m, JournalName = null };
+
+        // Act
+        var result = await odataSut.UpdateAsync(entity, CancellationToken.None);
+
+        // Assert — IsRequired validation must NOT fire on update; the call should succeed
+        result.Should().BeSuccessful();
     }
 
     #endregion

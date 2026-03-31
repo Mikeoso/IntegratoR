@@ -176,4 +176,20 @@ public class CsdlParserTests
         description.AllowEditOnCreate.Should().BeTrue();
         description.IsRequired.Should().BeFalse();
     }
+
+    [Fact]
+    public void Parse_CsdlWithDtdDeclaration_ParsesSuccessfully()
+    {
+        // Arrange — insert a DTD declaration after the XML processing instruction
+        string csdlWithDtd = SampleCsdl.Replace(
+            """<?xml version="1.0" encoding="utf-8"?>""",
+            """<?xml version="1.0" encoding="utf-8"?><!DOCTYPE edmx:Edmx SYSTEM "fake.dtd">""");
+
+        // Act — must not throw; DtdProcessing.Ignore should suppress the DTD
+        var schema = CsdlParser.Parse(csdlWithDtd);
+
+        // Assert — the schema is still parsed correctly
+        schema.EntityTypes.Should().NotBeEmpty();
+        schema.Namespace.Should().Be("Microsoft.Dynamics.DataEntities");
+    }
 }

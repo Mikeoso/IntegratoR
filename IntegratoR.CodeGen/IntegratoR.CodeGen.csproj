@@ -6,11 +6,6 @@
     <ToolCommandName>integrator-codegen</ToolCommandName>
   </PropertyGroup>
 
-  <!-- MSBuild task excluded until moved to separate IntegratoR.CodeGen.MSBuild project -->
-  <ItemGroup>
-    <Compile Remove="Tasks\**" />
-  </ItemGroup>
-
   <ItemGroup>
     <InternalsVisibleTo Include="IntegratoR.CodeGen.Tests" />
   </ItemGroup>

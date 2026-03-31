@@ -364,14 +364,22 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
 
             var value = prop.Property.GetValue(entity);
 
-            if (value is not null && !value.Equals(prop.DefaultValue))
+            if (value is null)
+            {
+                // Required fields with null value on create are validation errors
+                if (prop.IsRequired && isCreateOperation)
+                {
+                    missingRequired ??= [];
+                    missingRequired.Add(prop.PayloadName);
+                }
+                // Non-required null values are simply omitted
+                continue;
+            }
+
+            // Include required fields even when they hold a default value (0, false, etc.)
+            if (prop.IsRequired || !value.Equals(prop.DefaultValue))
             {
                 payload.Add(prop.PayloadName, value);
-            }
-            else if (prop.IsRequired && isCreateOperation)
-            {
-                missingRequired ??= [];
-                missingRequired.Add(prop.PayloadName);
             }
         }
 

@@ -296,11 +296,16 @@ public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
 
         if (responseBody is not null)
         {
+            const int maxResponseBodyLength = 1024;
+            string truncatedBody = responseBody.Length > maxResponseBodyLength
+                ? responseBody[..maxResponseBodyLength] + "...(truncated)"
+                : responseBody;
+
             _logger.Log(logLevel, exception,
                 "{Operation} on {EntityType} failed after {ElapsedMs}ms and {Attempts} attempt(s). " +
-                "StatusCode: {StatusCode}, RequestUrl: {RequestUrl}, ResponseBody: {ResponseBody}",
+                "StatusCode: {StatusCode}, ResponseBody: {ResponseBody}",
                 context.OperationName, context.EntityType, elapsed.TotalMilliseconds,
-                attemptCount, statusCode, requestUrl, responseBody);
+                attemptCount, statusCode, truncatedBody);
         }
         else
         {

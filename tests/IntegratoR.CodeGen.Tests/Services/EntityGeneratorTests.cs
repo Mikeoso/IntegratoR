@@ -203,6 +203,74 @@ public class EntityGeneratorTests
         output.Should().Contain("public required string DataAreaId { get; set; }");
     }
 
+    [Fact]
+    public void Generate_EnumWithDigitPrefixedMember_PrefixesWithUnderscore()
+    {
+        // Arrange — enum member name starts with a digit, which is illegal in C#
+        var schema = CreateSchemaWithEntity(
+            new ODataEntityModel
+            {
+                Name = "TestEntity",
+                EntitySetName = "TestEntities",
+                KeyPropertyNames = ["Id"],
+                Properties =
+                [
+                    new ODataPropertyModel { Name = "Id", EdmType = "Edm.String", IsNullable = false, IsKey = true },
+                    new ODataPropertyModel { Name = "Status", EdmType = "Microsoft.Dynamics.DataEntities.PartyRole", IsNullable = true, IsEnum = true, EnumTypeName = "PartyRole" }
+                ]
+            },
+            [new ODataEnumModel { Name = "PartyRole", Members = [new ODataEnumMember { Name = "3rdParty", Value = 0 }, new ODataEnumMember { Name = "Primary", Value = 1 }] }]);
+
+        string outputDir = Path.Combine(Path.GetTempPath(), "codegen-test-" + Guid.NewGuid().ToString("N")[..8]);
+        try
+        {
+            _sut.Generate(schema, outputDir, new HashSet<string>(["TestEntities"], StringComparer.OrdinalIgnoreCase));
+            string enumCode = File.ReadAllText(Path.Combine(outputDir, "PartyRole.g.cs"));
+
+            // Assert — digit-prefixed member must be sanitised with a leading underscore
+            enumCode.Should().Contain("_3rdParty = 0");
+            enumCode.Should().Contain("Primary = 1");
+        }
+        finally
+        {
+            if (Directory.Exists(outputDir)) Directory.Delete(outputDir, true);
+        }
+    }
+
+    [Fact]
+    public void Generate_EnumWithKeywordMember_PrefixesWithAtSign()
+    {
+        // Arrange — enum member name is a C# reserved keyword
+        var schema = CreateSchemaWithEntity(
+            new ODataEntityModel
+            {
+                Name = "TestEntity",
+                EntitySetName = "TestEntities",
+                KeyPropertyNames = ["Id"],
+                Properties =
+                [
+                    new ODataPropertyModel { Name = "Id", EdmType = "Edm.String", IsNullable = false, IsKey = true },
+                    new ODataPropertyModel { Name = "Mode", EdmType = "Microsoft.Dynamics.DataEntities.ProcessMode", IsNullable = true, IsEnum = true, EnumTypeName = "ProcessMode" }
+                ]
+            },
+            [new ODataEnumModel { Name = "ProcessMode", Members = [new ODataEnumMember { Name = "default", Value = 0 }, new ODataEnumMember { Name = "Manual", Value = 1 }] }]);
+
+        string outputDir = Path.Combine(Path.GetTempPath(), "codegen-test-" + Guid.NewGuid().ToString("N")[..8]);
+        try
+        {
+            _sut.Generate(schema, outputDir, new HashSet<string>(["TestEntities"], StringComparer.OrdinalIgnoreCase));
+            string enumCode = File.ReadAllText(Path.Combine(outputDir, "ProcessMode.g.cs"));
+
+            // Assert — keyword member must be escaped with @ prefix
+            enumCode.Should().Contain("@default = 0");
+            enumCode.Should().Contain("Manual = 1");
+        }
+        finally
+        {
+            if (Directory.Exists(outputDir)) Directory.Delete(outputDir, true);
+        }
+    }
+
     private static CsdlSchema CreateSchemaWithEntity(ODataEntityModel entity, IReadOnlyList<ODataEnumModel>? enums = null)
     {
         return new CsdlSchema
