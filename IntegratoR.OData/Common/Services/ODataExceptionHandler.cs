@@ -2,9 +2,12 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Net;
 using System.Reflection;
+using System.Text.Json;
 using FluentResults;
 using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.Abstractions.Interfaces.Entity;
+using IntegratoR.OData.Common.Exceptions;
+using IntegratoR.OData.Domain.Models;
 using Microsoft.Extensions.Logging;
 using PanoramicData.OData.Client.Exceptions;
 using Polly.Retry;
@@ -25,7 +28,8 @@ namespace IntegratoR.OData.Common.Services;
 /// </remarks>
 public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
 {
-    private static readonly ConcurrentDictionary<Type, MethodInfo> FailMethodCache = new();
+    private static readonly ConcurrentDictionary<Type, MethodInfo> FailSingleErrorCache = new();
+    private static readonly ConcurrentDictionary<Type, MethodInfo> FailMultiErrorCache = new();
 
     private readonly ILogger _logger;
     private readonly string _entityTypeName;
@@ -202,6 +206,25 @@ public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
         int attemptCount)
         where TResult : IResultBase
     {
+        if (exception is ODataBatchException batchEx)
+        {
+            return CreateBatchFailResult<TResult>(context, elapsed, batchEx, attemptCount);
+        }
+
+        if (exception is ODataPayloadValidationException validationEx)
+        {
+            _logger.LogWarning(validationEx,
+                "{Operation} on {EntityType} failed payload validation: {Message}",
+                context.OperationName, context.EntityType, validationEx.Message);
+
+            var validationError = new IntegrationError(
+                $"{context.EntityType}.RequiredFieldMissing",
+                validationEx.Message,
+                ErrorType.Validation,
+                validationEx);
+            return CreateFailResult<TResult>(validationError);
+        }
+
         var error = exception switch
         {
             ODataUnauthorizedException unauthorizedEx
@@ -230,12 +253,26 @@ public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
     {
         var code = statusCode ?? 0;
 
+        string? responseBody = null;
+        string? requestUrl = null;
+        if (exception is ODataClientException clientException)
+        {
+            responseBody = clientException.ResponseBody;
+            requestUrl = clientException.RequestUrl;
+        }
+
+        var innerErrorDetail = ExtractD365InnerError(responseBody);
+
         var (errorCode, errorMessage, errorType) = code switch
         {
             401 or 403 =>
                 ("Unauthorized", $"Authentication failed: {exception.Message}", ErrorType.Failure),
             400 =>
-                ("ValidationFailed", $"Validation failed: {exception.Message}", ErrorType.Validation),
+                ("ValidationFailed",
+                    innerErrorDetail is not null
+                        ? $"Validation failed: {innerErrorDetail}"
+                        : $"Validation failed: {exception.Message}",
+                    ErrorType.Validation),
             404 =>
                 ("NotFound", "Entity was not found", ErrorType.NotFound),
             409 =>
@@ -247,19 +284,133 @@ public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
             503 or 504 =>
                 ("ServiceUnavailable", $"Service unavailable: {exception.Message}", ErrorType.Failure),
             >= 500 =>
-                ("ServerError", $"Server error: {exception.Message}", ErrorType.Failure),
+                ("ServerError",
+                    innerErrorDetail is not null
+                        ? $"Server error: {innerErrorDetail}"
+                        : $"Server error: {exception.Message}",
+                    ErrorType.Failure),
             _ => ($"{context.OperationName}Failed", $"Operation failed: {exception.Message}", ErrorType.Failure)
         };
 
         var logLevel = errorType == ErrorType.Validation ? LogLevel.Warning : LogLevel.Error;
 
-        _logger.Log(logLevel, exception,
-            "{Operation} on {EntityType} failed after {ElapsedMs}ms and {Attempts} attempt(s). " +
-            "StatusCode: {StatusCode}",
-            context.OperationName, context.EntityType, elapsed.TotalMilliseconds,
-            attemptCount, statusCode);
+        if (responseBody is not null)
+        {
+            _logger.Log(logLevel, exception,
+                "{Operation} on {EntityType} failed after {ElapsedMs}ms and {Attempts} attempt(s). " +
+                "StatusCode: {StatusCode}, RequestUrl: {RequestUrl}, ResponseBody: {ResponseBody}",
+                context.OperationName, context.EntityType, elapsed.TotalMilliseconds,
+                attemptCount, statusCode, requestUrl, responseBody);
+        }
+        else
+        {
+            _logger.Log(logLevel, exception,
+                "{Operation} on {EntityType} failed after {ElapsedMs}ms and {Attempts} attempt(s). " +
+                "StatusCode: {StatusCode}",
+                context.OperationName, context.EntityType, elapsed.TotalMilliseconds,
+                attemptCount, statusCode);
+        }
 
         return new IntegrationError($"{context.EntityType}.{errorCode}", errorMessage, errorType, exception);
+    }
+
+    /// <summary>
+    /// Extracts the inner error message from a D365 F&amp;O OData error response body.
+    /// D365 returns errors in the format: <c>{"error":{"message":"...","innererror":{"message":"..."}}}</c>.
+    /// The inner error message typically contains field names and constraint details.
+    /// </summary>
+    internal static string? ExtractD365InnerError(string? responseBody)
+    {
+        if (string.IsNullOrWhiteSpace(responseBody))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(responseBody);
+            JsonElement root = doc.RootElement;
+
+            if (root.TryGetProperty("error", out JsonElement errorElement))
+            {
+                // Try innererror.message first (most specific)
+                if (errorElement.TryGetProperty("innererror", out JsonElement innerError) &&
+                    innerError.TryGetProperty("message", out JsonElement innerMessage))
+                {
+                    string innerText = innerMessage.GetString() ?? string.Empty;
+                    if (!string.IsNullOrWhiteSpace(innerText))
+                    {
+                        return innerText;
+                    }
+                }
+
+                // Fall back to error.message
+                if (errorElement.TryGetProperty("message", out JsonElement message))
+                {
+                    string messageText = message.GetString() ?? string.Empty;
+                    if (!string.IsNullOrWhiteSpace(messageText))
+                    {
+                        return messageText;
+                    }
+                }
+            }
+        }
+        catch (JsonException)
+        {
+            // Response body is not valid JSON — ignore
+        }
+
+        return null;
+    }
+
+    private TResult CreateBatchFailResult<TResult>(
+        OperationContext context,
+        TimeSpan elapsed,
+        ODataBatchException exception,
+        int attemptCount)
+        where TResult : IResultBase
+    {
+        _logger.LogError(exception,
+            "{Operation} on {EntityType} batch failed after {ElapsedMs}ms and {Attempts} attempt(s). " +
+            "{FailedCount} operations failed",
+            context.OperationName, context.EntityType, elapsed.TotalMilliseconds,
+            attemptCount, exception.FailedResults.Count);
+
+        var errors = new List<IError>();
+        foreach (BatchOperationResult failure in exception.FailedResults)
+        {
+            var innerError = ExtractD365InnerError(failure.ResponseBody);
+            var errorMessage = innerError ?? failure.ErrorMessage ?? $"Operation at index {failure.Index} failed with status {failure.StatusCode}";
+
+            errors.Add(new IntegrationError(
+                $"{context.EntityType}.BatchOperationFailed",
+                $"[Index {failure.Index}, HTTP {failure.StatusCode}] {errorMessage}",
+                ErrorType.Failure,
+                exception));
+        }
+
+        // Add a summary error as the first entry
+        errors.Insert(0, new IntegrationError(
+            $"{context.EntityType}.BatchFailed",
+            exception.Message,
+            ErrorType.Failure,
+            exception));
+
+        if (typeof(TResult).IsGenericType)
+        {
+            // For Result<T> — create a failed result with the generic type
+            var genericType = typeof(TResult).GetGenericArguments()[0];
+            var failMethod = FailMultiErrorCache.GetOrAdd(genericType, type =>
+                typeof(Result)
+                    .GetMethods(BindingFlags.Public | BindingFlags.Static)
+                    .First(m => m.Name == "Fail" && m.IsGenericMethod
+                        && m.GetParameters().Length == 1
+                        && m.GetParameters()[0].ParameterType == typeof(IEnumerable<IError>))
+                    .MakeGenericMethod(type));
+            return (TResult)failMethod.Invoke(null, [errors])!;
+        }
+
+        return (TResult)(object)Result.Fail(errors);
     }
 
     private TResult HandleNotFound<TResult>(
@@ -342,7 +493,7 @@ public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
         if (typeof(TResult).IsGenericType)
         {
             var genericType = typeof(TResult).GetGenericArguments()[0];
-            var failMethod = FailMethodCache.GetOrAdd(genericType, type =>
+            var failMethod = FailSingleErrorCache.GetOrAdd(genericType, type =>
                 typeof(Result)
                     .GetMethods(BindingFlags.Public | BindingFlags.Static)
                     .First(m => m.Name == "Fail" && m.IsGenericMethod

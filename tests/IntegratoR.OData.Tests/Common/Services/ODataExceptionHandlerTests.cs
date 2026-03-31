@@ -375,4 +375,82 @@ public class ODataExceptionHandlerTests
         result.Should().HaveErrorCode("TestEntity.NotFound");
         result.Should().HaveErrorType(ErrorType.NotFound);
     }
+
+    #region ExtractD365InnerError Tests
+
+    /// <summary>
+    /// Verifies that ExtractD365InnerError extracts the innererror.message from a D365 error response.
+    /// </summary>
+    [Fact]
+    public void ExtractD365InnerError_WithInnerErrorMessage_ReturnsInnerMessage()
+    {
+        // Arrange
+        const string responseBody = """{"error":{"message":"Bad request","innererror":{"message":"Field 'Amount' is required"}}}""";
+
+        // Act
+        string? result = ODataExceptionHandler<TestEntity>.ExtractD365InnerError(responseBody);
+
+        // Assert
+        result.Should().Be("Field 'Amount' is required");
+    }
+
+    /// <summary>
+    /// Verifies that ExtractD365InnerError falls back to error.message when innererror is absent.
+    /// </summary>
+    [Fact]
+    public void ExtractD365InnerError_WithOnlyErrorMessage_ReturnsErrorMessage()
+    {
+        // Arrange
+        const string responseBody = """{"error":{"message":"Entity not found"}}""";
+
+        // Act
+        string? result = ODataExceptionHandler<TestEntity>.ExtractD365InnerError(responseBody);
+
+        // Assert
+        result.Should().Be("Entity not found");
+    }
+
+    /// <summary>
+    /// Verifies that ExtractD365InnerError returns null for null/empty input.
+    /// </summary>
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void ExtractD365InnerError_NullOrEmpty_ReturnsNull(string? responseBody)
+    {
+        // Act
+        string? result = ODataExceptionHandler<TestEntity>.ExtractD365InnerError(responseBody);
+
+        // Assert
+        result.Should().BeNull();
+    }
+
+    /// <summary>
+    /// Verifies that ExtractD365InnerError returns null for non-JSON content.
+    /// </summary>
+    [Fact]
+    public void ExtractD365InnerError_InvalidJson_ReturnsNull()
+    {
+        // Act
+        string? result = ODataExceptionHandler<TestEntity>.ExtractD365InnerError("<html>Not JSON</html>");
+
+        // Assert
+        result.Should().BeNull();
+    }
+
+    /// <summary>
+    /// Verifies that ExtractD365InnerError returns null when JSON has no error property.
+    /// </summary>
+    [Fact]
+    public void ExtractD365InnerError_NoErrorProperty_ReturnsNull()
+    {
+        // Act
+        string? result = ODataExceptionHandler<TestEntity>.ExtractD365InnerError("""{"status":"ok"}""");
+
+        // Assert
+        result.Should().BeNull();
+    }
+
+    #endregion
 }

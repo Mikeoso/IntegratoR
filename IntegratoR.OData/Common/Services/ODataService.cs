@@ -7,6 +7,8 @@ using FluentResults;
 using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.Abstractions.Interfaces.Entity;
 using IntegratoR.OData.Common.Annotations;
+using IntegratoR.OData.Common.Exceptions;
+using IntegratoR.OData.Domain.Models;
 using IntegratoR.OData.Interfaces.Services;
 using Microsoft.Extensions.Logging;
 using PanoramicData.OData.Client.Exceptions;
@@ -140,9 +142,10 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
                     typeof(TEntity).Name, entity.GetCompositeKey());
 
                 var key = BuildCompositeKeyObject(entity.GetCompositeKey());
+                var payload = CreatePayload(entity, isCreateOperation: false);
 
                 return await _client
-                    .UpdateAsync<TEntity>(_entitySetName, key, entity, cancellationToken)
+                    .UpdateAsync<TEntity>(_entitySetName, key, payload, cancellationToken)
                     .ConfigureAwait(false);
             },
             entityKey: () => entity.GetCompositeKey(),
@@ -239,9 +242,11 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
             operationName: "AddBatch",
             operation: async () =>
             {
-                await _client
-                    .BatchCreateAsync<TEntity>(_entitySetName, entityList, cancellationToken)
+                var payloads = entityList.Select(e => CreatePayload(e, isCreateOperation: true)).ToList();
+                IReadOnlyList<BatchOperationResult> results = await _client
+                    .BatchCreateAsync(_entitySetName, payloads, cancellationToken)
                     .ConfigureAwait(false);
+                ThrowOnBatchFailures(results, "AddBatch", entityList);
             },
             entityKey: () => new object[] { $"{entityList.Count} entities" },
             cancellationToken: cancellationToken);
@@ -259,9 +264,10 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
             operation: async () =>
             {
                 var keys = entityList.Select(e => BuildCompositeKeyObject(e.GetCompositeKey()));
-                await _client
+                IReadOnlyList<BatchOperationResult> results = await _client
                     .BatchDeleteAsync(_entitySetName, keys, cancellationToken)
                     .ConfigureAwait(false);
+                ThrowOnBatchFailures(results, "DeleteBatch", entityList);
             },
             entityKey: () => new object[] { $"{entityList.Count} entities" },
             cancellationToken: cancellationToken);
@@ -279,10 +285,11 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
             operation: async () =>
             {
                 var items = entityList.Select(e =>
-                    (BuildCompositeKeyObject(e.GetCompositeKey()), e));
-                await _client
-                    .BatchUpdateAsync<TEntity>(_entitySetName, items, cancellationToken)
+                    (BuildCompositeKeyObject(e.GetCompositeKey()), (IDictionary<string, object>)CreatePayload(e, isCreateOperation: false)));
+                IReadOnlyList<BatchOperationResult> results = await _client
+                    .BatchUpdateAsync(_entitySetName, items, cancellationToken)
                     .ConfigureAwait(false);
+                ThrowOnBatchFailures(results, "UpdateBatch", entityList);
             },
             entityKey: () => new object[] { $"{entityList.Count} entities" },
             cancellationToken: cancellationToken);
@@ -348,6 +355,7 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
             type => BuildPropertyMetadata(type));
 
         var payload = new Dictionary<string, object>();
+        List<string>? missingRequired = null;
 
         foreach (var prop in metadata)
         {
@@ -360,6 +368,18 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
             {
                 payload.Add(prop.PayloadName, value);
             }
+            else if (prop.IsRequired && isCreateOperation)
+            {
+                missingRequired ??= [];
+                missingRequired.Add(prop.PayloadName);
+            }
+        }
+
+        if (missingRequired is { Count: > 0 })
+        {
+            throw new ODataPayloadValidationException(
+                $"Required field(s) missing on {typeof(TEntity).Name}: {string.Join(", ", missingRequired)}",
+                missingRequired);
         }
 
         return payload;
@@ -383,11 +403,47 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
                 return new CachedPropertyMetadata(
                     p,
                     payloadName,
-                    odataField?.IgnoreOnCreate ?? false,
-                    odataField?.IgnoreOnUpdate ?? false,
+                    odataField?.EffectiveIgnoreOnCreate ?? false,
+                    odataField?.EffectiveIgnoreOnUpdate ?? false,
+                    odataField?.IsRequired ?? false,
                     defaultValue);
             })
             .ToArray();
+    }
+
+    /// <summary>
+    /// Inspects batch operation results and logs per-entity failures. If any operations failed,
+    /// throws an <see cref="ODataBatchException"/> containing per-entity error details.
+    /// </summary>
+    private void ThrowOnBatchFailures(
+        IReadOnlyList<BatchOperationResult> results,
+        string operationName,
+        IList<TEntity> entities)
+    {
+        var failures = results.Where(r => !r.IsSuccess).ToList();
+
+        if (failures.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var failure in failures)
+        {
+            var entityKey = failure.Index < entities.Count
+                ? string.Join(", ", entities[failure.Index].GetCompositeKey())
+                : $"index {failure.Index}";
+
+            var innerError = ODataExceptionHandler<TEntity>.ExtractD365InnerError(failure.ResponseBody);
+
+            _logger.LogWarning(
+                "{Operation} on {EntityType} - entity at index {Index} (key: {EntityKey}) failed. " +
+                "StatusCode: {StatusCode}, Error: {ErrorMessage}",
+                operationName, typeof(TEntity).Name, failure.Index, entityKey,
+                failure.StatusCode, innerError ?? failure.ErrorMessage);
+        }
+
+        var message = $"{failures.Count} of {results.Count} {operationName} operations failed for {typeof(TEntity).Name}";
+        throw new ODataBatchException(message, failures);
     }
 
     private sealed record CachedPropertyMetadata(
@@ -395,6 +451,7 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
         string PayloadName,
         bool IgnoreOnCreate,
         bool IgnoreOnUpdate,
+        bool IsRequired,
         object? DefaultValue);
 
     #endregion

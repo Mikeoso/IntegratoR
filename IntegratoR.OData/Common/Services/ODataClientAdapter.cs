@@ -1,5 +1,6 @@
 using System.Linq.Expressions;
 using IntegratoR.Abstractions.Interfaces.Entity;
+using IntegratoR.OData.Domain.Models;
 using IntegratoR.OData.Interfaces.Services;
 using PanoramicData.OData.Client;
 
@@ -28,21 +29,14 @@ public class ODataClientAdapter : IODataClientAdapter
         CancellationToken cancellationToken = default)
         where TEntity : class, IEntity
     {
-        // PanoramicData's CreateAsync<T> requires T for both request serialization and response
-        // deserialization. We pass a Dictionary<string, object> payload to control which fields
-        // are sent (respecting ODataFieldAttribute). Serialize via CreateAsync<Dictionary<string, object>>
-        // and manually deserialize the response as TEntity.
         if (payload is IDictionary<string, object> dict)
         {
             var jsonResult = await _client.CreateAsync(entitySet, dict, null, cancellationToken)
                 .ConfigureAwait(false);
 
-            // PanoramicData returns the created entity as the same type — deserialize from the response
-            var json = System.Text.Json.JsonSerializer.Serialize(jsonResult);
-            return System.Text.Json.JsonSerializer.Deserialize<TEntity>(json, CaseInsensitiveOptions)!;
+            return DeserializeResponse<TEntity>(jsonResult);
         }
 
-        // If the payload is already a TEntity, use direct serialization
         return await _client.CreateAsync(entitySet, (TEntity)payload, null, cancellationToken)
             .ConfigureAwait(false);
     }
@@ -85,11 +79,19 @@ public class ODataClientAdapter : IODataClientAdapter
     public async Task<TEntity> UpdateAsync<TEntity>(
         string entitySet,
         object key,
-        TEntity entity,
+        object payload,
         CancellationToken cancellationToken = default)
         where TEntity : class, IEntity
     {
-        return await _client.UpdateAsync<TEntity>(entitySet, key, entity, null, cancellationToken)
+        if (payload is IDictionary<string, object> dict)
+        {
+            var jsonResult = await _client.UpdateAsync<object, object>(entitySet, key, dict, null, cancellationToken)
+                .ConfigureAwait(false);
+
+            return DeserializeResponse<TEntity>(jsonResult);
+        }
+
+        return await _client.UpdateAsync<TEntity>(entitySet, key, (TEntity)payload, null, cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -117,44 +119,43 @@ public class ODataClientAdapter : IODataClientAdapter
     }
 
     /// <inheritdoc />
-    public async Task BatchCreateAsync<TEntity>(
+    public async Task<IReadOnlyList<BatchOperationResult>> BatchCreateAsync(
         string entitySet,
-        IEnumerable<TEntity> entities,
+        IEnumerable<IDictionary<string, object>> payloads,
         CancellationToken cancellationToken = default)
-        where TEntity : class, IEntity
     {
         var batch = _client.CreateBatch();
         batch.Changeset(changeset =>
         {
-            foreach (var entity in entities)
+            foreach (var payload in payloads)
             {
-                changeset.Create(entitySet, entity);
+                changeset.Create(entitySet, payload);
             }
         });
-        await batch.ExecuteAsync(cancellationToken).ConfigureAwait(false);
+        ODataBatchResponse response = await batch.ExecuteAsync(cancellationToken).ConfigureAwait(false);
+        return MapBatchResponse(response);
     }
 
     /// <inheritdoc />
-    public async Task BatchUpdateAsync<TEntity>(
+    public async Task<IReadOnlyList<BatchOperationResult>> BatchUpdateAsync(
         string entitySet,
-        IEnumerable<(object Key, TEntity Entity)> entities,
+        IEnumerable<(object Key, IDictionary<string, object> Payload)> items,
         CancellationToken cancellationToken = default)
-        where TEntity : class, IEntity
     {
         var batch = _client.CreateBatch();
         batch.Changeset(changeset =>
         {
-            foreach (var (key, entity) in entities)
+            foreach (var (key, payload) in items)
             {
-                // Use the non-generic overload: Update(string, object key, object patchValues, string? etag)
-                changeset.Update<object, object>(entitySet, key, entity);
+                changeset.Update<object, object>(entitySet, key, payload);
             }
         });
-        await batch.ExecuteAsync(cancellationToken).ConfigureAwait(false);
+        ODataBatchResponse response = await batch.ExecuteAsync(cancellationToken).ConfigureAwait(false);
+        return MapBatchResponse(response);
     }
 
     /// <inheritdoc />
-    public async Task BatchDeleteAsync(
+    public async Task<IReadOnlyList<BatchOperationResult>> BatchDeleteAsync(
         string entitySet,
         IEnumerable<object> keys,
         CancellationToken cancellationToken = default)
@@ -167,6 +168,38 @@ public class ODataClientAdapter : IODataClientAdapter
                 changeset.Delete(entitySet, key);
             }
         });
-        await batch.ExecuteAsync(cancellationToken).ConfigureAwait(false);
+        ODataBatchResponse response = await batch.ExecuteAsync(cancellationToken).ConfigureAwait(false);
+        return MapBatchResponse(response);
+    }
+
+    /// <summary>
+    /// Round-trips a PanoramicData response object through JSON to produce a strongly-typed entity.
+    /// Required because dictionary-based payloads cause PanoramicData to return <c>Dictionary&lt;string, object&gt;</c>
+    /// instead of <typeparamref name="TEntity"/>.
+    /// </summary>
+    private static TEntity DeserializeResponse<TEntity>(object response) where TEntity : class
+    {
+        var json = System.Text.Json.JsonSerializer.Serialize(response);
+        return System.Text.Json.JsonSerializer.Deserialize<TEntity>(json, CaseInsensitiveOptions)!;
+    }
+
+    private static IReadOnlyList<BatchOperationResult> MapBatchResponse(ODataBatchResponse response)
+    {
+        var results = new List<BatchOperationResult>();
+        var index = 0;
+
+        foreach (var result in response.Results)
+        {
+            results.Add(new BatchOperationResult
+            {
+                Index = index++,
+                StatusCode = result.StatusCode,
+                IsSuccess = result.IsSuccess,
+                ErrorMessage = result.ErrorMessage,
+                ResponseBody = result.ResponseBody
+            });
+        }
+
+        return results;
     }
 }
