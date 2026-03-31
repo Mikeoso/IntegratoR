@@ -15,24 +15,10 @@
 - **Branch naming**: `feature/<area>/<desc>`, `fix/<area>/<desc>`, `chore/<desc>`.
 - **Commit style**: Imperative mood, under 72 chars. PRs are squash-merged.
 
-## Task Delegation
-
-After implementing or modifying code, delegate review to specialised subagents:
-- Code changes -> use `code-reviewer` subagent
-- Auth, credential, or security-sensitive code -> use `security-reviewer` subagent
-- Before creating PRs -> run both reviewers
-
-Do not perform these reviews directly. Always delegate to the appropriate specialist.
-
 ## Formatting
 
 - `dotnet format` is enforced via a PostToolUse hook that runs automatically on Write/Edit.
 - Do not add manual formatting rules — the hook and `.editorconfig` handle this.
-
-## Sensitive Files
-
-- Never read `.env` or `.env.*` files (denied in settings).
-- `local.settings.json` contains Azure Functions local config — do not commit.
 
 ## Code Quality
 

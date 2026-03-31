@@ -6,11 +6,6 @@
 - File-scoped namespaces (`namespace Foo;`).
 - **British spelling**: `Behaviour` not `Behavior` (intentional throughout codebase).
 
-## Async Patterns
-
-- `ConfigureAwait(false)` in all library code (everything except the SampleFunction host).
-- Propagate `CancellationToken` through all async method chains.
-
 ## Naming Conventions
 
 - PascalCase for public members, `_camelCase` for private fields.
@@ -30,7 +25,7 @@
 - Test projects mirror source project structure.
 - Use `IntegratoR.TestKit` for shared test utilities:
   - `FakeCacheService`, `FakeHttpMessageHandler` for fakes.
-  - `result.Should().BeSuccess()` / `result.Should().BeFailure()` for Result assertions.
+  - `result.Should().BeSuccessful()` / `result.Should().BeFailed()` for Result assertions.
 
 ## Versioning
 
@@ -38,7 +33,4 @@
 
 ## Patterns to Avoid
 
-- No AutoMapper — write explicit mappings.
-- No repository pattern wrapping the service layer.
-- No exceptions for business logic errors — use `Result.Fail()`.
 - No `var` for non-obvious types — prefer explicit types when the type is not apparent.
