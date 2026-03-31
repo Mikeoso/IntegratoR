@@ -4,11 +4,13 @@
 {
   "ODataSettings": {
     "Url": "https://your-environment.operations.dynamics.com/data",
-    "EnableRetries": true,
-    "RetryCount": 3,
-    "UseCircuitBreaker": true,
-    "CircuitBreakerThreshold": 5,
-    "CircuitBreakerDurationSeconds": 30
+    "Resilience": {
+      "EnableRetries": true,
+      "RetryCount": 3,
+      "UseCircuitBreaker": true,
+      "CircuitBreakerThreshold": 5,
+      "CircuitBreakerDurationInSeconds": 30
+    }
   }
 }
 ```
@@ -56,15 +58,17 @@ While open, all requests fail immediately with a `BrokenCircuitException` wrappe
 |---------|------|---------|-------------|
 | `UseCircuitBreaker` | `bool` | `true` | Enable circuit breaker pattern |
 | `CircuitBreakerThreshold` | `int` | `5` | Consecutive failures before the circuit opens |
-| `CircuitBreakerDurationSeconds` | `int` | `30` | Seconds the circuit stays open before recovery |
+| `CircuitBreakerDurationInSeconds` | `int` | `30` | Seconds the circuit stays open before recovery |
 
 ## Disabling for Development
 
 ```json
 {
   "ODataSettings": {
-    "EnableRetries": false,
-    "UseCircuitBreaker": false
+    "Resilience": {
+      "EnableRetries": false,
+      "UseCircuitBreaker": false
+    }
   }
 }
 ```
@@ -74,8 +78,8 @@ Or programmatically:
 ```csharp
 services.AddODataClient(options =>
 {
-    options.EnableRetries = false;       // fail fast during development
-    options.UseCircuitBreaker = false;
+    options.Resilience.EnableRetries = false;       // fail fast during development
+    options.Resilience.UseCircuitBreaker = false;
 });
 ```
 

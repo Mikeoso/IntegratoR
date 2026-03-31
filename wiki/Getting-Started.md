@@ -18,11 +18,15 @@ Add an `ODataSettings` section to `appsettings.json`:
 {
   "ODataSettings": {
     "Url": "https://your-environment.operations.dynamics.com/data",
-    "AuthMode": "OAuth",
-    "ClientId": "your-azure-ad-app-id",
-    "ClientSecret": "your-client-secret",
-    "TenantId": "your-tenant-id",
-    "Resource": "https://your-environment.operations.dynamics.com"
+    "Authentication": {
+      "Mode": "OAuth",
+      "OAuth": {
+        "ClientId": "your-azure-ad-app-id",
+        "ClientSecret": "your-client-secret",
+        "TenantId": "your-tenant-id",
+        "Resource": "https://your-environment.operations.dynamics.com"
+      }
+    }
   }
 }
 ```
@@ -57,11 +61,11 @@ You can also configure programmatically instead of using `appsettings.json`:
 services.AddODataClient(options =>
 {
     options.Url = "https://your-environment.operations.dynamics.com/data";
-    options.AuthMode = ODataAuthMode.OAuth;
-    options.ClientId = "...";
-    options.ClientSecret = "...";
-    options.TenantId = "...";
-    options.Resource = "https://your-environment.operations.dynamics.com";
+    options.Authentication.Mode = AuthenticationMode.OAuth;
+    options.Authentication.OAuth.ClientId = "...";
+    options.Authentication.OAuth.ClientSecret = "...";
+    options.Authentication.OAuth.TenantId = "...";
+    options.Authentication.OAuth.Resource = "https://your-environment.operations.dynamics.com";
 });
 ```
 
@@ -165,7 +169,7 @@ Result<LedgerJournalHeader> result = await mediator.Send(command, cancellationTo
 // result.GetError()?.Message == "Failed to acquire OAuth token for resource ..."
 ```
 
-Check that `ClientId`, `ClientSecret`, `TenantId`, and `Resource` in `ODataSettings` are correct. Secrets expire — rotate them in Azure Key Vault.
+Check that `ClientId`, `ClientSecret`, `TenantId`, and `Resource` in `ODataSettings.Authentication.OAuth` are correct. Secrets expire — rotate them in Azure Key Vault.
 
 **Missing or wrong `ODataSettings` section:**
 

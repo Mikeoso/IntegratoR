@@ -1,14 +1,37 @@
-# Configuration
+# Configure OData
+
+## Full Configuration Reference
 
 ```json
 {
   "ODataSettings": {
     "Url": "https://your-environment.operations.dynamics.com/data",
-    "AuthMode": "OAuth",
-    "ClientId": "your-azure-ad-app-id",
-    "ClientSecret": "your-client-secret",
-    "TenantId": "your-tenant-id",
-    "Resource": "https://your-environment.operations.dynamics.com"
+    "Timeout": 120,
+    "MetadataFilePath": "metadata.xml",
+    "Authentication": {
+      "Mode": "OAuth",
+      "OAuth": {
+        "ClientId": "your-azure-ad-app-id",
+        "ClientSecret": "your-client-secret",
+        "TenantId": "your-tenant-id",
+        "Resource": "https://your-environment.operations.dynamics.com"
+      },
+      "ApiManagement": {
+        "SubscriptionKey": "your-subscription-key",
+        "SubscriptionHeaderKey": "Ocp-Apim-Subscription-Key",
+        "DefaultHeaders": {
+          "d365foenvironment": "DDI",
+          "d365batchendpoint": "false"
+        }
+      }
+    },
+    "Resilience": {
+      "EnableRetries": true,
+      "RetryCount": 3,
+      "UseCircuitBreaker": true,
+      "CircuitBreakerThreshold": 5,
+      "CircuitBreakerDurationInSeconds": 30
+    }
   },
   "FOSettings": {
     "DimensionFormatName": "MainAccount-BusinessUnit-CostCenter",
@@ -34,61 +57,142 @@ services.AddODataClientFOProxy(configuration); // binds FOSettings
 services.AddRelionClient(configuration);       // binds RelionSettings
 ```
 
+> **Azure App Settings / Environment Variables:** When deploying to Azure or Linux, replace `:` with `__` (double underscore) in key paths. For example, `ODataSettings:Authentication:OAuth:ClientId` becomes `ODataSettings__Authentication__OAuth__ClientId`.
+
 ## ODataSettings
 
-Bound from the `"ODataSettings"` section. Controls the OData client connection to D365 F&O. Settings are grouped by concern: connection, authentication, and resilience.
+Bound from the `"ODataSettings"` section. Controls the OData client connection to D365 F&O. Settings are grouped into sub-objects by concern: connection, authentication, and resilience.
 
 **Note:** The `Url` must end with `/data` (e.g. `https://your-environment.operations.dynamics.com/data`).
 
-### Connection
+### Root Properties
 
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
-| `Url` | `string` | *(required)* | Base URL of the D365 F&O OData endpoint |
-| `Timeout` | `double` | `120` | HTTP request timeout in seconds |
-| `AuthMode` | `ODataAuthMode` | `ApiKey` | `ApiKey` or `OAuth` |
-| `DefaultHeaders` | `Dictionary<string, string>` | `{}` | Additional HTTP headers sent with every request |
+| Setting | Type | Required | Default | Description |
+|---------|------|----------|---------|-------------|
+| `Url` | `string` | **Yes** | `""` | Base URL of the D365 F&O OData endpoint |
+| `Timeout` | `double` | No | `120` | HTTP request timeout in seconds |
+| `MetadataFilePath` | `string?` | No | `null` | Path to a local `metadata.xml` file. Recommended for production to avoid DTD security issues and reduce startup time |
 
-### OAuth 2.0 (when `AuthMode` is `OAuth`)
+### Authentication
 
-| Setting | Type | Description |
-|---------|------|-------------|
-| `ClientId` | `string` | Azure AD Application (client) ID |
-| `ClientSecret` | `string` | Azure AD client secret (store in Key Vault) |
-| `TenantId` | `string` | Azure AD Directory (tenant) ID |
-| `Resource` | `string` | App ID URI of the D365 F&O resource (typically the environment base URL) |
+Nested under `"Authentication"`. Controls how the OData client authenticates with the endpoint.
 
-### API Gateway (when `AuthMode` is `ApiKey`)
+| Setting | Type | Required | Default | Description |
+|---------|------|----------|---------|-------------|
+| `Mode` | `AuthenticationMode` | **Yes** | `ApiKey` | `ApiKey` (via APIM gateway) or `OAuth` (direct client credentials) |
 
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
-| `SubscriptionKey` | `string` | `""` | Subscription key for the API gateway |
-| `SubscriptionHeaderKey` | `string` | `Ocp-Apim-Subscription-Key` | HTTP header name for the subscription key |
+#### OAuth 2.0 (when `Mode` is `OAuth`)
 
-### Retry and Resilience
+Nested under `"Authentication:OAuth"`. Required when using direct OAuth 2.0 client credentials flow.
 
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
-| `EnableRetries` | `bool` | `true` | Enable automatic retry with exponential backoff (429, 5xx) |
-| `RetryCount` | `int` | `3` | Number of retry attempts (1-10) |
-| `UseCircuitBreaker` | `bool` | `true` | Enable circuit breaker to prevent cascading failures |
-| `CircuitBreakerThreshold` | `int` | `5` | Consecutive failures before the circuit opens |
-| `CircuitBreakerDurationSeconds` | `int` | `30` | Seconds the circuit stays open before recovery |
+| Setting | Type | Required | Default | Description |
+|---------|------|----------|---------|-------------|
+| `ClientId` | `string` | **Yes** | `""` | Azure AD Application (client) ID |
+| `ClientSecret` | `string` | **Yes** | `""` | Azure AD client secret (store in Key Vault for production) |
+| `TenantId` | `string` | **Yes** | `""` | Azure AD Directory (tenant) ID |
+| `Resource` | `string` | **Yes** | `""` | App ID URI of the D365 F&O resource (typically the environment base URL) |
 
-### Metadata
+#### API Management (when `Mode` is `ApiKey`)
 
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
-| `MetadataFilePath` | `string?` | `null` | Path to a local `metadata.xml` file. Recommended for production to avoid DTD security issues and reduce startup time |
+Nested under `"Authentication:ApiManagement"`. Required when routing through Azure API Management.
+
+| Setting | Type | Required | Default | Description |
+|---------|------|----------|---------|-------------|
+| `SubscriptionKey` | `string` | **Yes** | `""` | Subscription key for the API gateway |
+| `SubscriptionHeaderKey` | `string` | No | `Ocp-Apim-Subscription-Key` | HTTP header name for the subscription key |
+| `DefaultHeaders` | `Dictionary<string, string>` | No | `{}` | Additional HTTP headers sent with every APIM request |
+
+### Resilience
+
+Nested under `"Resilience"`. Controls retry and circuit breaker policies.
+
+| Setting | Type | Required | Default | Description |
+|---------|------|----------|---------|-------------|
+| `EnableRetries` | `bool` | No | `true` | Enable automatic retry with exponential backoff (429, 5xx) |
+| `RetryCount` | `int` | No | `3` | Number of retry attempts (1-10) |
+| `UseCircuitBreaker` | `bool` | No | `true` | Enable circuit breaker to prevent cascading failures |
+| `CircuitBreakerThreshold` | `int` | No | `5` | Consecutive failures before the circuit opens |
+| `CircuitBreakerDurationInSeconds` | `int` | No | `30` | Seconds the circuit stays open before recovery |
+
+## Scenario Examples
+
+### Direct OAuth to D365 F&O
+
+```json
+{
+  "ODataSettings": {
+    "Url": "https://your-environment.operations.dynamics.com/data",
+    "Authentication": {
+      "Mode": "OAuth",
+      "OAuth": {
+        "ClientId": "your-azure-ad-app-id",
+        "ClientSecret": "your-client-secret",
+        "TenantId": "your-tenant-id",
+        "Resource": "https://your-environment.operations.dynamics.com"
+      }
+    }
+  }
+}
+```
+
+### Via Azure API Management Gateway
+
+```json
+{
+  "ODataSettings": {
+    "Url": "https://your-apim.azure-api.net/d365",
+    "Authentication": {
+      "Mode": "ApiKey",
+      "ApiManagement": {
+        "SubscriptionKey": "your-subscription-key"
+      }
+    }
+  }
+}
+```
+
+### Disabling Resilience (Testing)
+
+```json
+{
+  "ODataSettings": {
+    "Url": "https://localhost:5000/data",
+    "Authentication": {
+      "Mode": "ApiKey",
+      "ApiManagement": {
+        "SubscriptionKey": "test-key"
+      }
+    },
+    "Resilience": {
+      "EnableRetries": false,
+      "UseCircuitBreaker": false
+    }
+  }
+}
+```
+
+### Programmatic Configuration
+
+```csharp
+services.AddODataClient(options =>
+{
+    options.Url = "https://your-environment.operations.dynamics.com/data";
+    options.Authentication.Mode = AuthenticationMode.OAuth;
+    options.Authentication.OAuth.ClientId = Environment.GetEnvironmentVariable("D365_CLIENT_ID")!;
+    options.Authentication.OAuth.ClientSecret = Environment.GetEnvironmentVariable("D365_CLIENT_SECRET")!;
+    options.Authentication.OAuth.TenantId = Environment.GetEnvironmentVariable("D365_TENANT_ID")!;
+    options.Authentication.OAuth.Resource = "https://your-environment.operations.dynamics.com";
+});
+```
 
 ## FOSettings
 
 Bound from the `"FOSettings"` section. Controls D365 F&O financial dimension behaviour.
 
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
-| `DimensionFormatName` | `string` | *(required)* | Financial dimension format name from D365 F&O setup (**General ledger > Chart of accounts > Dimensions > Financial dimension formats**) |
-| `DimensionHierarchyType` | `DimensionHierarchyType` | `AccountStructure` | Type of dimension hierarchy |
+| Setting | Type | Required | Default | Description |
+|---------|------|----------|---------|-------------|
+| `DimensionFormatName` | `string` | **Yes** | `""` | Financial dimension format name from D365 F&O setup (**General ledger > Chart of accounts > Dimensions > Financial dimension formats**) |
+| `DimensionHierarchyType` | `DimensionHierarchyType` | No | `AccountStructure` | Type of dimension hierarchy |
 
 ### DimensionHierarchyType Values
 
@@ -133,7 +237,7 @@ Bound from the `"RelionSettings"` section. Controls the RELion API connection.
 
 ## Authentication Modes
 
-Both `ODataAuthMode` and `RelionAuthMode` support the same two values:
+`ODataSettings` uses `AuthenticationMode` and `RelionSettings` uses `RelionAuthMode`. Both support the same two values:
 
 | Mode | Protocol | Use when |
 |------|----------|----------|
@@ -143,47 +247,6 @@ Both `ODataAuthMode` and `RelionAuthMode` support the same two values:
 **OAuth** acquires a Bearer token from Azure AD automatically (acquire, cache, refresh) and adds it to the `Authorization` header. Requires an Azure AD App Registration with a client secret and API permissions for the target service.
 
 **ApiKey** adds a subscription key to the configured HTTP header. The API gateway handles backend authentication. Use this when D365 F&O or RELion is fronted by Azure API Management.
-
-### OAuth via API Gateway
-
-```json
-{
-  "ODataSettings": {
-    "Url": "https://your-apim.azure-api.net/d365",
-    "AuthMode": "ApiKey",
-    "SubscriptionKey": "your-subscription-key",
-    "SubscriptionHeaderKey": "Ocp-Apim-Subscription-Key"
-  }
-}
-```
-
-### Programmatic Configuration
-
-```csharp
-services.AddODataClient(options =>
-{
-    options.Url = "https://your-environment.operations.dynamics.com/data";
-    options.AuthMode = ODataAuthMode.OAuth;
-    options.ClientId = Environment.GetEnvironmentVariable("D365_CLIENT_ID")!;
-    options.ClientSecret = Environment.GetEnvironmentVariable("D365_CLIENT_SECRET")!;
-    options.TenantId = Environment.GetEnvironmentVariable("D365_TENANT_ID")!;
-    options.Resource = "https://your-environment.operations.dynamics.com";
-});
-```
-
-### Disabling Resilience (Testing)
-
-```json
-{
-  "ODataSettings": {
-    "Url": "https://localhost:5000/data",
-    "AuthMode": "ApiKey",
-    "SubscriptionKey": "test-key",
-    "EnableRetries": false,
-    "UseCircuitBreaker": false
-  }
-}
-```
 
 ## See Also
 
