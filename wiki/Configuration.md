@@ -87,10 +87,10 @@ Nested under `"Authentication:OAuth"`. Required when using direct OAuth 2.0 clie
 
 | Setting | Type | Required | Default | Description |
 |---------|------|----------|---------|-------------|
-| `ClientId` | `string` | **Yes** | `""` | Azure AD Application (client) ID |
-| `ClientSecret` | `string` | **Yes** | `""` | Azure AD client secret (store in Key Vault for production) |
-| `TenantId` | `string` | **Yes** | `""` | Azure AD Directory (tenant) ID |
-| `Resource` | `string` | **Yes** | `""` | App ID URI of the D365 F&O resource (typically the environment base URL) |
+| `ClientId` | `string` | When OAuth | `""` | Azure AD Application (client) ID |
+| `ClientSecret` | `string` | When OAuth | `""` | Azure AD client secret (store in Key Vault for production) |
+| `TenantId` | `string` | When OAuth | `""` | Azure AD Directory (tenant) ID |
+| `Resource` | `string` | When OAuth | `""` | App ID URI of the D365 F&O resource (typically the environment base URL) |
 
 #### API Management (when `Mode` is `ApiKey`)
 
@@ -98,7 +98,7 @@ Nested under `"Authentication:ApiManagement"`. Required when routing through Azu
 
 | Setting | Type | Required | Default | Description |
 |---------|------|----------|---------|-------------|
-| `SubscriptionKey` | `string` | **Yes** | `""` | Subscription key for the API gateway |
+| `SubscriptionKey` | `string` | When ApiKey | `""` | Subscription key for the API gateway |
 | `SubscriptionHeaderKey` | `string` | No | `Ocp-Apim-Subscription-Key` | HTTP header name for the subscription key |
 | `DefaultHeaders` | `Dictionary<string, string>` | No | `{}` | Additional HTTP headers sent with every APIM request |
 

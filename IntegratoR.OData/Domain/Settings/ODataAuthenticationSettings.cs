@@ -9,7 +9,7 @@ public class ODataAuthenticationSettings
     /// <summary>
     /// Gets or sets the authentication mode to use for the connection.
     /// </summary>
-    public AuthenticationMode Mode { get; set; }
+    public AuthenticationMode Mode { get; set; } = AuthenticationMode.ApiKey;
 
     /// <summary>
     /// Gets or sets the OAuth 2.0 client credentials settings.

@@ -52,6 +52,79 @@ public class ApplicationDependencyInjectionTests
     }
 
     /// <summary>
+    /// Verifies that ApiKey mode settings are correctly bound from IConfiguration.
+    /// </summary>
+    [Fact]
+    public void AddODataClient_WithConfiguration_ApiKeyMode_BindsApiManagementSettings()
+    {
+        // Arrange
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ODataSettings:Url"] = "https://apim.azure-api.net/d365",
+                ["ODataSettings:Authentication:Mode"] = "ApiKey",
+                ["ODataSettings:Authentication:ApiManagement:SubscriptionKey"] = "test-sub-key",
+                ["ODataSettings:Authentication:ApiManagement:SubscriptionHeaderKey"] = "X-Custom-Key",
+                ["ODataSettings:Authentication:ApiManagement:DefaultHeaders:d365foenvironment"] = "UAT",
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IAuthenticator>(Substitute.For<IAuthenticator>());
+
+        // Act
+        services.AddODataClient(config);
+        var provider = services.BuildServiceProvider();
+
+        // Assert
+        var settings = provider.GetRequiredService<IOptions<ODataSettings>>().Value;
+        settings.Authentication.Mode.Should().Be(AuthenticationMode.ApiKey);
+        settings.Authentication.ApiManagement.SubscriptionKey.Should().Be("test-sub-key");
+        settings.Authentication.ApiManagement.SubscriptionHeaderKey.Should().Be("X-Custom-Key");
+        settings.Authentication.ApiManagement.DefaultHeaders.Should().ContainKey("d365foenvironment")
+            .WhoseValue.Should().Be("UAT");
+    }
+
+    /// <summary>
+    /// Verifies that resilience and metadata settings are correctly bound from IConfiguration.
+    /// </summary>
+    [Fact]
+    public void AddODataClient_WithConfiguration_BindsResilienceAndMetadataSettings()
+    {
+        // Arrange
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ODataSettings:Url"] = "https://test.operations.dynamics.com/data",
+                ["ODataSettings:MetadataFilePath"] = "metadata.xml",
+                ["ODataSettings:Resilience:EnableRetries"] = "false",
+                ["ODataSettings:Resilience:RetryCount"] = "5",
+                ["ODataSettings:Resilience:UseCircuitBreaker"] = "false",
+                ["ODataSettings:Resilience:CircuitBreakerThreshold"] = "10",
+                ["ODataSettings:Resilience:CircuitBreakerDurationInSeconds"] = "60",
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IAuthenticator>(Substitute.For<IAuthenticator>());
+
+        // Act
+        services.AddODataClient(config);
+        var provider = services.BuildServiceProvider();
+
+        // Assert
+        var settings = provider.GetRequiredService<IOptions<ODataSettings>>().Value;
+        settings.MetadataFilePath.Should().Be("metadata.xml");
+        settings.Resilience.EnableRetries.Should().BeFalse();
+        settings.Resilience.RetryCount.Should().Be(5);
+        settings.Resilience.UseCircuitBreaker.Should().BeFalse();
+        settings.Resilience.CircuitBreakerThreshold.Should().Be(10);
+        settings.Resilience.CircuitBreakerDurationInSeconds.Should().Be(60);
+    }
+
+    /// <summary>
     /// Verifies that settings are correctly applied using the action-based overload.
     /// </summary>
     [Fact]
