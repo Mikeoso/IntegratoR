@@ -2,18 +2,12 @@ namespace IntegratoR.OData.Domain.Settings;
 
 /// <summary>
 /// Encapsulates all configuration settings required to connect and authenticate with a
-/// D365 F&O OData endpoint, including retry and resilience policies.
+/// D365 F&amp;O OData endpoint, including retry and resilience policies.
 /// </summary>
-/// <remarks>
-/// An instance of this class is typically populated from the `appsettings.json` file
-/// during application startup and injected into services via `IOptions&lt;ODataSettings&gt;`.
-/// </remarks>
 public class ODataSettings
 {
-    #region General Connection Settings
-
     /// <summary>
-    /// Gets or sets the base URL of the D365 F&O OData endpoint.
+    /// Gets or sets the base URL of the D365 F&amp;O OData endpoint.
     /// </summary>
     /// <example>https://your-environment.operations.dynamics.com/data</example>
     public string Url { get; set; } = string.Empty;
@@ -24,137 +18,18 @@ public class ODataSettings
     public double Timeout { get; set; } = 120;
 
     /// <summary>
-    /// Gets or sets the authentication mode to use for the connection.
-    /// </summary>
-    /// <seealso cref="ODataAuthMode"/>
-    public ODataAuthMode AuthMode { get; set; }
-
-    /// <summary>
-    /// Represents additional HTTP headers to include with every request to the OData service.
-    /// </summary>
-    public Dictionary<string, string> DefaultHeaders { get; set; } = new();
-
-    #endregion
-
-    #region OAuth 2.0 Settings
-
-    /// <summary>
-    /// Gets or sets the Client ID (Application ID) for the service principal.
-    /// </summary>
-    /// <remarks>
-    /// This value is obtained from the Azure AD App Registration that has been granted
-    /// permissions to access Dynamics 365 F&O.
-    /// </remarks>
-    public string ClientId { get; set; } = string.Empty;
-
-    /// <summary>
-    /// Gets or sets the Client Secret for the service principal.
-    /// </summary>
-    /// <remarks>
-    /// This is the secret value generated for the Azure AD App Registration. It should be
-    /// stored securely, for example in Azure Key Vault.
-    /// </remarks>
-    public string ClientSecret { get; set; } = string.Empty;
-
-    /// <summary>
-    /// Gets or sets the Azure AD Tenant ID where the application is registered.
-    /// </summary>
-    /// <remarks>This is the Directory (tenant) ID from your Azure Active Directory.</remarks>
-    public string TenantId { get; set; } = string.Empty;
-
-    /// <summary>
-    /// Gets or sets the App ID URI of the D365 F&O resource to which access is being requested.
-    /// </summary>
-    /// <remarks>
-    /// For a standard D365 F&O environment, this value is the same as the base URL
-    /// of the environment (e.g., https://your-environment.operations.dynamics.com).
-    /// </remarks>
-    public string Resource { get; set; } = string.Empty;
-
-    #endregion
-
-    #region API Management (Gateway) Settings
-
-    /// <summary>
-    /// Gets or sets the subscription key required by an API gateway (e.g., Azure API Management).
-    /// </summary>
-    public string SubscriptionKey { get; set; } = string.Empty;
-
-    /// <summary>
-    /// Gets or sets the name of the HTTP header used to transmit the subscription key.
-    /// </summary>
-    /// <remarks>
-    /// The default value, `Ocp-Apim-Subscription-Key`, is the standard header used by Azure API Management.
-    /// </remarks>
-    public string SubscriptionHeaderKey { get; set; } = "Ocp-Apim-Subscription-Key";
-
-    #endregion
-
-    #region Retry and Resilience Settings
-
-    /// <summary>
-    /// Gets or sets whether automatic retry policies should be enabled for transient failures.
-    /// </summary>
-    /// <remarks>
-    /// When enabled, operations will automatically retry on transient errors such as timeouts,
-    /// rate limiting (429), and server errors (5xx). Defaults to true for production environments.
-    /// </remarks>
-    public bool EnableRetries { get; set; } = true;
-
-    /// <summary>
-    /// Gets or sets the number of retry attempts for transient failures.
-    /// </summary>
-    /// <remarks>
-    /// Defaults to 3 retries with exponential backoff. Valid range: 1-10.
-    /// </remarks>
-    public int RetryCount { get; set; } = 3;
-
-    /// <summary>
-    /// Gets or sets whether the circuit breaker pattern should be enabled.
-    /// </summary>
-    /// <remarks>
-    /// Circuit breaker prevents cascading failures by stopping requests when a threshold
-    /// of consecutive failures is reached. Defaults to true.
-    /// </remarks>
-    public bool UseCircuitBreaker { get; set; } = true;
-
-    /// <summary>
-    /// Gets or sets the number of consecutive failures before the circuit breaker opens.
-    /// </summary>
-    /// <remarks>
-    /// When the threshold is reached, the circuit breaker will block all requests for the
-    /// duration specified in <see cref="CircuitBreakerDurationSeconds"/>. Defaults to 5.
-    /// </remarks>
-    public int CircuitBreakerThreshold { get; set; } = 5;
-
-    /// <summary>
-    /// Gets or sets the duration in seconds that the circuit breaker stays open before
-    /// attempting recovery.
-    /// </summary>
-    /// <remarks>
-    /// After this duration, the circuit breaker transitions to half-open state and allows
-    /// a test request through. Defaults to 30 seconds.
-    /// </remarks>
-    public int CircuitBreakerDurationSeconds { get; set; } = 30;
-
-    #endregion
-
-    #region Metadata Settings
-    /// <summary>
     /// Gets or sets the path to a local metadata.xml file.
     /// When specified, the OData client will use this local file instead of fetching metadata from the server.
     /// </summary>
-    /// <remarks>
-    /// This is the recommended approach for production deployments as it:
-    /// - Avoids DTD security issues in D365 F&O metadata
-    /// - Reduces startup time (no metadata download)
-    /// - Enables offline development
-    /// - Makes metadata changes traceable in version control
-    /// 
-    /// Path can be absolute or relative to the application root.
-    /// </remarks>
-    /// <example>metadata.xml</example>
-    /// <example>Config/OData/metadata.xml</example>
     public string? MetadataFilePath { get; set; }
-    #endregion
+
+    /// <summary>
+    /// Gets or sets the authentication settings for the OData client.
+    /// </summary>
+    public ODataAuthenticationSettings Authentication { get; set; } = new();
+
+    /// <summary>
+    /// Gets or sets the resilience settings (retry and circuit breaker) for the OData client.
+    /// </summary>
+    public ODataResilienceSettings Resilience { get; set; } = new();
 }
