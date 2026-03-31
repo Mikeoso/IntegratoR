@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
+using FluentResults;
 using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.Abstractions.Interfaces.Authentication;
 using IntegratoR.OData.Domain.Settings;
@@ -70,9 +71,9 @@ public class ODataAuthenticationHandler : DelegatingHandler
     /// </returns>
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
-        if (_settings.AuthMode == ODataAuthMode.OAuth)
+        if (_settings.Authentication.Mode == AuthenticationMode.OAuth)
         {
-            var tokenResult = await _authenticator.GetAccessTokenAsync(_settings.ClientId, _settings.ClientSecret, _settings.TenantId, _settings.Resource).ConfigureAwait(false);
+            Result<string> tokenResult = await _authenticator.GetAccessTokenAsync(_settings.Authentication.OAuth.ClientId, _settings.Authentication.OAuth.ClientSecret, _settings.Authentication.OAuth.TenantId, _settings.Authentication.OAuth.Resource).ConfigureAwait(false);
 
             if (tokenResult.IsSuccess)
             {
@@ -88,9 +89,9 @@ public class ODataAuthenticationHandler : DelegatingHandler
         }
         else
         {
-            request.Headers.Add(_settings.SubscriptionHeaderKey, _settings.SubscriptionKey);
+            request.Headers.Add(_settings.Authentication.ApiManagement.SubscriptionHeaderKey, _settings.Authentication.ApiManagement.SubscriptionKey);
 
-            foreach (var header in _settings.DefaultHeaders)
+            foreach (var header in _settings.Authentication.ApiManagement.DefaultHeaders)
             {
                 request.Headers.Add(header.Key, header.Value);
             }

@@ -62,7 +62,7 @@ internal static class ApplicationDependencyInjection
             {
                 var settings = serviceProvider.GetRequiredService<IOptions<ODataSettings>>().Value;
 
-                if (!settings.EnableRetries)
+                if (!settings.Resilience.EnableRetries)
                 {
                     return Policy.NoOpAsync<HttpResponseMessage>();
                 }
@@ -75,7 +75,7 @@ internal static class ApplicationDependencyInjection
                     .Or<TaskCanceledException>()
                     .OrResult(response => response.StatusCode == HttpStatusCode.TooManyRequests)
                     .WaitAndRetryAsync(
-                        settings.RetryCount,
+                        settings.Resilience.RetryCount,
                         retryAttempt => CalculateRetryDelay(retryAttempt),
                         onRetry: (outcome, timespan, retryCount, context) =>
                         {
@@ -92,7 +92,7 @@ internal static class ApplicationDependencyInjection
             {
                 var settings = serviceProvider.GetRequiredService<IOptions<ODataSettings>>().Value;
 
-                if (!settings.UseCircuitBreaker)
+                if (!settings.Resilience.UseCircuitBreaker)
                 {
                     return Policy.NoOpAsync<HttpResponseMessage>();
                 }
@@ -100,8 +100,8 @@ internal static class ApplicationDependencyInjection
                 return HttpPolicyExtensions
                     .HandleTransientHttpError()
                     .CircuitBreakerAsync(
-                        handledEventsAllowedBeforeBreaking: settings.CircuitBreakerThreshold,
-                        durationOfBreak: TimeSpan.FromSeconds(settings.CircuitBreakerDurationSeconds));
+                        handledEventsAllowedBeforeBreaking: settings.Resilience.CircuitBreakerThreshold,
+                        durationOfBreak: TimeSpan.FromSeconds(settings.Resilience.CircuitBreakerDurationInSeconds));
             });
 
         // Register PanoramicData ODataClient
@@ -138,7 +138,7 @@ internal static class ApplicationDependencyInjection
         {
             var settings = serviceProvider.GetRequiredService<IOptions<ODataSettings>>().Value;
 
-            if (!settings.EnableRetries)
+            if (!settings.Resilience.EnableRetries)
             {
                 return Policy.Handle<Exception>(_ => false)
                     .WaitAndRetryAsync(0, _ => TimeSpan.Zero);
@@ -151,7 +151,7 @@ internal static class ApplicationDependencyInjection
                 .Handle<ODataClientException>(ex => IsTransientError(ex.StatusCode))
                 .Or<TaskCanceledException>()
                 .WaitAndRetryAsync(
-                    settings.RetryCount,
+                    settings.Resilience.RetryCount,
                     retryAttempt => CalculateRetryDelay(retryAttempt),
                     onRetry: (exception, timespan, retryCount, context) =>
                     {
