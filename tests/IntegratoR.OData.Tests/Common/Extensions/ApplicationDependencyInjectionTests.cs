@@ -29,9 +29,9 @@ public class ApplicationDependencyInjectionTests
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["ODataSettings:Url"] = "https://test.operations.dynamics.com/data",
-                ["ODataSettings:ClientId"] = "test-client-id",
-                ["ODataSettings:TenantId"] = "test-tenant-id",
-                ["ODataSettings:Resource"] = "https://test.operations.dynamics.com",
+                ["ODataSettings:Authentication:OAuth:ClientId"] = "test-client-id",
+                ["ODataSettings:Authentication:OAuth:TenantId"] = "test-tenant-id",
+                ["ODataSettings:Authentication:OAuth:Resource"] = "https://test.operations.dynamics.com",
             })
             .Build();
 
@@ -46,7 +46,7 @@ public class ApplicationDependencyInjectionTests
         // Assert
         var settings = provider.GetRequiredService<IOptions<ODataSettings>>().Value;
         settings.Url.Should().Be("https://test.operations.dynamics.com/data");
-        settings.ClientId.Should().Be("test-client-id");
+        settings.Authentication.OAuth.ClientId.Should().Be("test-client-id");
     }
 
     /// <summary>
@@ -64,14 +64,14 @@ public class ApplicationDependencyInjectionTests
         services.AddODataClient(options =>
         {
             options.Url = "https://action.operations.dynamics.com/data";
-            options.ClientId = "action-client-id";
+            options.Authentication.OAuth.ClientId = "action-client-id";
         });
         var provider = services.BuildServiceProvider();
 
         // Assert
         var settings = provider.GetRequiredService<IOptions<ODataSettings>>().Value;
         settings.Url.Should().Be("https://action.operations.dynamics.com/data");
-        settings.ClientId.Should().Be("action-client-id");
+        settings.Authentication.OAuth.ClientId.Should().Be("action-client-id");
     }
 
     /// <summary>

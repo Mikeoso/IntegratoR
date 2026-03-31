@@ -19,10 +19,10 @@ public class ServiceCollectionExtensionsTests
         var configData = new Dictionary<string, string?>
         {
             ["ODataSettings:Url"] = "https://test.operations.dynamics.com/data",
-            ["ODataSettings:ClientId"] = "test-client-id",
-            ["ODataSettings:ClientSecret"] = "test-secret",
-            ["ODataSettings:TenantId"] = "test-tenant",
-            ["ODataSettings:Resource"] = "https://test.operations.dynamics.com",
+            ["ODataSettings:Authentication:OAuth:ClientId"] = "test-client-id",
+            ["ODataSettings:Authentication:OAuth:ClientSecret"] = "test-secret",
+            ["ODataSettings:Authentication:OAuth:TenantId"] = "test-tenant",
+            ["ODataSettings:Authentication:OAuth:Resource"] = "https://test.operations.dynamics.com",
             ["FOSettings:DimensionFormatName"] = "TestFormat"
         };
 
@@ -125,7 +125,7 @@ public class ServiceCollectionExtensionsTests
         {
             integrator
                 .ConfigureOData(odata => odata.Timeout = 300)
-                .ConfigureOData(odata => odata.RetryCount = 5);
+                .ConfigureOData(odata => odata.Resilience.RetryCount = 5);
         });
 
         // Assert — both overrides should be applied
@@ -133,7 +133,7 @@ public class ServiceCollectionExtensionsTests
         ODataSettings settings = provider.GetRequiredService<IOptions<ODataSettings>>().Value;
 
         settings.Timeout.Should().Be(300);
-        settings.RetryCount.Should().Be(5);
+        settings.Resilience.RetryCount.Should().Be(5);
     }
 
     [Fact]
@@ -152,7 +152,7 @@ public class ServiceCollectionExtensionsTests
         ODataSettings settings = provider.GetRequiredService<IOptions<ODataSettings>>().Value;
 
         settings.Url.Should().Be("https://test.operations.dynamics.com/data");
-        settings.ClientId.Should().Be("test-client-id");
+        settings.Authentication.OAuth.ClientId.Should().Be("test-client-id");
     }
 }
 
