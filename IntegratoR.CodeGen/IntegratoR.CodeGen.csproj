@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>integrator-codegen</ToolCommandName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="IntegratoR.CodeGen.Tests" />
+  </ItemGroup>
+
+</Project>

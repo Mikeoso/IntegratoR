@@ -1,5 +1,6 @@
 using System.Linq.Expressions;
 using IntegratoR.Abstractions.Interfaces.Entity;
+using IntegratoR.OData.Domain.Models;
 
 namespace IntegratoR.OData.Interfaces.Services;
 
@@ -43,11 +44,12 @@ public interface IODataClientAdapter
 
     /// <summary>
     /// Updates an existing entity via OData PATCH.
+    /// The payload can be a <typeparamref name="TEntity"/> instance or an <see cref="IDictionary{TKey, TValue}"/> for partial payloads.
     /// </summary>
     Task<TEntity> UpdateAsync<TEntity>(
         string entitySet,
         object key,
-        TEntity entity,
+        object payload,
         CancellationToken cancellationToken = default)
         where TEntity : class, IEntity;
 
@@ -69,27 +71,28 @@ public interface IODataClientAdapter
         where TEntity : class, IEntity;
 
     /// <summary>
-    /// Creates multiple entities in an atomic batch changeset.
+    /// Creates multiple entities in an atomic batch changeset using filtered payloads.
+    /// Returns per-operation results for diagnostics.
     /// </summary>
-    Task BatchCreateAsync<TEntity>(
+    Task<IReadOnlyList<BatchOperationResult>> BatchCreateAsync(
         string entitySet,
-        IEnumerable<TEntity> entities,
-        CancellationToken cancellationToken = default)
-        where TEntity : class, IEntity;
+        IEnumerable<IDictionary<string, object>> payloads,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Updates multiple entities in an atomic batch changeset.
+    /// Updates multiple entities in an atomic batch changeset using filtered payloads.
+    /// Returns per-operation results for diagnostics.
     /// </summary>
-    Task BatchUpdateAsync<TEntity>(
+    Task<IReadOnlyList<BatchOperationResult>> BatchUpdateAsync(
         string entitySet,
-        IEnumerable<(object Key, TEntity Entity)> entities,
-        CancellationToken cancellationToken = default)
-        where TEntity : class, IEntity;
+        IEnumerable<(object Key, IDictionary<string, object> Payload)> items,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Deletes multiple entities by key in an atomic batch changeset.
+    /// Returns per-operation results for diagnostics.
     /// </summary>
-    Task BatchDeleteAsync(
+    Task<IReadOnlyList<BatchOperationResult>> BatchDeleteAsync(
         string entitySet,
         IEnumerable<object> keys,
         CancellationToken cancellationToken = default);
