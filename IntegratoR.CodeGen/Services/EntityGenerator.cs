@@ -274,9 +274,4 @@ public class EntityGenerator
             or "bool" or "byte" or "sbyte" or "DateTimeOffset" or "DateTime"
             or "DateOnly" or "TimeOnly" or "Guid";
     }
-
-    private static bool IsReferenceType(string csharpType)
-    {
-        return csharpType is "string" or "byte[]" or "object";
-    }
 }

@@ -46,7 +46,9 @@ public static class CsdlParser
 
     private static CsdlSchema ParseDocument(XDocument doc)
     {
-        XElement schema = doc.Descendants(Edm + "Schema").First();
+        XElement schema = doc.Descendants(Edm + "Schema").FirstOrDefault()
+            ?? throw new InvalidOperationException(
+                "CSDL document contains no Schema element. Verify the metadata file is a valid OData $metadata response.");
         string schemaNamespace = schema.Attribute("Namespace")?.Value ?? "";
 
         var enumTypes = ParseEnumTypes(schema);

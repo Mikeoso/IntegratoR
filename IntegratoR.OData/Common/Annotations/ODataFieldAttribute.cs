@@ -20,7 +20,7 @@ namespace IntegratoR.OData.Common.Annotations;
 /// </para>
 /// </remarks>
 [AttributeUsage(AttributeTargets.Property, Inherited = true, AllowMultiple = false)]
-public class ODataFieldAttribute : Attribute
+public sealed class ODataFieldAttribute : Attribute
 {
     /// <summary>
     /// Gets or sets a value indicating whether this property should be excluded from the

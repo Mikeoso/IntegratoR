@@ -7,7 +7,6 @@ using FluentResults;
 using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.Abstractions.Interfaces.Entity;
 using IntegratoR.OData.Common.Exceptions;
-using IntegratoR.OData.Domain.Models;
 using Microsoft.Extensions.Logging;
 using PanoramicData.OData.Client.Exceptions;
 using Polly.Retry;
@@ -29,7 +28,6 @@ namespace IntegratoR.OData.Common.Services;
 public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
 {
     private static readonly ConcurrentDictionary<Type, MethodInfo> FailSingleErrorCache = new();
-    private static readonly ConcurrentDictionary<Type, MethodInfo> FailMultiErrorCache = new();
 
     private readonly ILogger _logger;
     private readonly string _entityTypeName;
@@ -130,6 +128,25 @@ public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
     }
 
     /// <summary>
+    /// Executes an operation that may return business-level errors (e.g., batch partial failures)
+    /// without throwing exceptions. The operation returns <c>null</c> on success or a list of errors on failure.
+    /// </summary>
+    public async Task<Result> ExecuteNonQueryAsync(
+        string operationName,
+        Func<Task<List<IError>?>> operation,
+        Func<object[]>? entityKey = null,
+        CancellationToken cancellationToken = default)
+    {
+        var context = new OperationContext(operationName, _entityTypeName, entityKey?.Invoke());
+
+        return await ExecuteWithRetryAsync(
+            context,
+            async () => await operation().ConfigureAwait(false),
+            errors => errors is null ? Result.Ok() : Result.Fail(errors),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// Core retry wrapper that integrates Polly policies with exception handling.
     /// </summary>
     private async Task<TResult> ExecuteWithRetryAsync<TOperationResult, TResult>(
@@ -206,11 +223,6 @@ public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
         int attemptCount)
         where TResult : IResultBase
     {
-        if (exception is ODataBatchException batchEx)
-        {
-            return CreateBatchFailResult<TResult>(context, elapsed, batchEx, attemptCount);
-        }
-
         if (exception is ODataPayloadValidationException validationEx)
         {
             _logger.LogWarning(validationEx,
@@ -366,56 +378,6 @@ public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
         }
 
         return null;
-    }
-
-    private TResult CreateBatchFailResult<TResult>(
-        OperationContext context,
-        TimeSpan elapsed,
-        ODataBatchException exception,
-        int attemptCount)
-        where TResult : IResultBase
-    {
-        _logger.LogError(exception,
-            "{Operation} on {EntityType} batch failed after {ElapsedMs}ms and {Attempts} attempt(s). " +
-            "{FailedCount} operations failed",
-            context.OperationName, context.EntityType, elapsed.TotalMilliseconds,
-            attemptCount, exception.FailedResults.Count);
-
-        var errors = new List<IError>();
-        foreach (BatchOperationResult failure in exception.FailedResults)
-        {
-            var innerError = ExtractD365InnerError(failure.ResponseBody);
-            var errorMessage = innerError ?? failure.ErrorMessage ?? $"Operation at index {failure.Index} failed with status {failure.StatusCode}";
-
-            errors.Add(new IntegrationError(
-                $"{context.EntityType}.BatchOperationFailed",
-                $"[Index {failure.Index}, HTTP {failure.StatusCode}] {errorMessage}",
-                ErrorType.Failure,
-                exception));
-        }
-
-        // Add a summary error as the first entry
-        errors.Insert(0, new IntegrationError(
-            $"{context.EntityType}.BatchFailed",
-            exception.Message,
-            ErrorType.Failure,
-            exception));
-
-        if (typeof(TResult).IsGenericType)
-        {
-            // For Result<T> — create a failed result with the generic type
-            var genericType = typeof(TResult).GetGenericArguments()[0];
-            var failMethod = FailMultiErrorCache.GetOrAdd(genericType, type =>
-                typeof(Result)
-                    .GetMethods(BindingFlags.Public | BindingFlags.Static)
-                    .First(m => m.Name == "Fail" && m.IsGenericMethod
-                        && m.GetParameters().Length == 1
-                        && m.GetParameters()[0].ParameterType == typeof(IEnumerable<IError>))
-                    .MakeGenericMethod(type));
-            return (TResult)failMethod.Invoke(null, [errors])!;
-        }
-
-        return (TResult)(object)Result.Fail(errors);
     }
 
     private TResult HandleNotFound<TResult>(

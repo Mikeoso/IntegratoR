@@ -246,7 +246,7 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
                 IReadOnlyList<BatchOperationResult> results = await _client
                     .BatchCreateAsync(_entitySetName, payloads, cancellationToken)
                     .ConfigureAwait(false);
-                ThrowOnBatchFailures(results, "AddBatch", entityList);
+                return BuildBatchErrors(results, "AddBatch", entityList);
             },
             entityKey: () => new object[] { $"{entityList.Count} entities" },
             cancellationToken: cancellationToken);
@@ -267,7 +267,7 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
                 IReadOnlyList<BatchOperationResult> results = await _client
                     .BatchDeleteAsync(_entitySetName, keys, cancellationToken)
                     .ConfigureAwait(false);
-                ThrowOnBatchFailures(results, "DeleteBatch", entityList);
+                return BuildBatchErrors(results, "DeleteBatch", entityList);
             },
             entityKey: () => new object[] { $"{entityList.Count} entities" },
             cancellationToken: cancellationToken);
@@ -289,7 +289,7 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
                 IReadOnlyList<BatchOperationResult> results = await _client
                     .BatchUpdateAsync(_entitySetName, items, cancellationToken)
                     .ConfigureAwait(false);
-                ThrowOnBatchFailures(results, "UpdateBatch", entityList);
+                return BuildBatchErrors(results, "UpdateBatch", entityList);
             },
             entityKey: () => new object[] { $"{entityList.Count} entities" },
             cancellationToken: cancellationToken);
@@ -420,10 +420,10 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
     }
 
     /// <summary>
-    /// Inspects batch operation results and logs per-entity failures. If any operations failed,
-    /// throws an <see cref="ODataBatchException"/> containing per-entity error details.
+    /// Inspects batch operation results and returns per-entity errors for any failures.
+    /// Returns <c>null</c> when all operations succeeded.
     /// </summary>
-    private void ThrowOnBatchFailures(
+    private List<IError>? BuildBatchErrors(
         IReadOnlyList<BatchOperationResult> results,
         string operationName,
         IList<TEntity> entities)
@@ -432,26 +432,36 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
 
         if (failures.Count == 0)
         {
-            return;
+            return null;
         }
+
+        var errors = new List<IError>();
+
+        errors.Add(new IntegrationError(
+            $"{typeof(TEntity).Name}.BatchFailed",
+            $"{failures.Count} of {results.Count} {operationName} operations failed for {typeof(TEntity).Name}",
+            ErrorType.Failure));
 
         foreach (var failure in failures)
         {
-            var entityKey = failure.Index < entities.Count
-                ? string.Join(", ", entities[failure.Index].GetCompositeKey())
-                : $"index {failure.Index}";
-
             var innerError = ODataExceptionHandler<TEntity>.ExtractD365InnerError(failure.ResponseBody);
 
             _logger.LogWarning(
-                "{Operation} on {EntityType} - entity at index {Index} (key: {EntityKey}) failed. " +
+                "{Operation} on {EntityType} - entity at index {Index} failed. " +
                 "StatusCode: {StatusCode}, Error: {ErrorMessage}",
-                operationName, typeof(TEntity).Name, failure.Index, entityKey,
+                operationName, typeof(TEntity).Name, failure.Index,
                 failure.StatusCode, innerError ?? failure.ErrorMessage);
+
+            var errorMessage = innerError ?? failure.ErrorMessage
+                ?? $"Operation at index {failure.Index} failed with status {failure.StatusCode}";
+
+            errors.Add(new IntegrationError(
+                $"{typeof(TEntity).Name}.BatchOperationFailed",
+                $"[Index {failure.Index}, HTTP {failure.StatusCode}] {errorMessage}",
+                ErrorType.Failure));
         }
 
-        var message = $"{failures.Count} of {results.Count} {operationName} operations failed for {typeof(TEntity).Name}";
-        throw new ODataBatchException(message, failures);
+        return errors;
     }
 
     private sealed record CachedPropertyMetadata(

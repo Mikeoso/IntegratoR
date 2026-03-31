@@ -180,7 +180,9 @@ public class ODataClientAdapter : IODataClientAdapter
     private static TEntity DeserializeResponse<TEntity>(object response) where TEntity : class
     {
         var json = System.Text.Json.JsonSerializer.Serialize(response);
-        return System.Text.Json.JsonSerializer.Deserialize<TEntity>(json, CaseInsensitiveOptions)!;
+        return System.Text.Json.JsonSerializer.Deserialize<TEntity>(json, CaseInsensitiveOptions)
+            ?? throw new InvalidOperationException(
+                $"Failed to deserialize OData response to {typeof(TEntity).Name}. Response was null or incompatible.");
     }
 
     private static IReadOnlyList<BatchOperationResult> MapBatchResponse(ODataBatchResponse response)
