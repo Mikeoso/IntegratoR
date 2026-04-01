@@ -114,6 +114,7 @@ internal static class ApplicationDependencyInjection
                 .CreateClient("ODataClient");
 
             httpClient.Timeout = TimeSpan.FromSeconds(settings.Timeout);
+            httpClient.BaseAddress = new Uri(settings.Url);
 
             var options = new ODataClientOptions
             {
