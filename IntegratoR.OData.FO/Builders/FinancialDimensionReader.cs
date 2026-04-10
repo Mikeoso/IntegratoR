@@ -39,11 +39,15 @@ public static class FinancialDimensionReader
     /// </returns>
     public static Result<Dictionary<string, string>> Parse(DimensionFormat format, string dimensionString)
     {
-        if (format is null || format.Segments.Count == 0)
+        if (format is null
+            || format.Segments is null
+            || format.Segments.Count == 0
+            || string.IsNullOrEmpty(format.Delimiter)
+            || format.Segments.Any(string.IsNullOrEmpty))
         {
             return Result.Fail<Dictionary<string, string>>(new IntegrationError(
                 "DimensionReader.InvalidFormat",
-                "The dimension format is null or has no segments.",
+                "The dimension format is null, has no segments, has a null or empty delimiter, or contains null or empty segment names.",
                 ErrorType.Validation));
         }
 

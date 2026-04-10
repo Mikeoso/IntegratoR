@@ -180,6 +180,70 @@ public class FinancialDimensionReaderTests
     }
 
     /// <summary>
+    /// Verifies that Parse fails when the format delimiter is empty, which would otherwise
+    /// trigger string.Split's whitespace-splitting special case.
+    /// </summary>
+    [Fact]
+    public void Parse_EmptyDelimiter_ReturnsFailure()
+    {
+        // Arrange
+        var format = new DimensionFormat
+        {
+            Delimiter = string.Empty,
+            Segments = new List<string> { "BU", "Dept" }
+        };
+
+        // Act
+        var result = FinancialDimensionReader.Parse(format, "BU01-D001");
+
+        // Assert
+        result.Should().BeFailed();
+        result.Should().HaveErrorCode("DimensionReader.InvalidFormat");
+    }
+
+    /// <summary>
+    /// Verifies that Parse fails when any segment name in the format is null.
+    /// </summary>
+    [Fact]
+    public void Parse_NullSegmentName_ReturnsFailure()
+    {
+        // Arrange
+        var format = new DimensionFormat
+        {
+            Delimiter = "-",
+            Segments = new List<string> { "BU", null!, "CC" }
+        };
+
+        // Act
+        var result = FinancialDimensionReader.Parse(format, "BU01--CC002");
+
+        // Assert
+        result.Should().BeFailed();
+        result.Should().HaveErrorCode("DimensionReader.InvalidFormat");
+    }
+
+    /// <summary>
+    /// Verifies that Parse fails when any segment name in the format is an empty string.
+    /// </summary>
+    [Fact]
+    public void Parse_EmptySegmentName_ReturnsFailure()
+    {
+        // Arrange
+        var format = new DimensionFormat
+        {
+            Delimiter = "-",
+            Segments = new List<string> { "BU", string.Empty, "CC" }
+        };
+
+        // Act
+        var result = FinancialDimensionReader.Parse(format, "BU01--CC002");
+
+        // Assert
+        result.Should().BeFailed();
+        result.Should().HaveErrorCode("DimensionReader.InvalidFormat");
+    }
+
+    /// <summary>
     /// Verifies that Parse fails when the dimension string is null.
     /// </summary>
     [Fact]
