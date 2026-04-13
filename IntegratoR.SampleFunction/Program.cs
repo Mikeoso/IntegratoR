@@ -1,12 +1,8 @@
 using System.Reflection;
-using System.Text.Json;
 using Azure.Identity;
 using IntegratoR.Abstractions.Common.Results;
-using IntegratoR.Abstractions.Common.Results.SystemText;
 using IntegratoR.RELion.Common.Extensions;
 using Microsoft.Azure.Functions.Worker;
-using Microsoft.DurableTask.Converters;
-using Microsoft.DurableTask.Worker;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -51,13 +47,6 @@ var host = new HostBuilder()
 
         services.AddApplicationInsightsTelemetryWorkerService();
         services.ConfigureFunctionsApplicationInsights();
-
-        services.Configure<DurableTaskWorkerOptions>(options =>
-        {
-            JsonSerializerOptions jsonOptions = new(JsonSerializerDefaults.Web);
-            jsonOptions.AddResultConverters();
-            options.DataConverter = new JsonDataConverter(jsonOptions);
-        });
 
         services.AddIntegratoR(context.Configuration, integrator =>
         {

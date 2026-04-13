@@ -4,19 +4,22 @@ The Durable Functions isolated worker SDK uses **System.Text.Json** to serialise
 and outputs into the task hub. Without a custom converter, `Result<T>` cannot be deserialised on
 replay and activities throw *"JSON value could not be converted to FluentResults.Result..."*.
 
-Wire `AddResultConverters()` into `DurableTaskWorkerOptions.DataConverter` in `Program.cs`:
+**No setup required** — `services.AddIntegratoR(configuration)` automatically registers the
+`Result<T>` converters with `DurableTaskWorkerOptions.DataConverter`. Activities and
+orchestrators can return `Result<T>` and `Result` directly:
 
 ```csharp
-// Program.cs — register Result converters for Durable Functions serialisation
-services.Configure<DurableTaskWorkerOptions>(options =>
+// Program.cs — Result converters for Durable Functions are wired by AddIntegratoR
+services.AddIntegratoR(context.Configuration, integrator =>
 {
-    JsonSerializerOptions jsonOptions = new(JsonSerializerDefaults.Web);
-    jsonOptions.AddResultConverters();
-    options.DataConverter = new JsonDataConverter(jsonOptions);
+    integrator.AddConsumerHandlers(clientAssembly);
 });
 ```
 
-Without these converters, `Result<T>` loses error metadata after orchestration replay.
+The registration is lazy: consumers not using Durable Functions never resolve
+`DurableTaskWorkerOptions` and pay zero runtime cost. Consumers who want to customise the
+data converter further can call `services.Configure<DurableTaskWorkerOptions>(...)` after
+`AddIntegratoR` — the last configurator wins.
 
 ## Two JSON serialisers in this project
 

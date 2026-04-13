@@ -1,5 +1,7 @@
 using System.Reflection;
+using System.Text.Json;
 using FluentValidation;
+using IntegratoR.Abstractions.Common.Results.SystemText;
 using IntegratoR.Application.Common.Extensions;
 using IntegratoR.Hosting;
 using IntegratoR.OData.Common.Extensions;
@@ -7,6 +9,8 @@ using IntegratoR.OData.Domain.Settings;
 using IntegratoR.OData.FO.Common.Extensions;
 using IntegratoR.OData.FO.Domain.Models.Settings;
 using MediatR;
+using Microsoft.DurableTask.Converters;
+using Microsoft.DurableTask.Worker;
 using Microsoft.Extensions.Configuration;
 
 namespace Microsoft.Extensions.DependencyInjection;
@@ -48,7 +52,19 @@ public static class IntegratoRServiceCollectionExtensions
         // 3. F&O layer — MediatR handlers for D365 entities
         services.AddODataClientFOProxy(configuration);
 
-        // 4. Apply PostConfigure overrides if provided
+        // 4. Durable Functions Result<T> support — register the System.Text.Json Result
+        //    converters with the Durable Task worker so activities and orchestrators returning
+        //    Result<T>/Result round-trip through the task hub. The Configure call is lazy:
+        //    consumers not using Durable Functions never resolve DurableTaskWorkerOptions and
+        //    pay zero runtime cost.
+        services.Configure<DurableTaskWorkerOptions>(options =>
+        {
+            JsonSerializerOptions jsonOptions = new(JsonSerializerDefaults.Web);
+            jsonOptions.AddResultConverters();
+            options.DataConverter = new JsonDataConverter(jsonOptions);
+        });
+
+        // 5. Apply PostConfigure overrides if provided
         if (builder.ODataPostConfigure is not null)
         {
             services.PostConfigure(builder.ODataPostConfigure);
@@ -59,7 +75,7 @@ public static class IntegratoRServiceCollectionExtensions
             services.PostConfigure(builder.FOPostConfigure);
         }
 
-        // 5. Register consumer assemblies for MediatR + FluentValidation
+        // 6. Register consumer assemblies for MediatR + FluentValidation
         foreach (Assembly assembly in builder.ConsumerAssemblies)
         {
             services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(assembly));

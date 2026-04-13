@@ -1,10 +1,14 @@
 using FluentAssertions;
+using FluentResults;
 using FluentValidation;
+using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.Abstractions.Interfaces.Authentication;
 using IntegratoR.Abstractions.Interfaces.Services;
 using IntegratoR.OData.Domain.Settings;
 using IntegratoR.OData.FO.Domain.Models.Settings;
 using MediatR;
+using Microsoft.DurableTask.Converters;
+using Microsoft.DurableTask.Worker;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -135,6 +139,62 @@ public class ServiceCollectionExtensionsTests
 
         settings.Timeout.Should().Be(300);
         settings.Resilience.RetryCount.Should().Be(5);
+    }
+
+    /// <summary>
+    /// Verifies that AddIntegratoR registers a DurableTaskWorkerOptions configurator that
+    /// installs a JsonDataConverter — so consumers using Durable Functions get Result&lt;T&gt;
+    /// round-tripping for free without having to copy boilerplate into Program.cs.
+    /// </summary>
+    [Fact]
+    public void AddIntegratoR_RegistersDurableTaskWorkerOptionsWithJsonDataConverter()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddLogging();
+        IConfiguration configuration = CreateMinimalConfiguration();
+
+        // Act
+        services.AddIntegratoR(configuration);
+
+        // Assert
+        ServiceProvider provider = services.BuildServiceProvider();
+        DurableTaskWorkerOptions options = provider.GetRequiredService<IOptions<DurableTaskWorkerOptions>>().Value;
+
+        options.DataConverter.Should().NotBeNull();
+        options.DataConverter.Should().BeOfType<JsonDataConverter>();
+    }
+
+    /// <summary>
+    /// Verifies end-to-end that the DataConverter installed by AddIntegratoR can round-trip
+    /// a failed Result&lt;T&gt; through serialisation — proving the Result converters are wired
+    /// correctly into the JsonSerializerOptions handed to JsonDataConverter.
+    /// </summary>
+    [Fact]
+    public void AddIntegratoR_DurableTaskDataConverter_RoundTripsResultWithIntegrationError()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddLogging();
+        IConfiguration configuration = CreateMinimalConfiguration();
+        services.AddIntegratoR(configuration);
+
+        ServiceProvider provider = services.BuildServiceProvider();
+        DurableTaskWorkerOptions options = provider.GetRequiredService<IOptions<DurableTaskWorkerOptions>>().Value;
+
+        var error = new IntegrationError("Activity.Failed", "Activity failed.", ErrorType.Failure);
+        Result<string> original = Result.Fail<string>(error);
+
+        // Act
+        string? serialised = options.DataConverter.Serialize(original);
+        Result<string>? roundTripped = options.DataConverter.Deserialize(serialised, typeof(Result<string>)) as Result<string>;
+
+        // Assert
+        roundTripped.Should().NotBeNull();
+        roundTripped!.IsFailed.Should().BeTrue();
+        IntegrationError reconstructed = (IntegrationError)roundTripped.Errors[0];
+        reconstructed.Code.Should().Be("Activity.Failed");
+        reconstructed.Type.Should().Be(ErrorType.Failure);
     }
 
     [Fact]
