@@ -1,5 +1,7 @@
 using System.Reflection;
+using System.Text.Json;
 using FluentValidation;
+using IntegratoR.Abstractions.Common.Results.SystemText;
 using IntegratoR.Application.Common.Extensions;
 using IntegratoR.Hosting;
 using IntegratoR.OData.Common.Extensions;
@@ -7,6 +9,8 @@ using IntegratoR.OData.Domain.Settings;
 using IntegratoR.OData.FO.Common.Extensions;
 using IntegratoR.OData.FO.Domain.Models.Settings;
 using MediatR;
+using Microsoft.DurableTask.Converters;
+using Microsoft.DurableTask.Worker;
 using Microsoft.Extensions.Configuration;
 
 namespace Microsoft.Extensions.DependencyInjection;
@@ -16,6 +20,12 @@ namespace Microsoft.Extensions.DependencyInjection;
 /// </summary>
 public static class IntegratoRServiceCollectionExtensions
 {
+    // Shared JsonSerializerOptions for the Durable Task data converter. STJ caches per-instance
+    // converter metadata on the options, so a single static readonly instance keeps that cache
+    // warm across the lifetime of the host. Matches the pattern in DistributedCacheService.
+    private static readonly JsonSerializerOptions DurableTaskJsonOptions =
+        new JsonSerializerOptions(JsonSerializerDefaults.Web).AddResultConverters();
+
     /// <summary>
     /// Registers core IntegratoR framework services (Application, OData, F&amp;O) with default settings.
     /// Optional modules such as RELion must be registered separately.
@@ -48,7 +58,19 @@ public static class IntegratoRServiceCollectionExtensions
         // 3. F&O layer — MediatR handlers for D365 entities
         services.AddODataClientFOProxy(configuration);
 
-        // 4. Apply PostConfigure overrides if provided
+        // 4. Durable Functions Result<T> support — register the System.Text.Json Result
+        //    converters with the Durable Task worker so activities and orchestrators returning
+        //    Result<T>/Result round-trip through the task hub. The Configure call is lazy:
+        //    consumers not using Durable Functions never resolve DurableTaskWorkerOptions and
+        //    pay zero runtime cost (the package reference itself is unconditional, but the
+        //    Microsoft.DurableTask.* packages are tiny and almost always already in the
+        //    dependency tree of an IntegratoR consumer building Azure Functions integrations).
+        services.Configure<DurableTaskWorkerOptions>(options =>
+        {
+            options.DataConverter = new JsonDataConverter(DurableTaskJsonOptions);
+        });
+
+        // 5. Apply PostConfigure overrides if provided
         if (builder.ODataPostConfigure is not null)
         {
             services.PostConfigure(builder.ODataPostConfigure);
@@ -59,7 +81,7 @@ public static class IntegratoRServiceCollectionExtensions
             services.PostConfigure(builder.FOPostConfigure);
         }
 
-        // 5. Register consumer assemblies for MediatR + FluentValidation
+        // 6. Register consumer assemblies for MediatR + FluentValidation
         foreach (Assembly assembly in builder.ConsumerAssemblies)
         {
             services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(assembly));

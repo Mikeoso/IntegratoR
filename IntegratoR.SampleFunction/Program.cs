@@ -8,8 +8,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Newtonsoft.Json;
 
-// Configure Newtonsoft.Json default settings for Durable Task serialization.
-// Durable Functions uses JsonConvert internally for orchestration state.
 JsonConvert.DefaultSettings = () => new JsonSerializerSettings
 {
     Converters = { new ResultJsonConverter(), new ResultGenericJsonConverter() }

@@ -18,10 +18,11 @@ public sealed class ResultJsonConverterTests
     };
 
     /// <summary>
-    /// Verifies that a successful result is serialized with <c>isSuccess=true</c> and an empty errors array.
+    /// Verifies that a successful result is serialized with <c>isSuccess=true</c> and the
+    /// errors array is omitted entirely (saves bytes on the cache/Durable activity hot path).
     /// </summary>
     [Fact]
-    public void WriteJson_SuccessResult_WritesIsSuccessTrueAndEmptyErrors()
+    public void WriteJson_SuccessResult_WritesIsSuccessTrueAndOmitsErrors()
     {
         // Arrange
         var result = Result.Ok();
@@ -31,7 +32,7 @@ public sealed class ResultJsonConverterTests
 
         // Assert
         json.Should().Contain("\"isSuccess\":true");
-        json.Should().Contain("\"errors\":[]");
+        json.Should().NotContain("\"errors\"");
     }
 
     /// <summary>
@@ -57,7 +58,9 @@ public sealed class ResultJsonConverterTests
 
     /// <summary>
     /// Verifies that a failed result with a plain <see cref="Error"/> (non-<see cref="IntegrationError"/>)
-    /// serializes with code "Unknown" and type "Failure".
+    /// serializes with code "Unknown" and type "Failure". Library consumers using <c>Result.Fail("...")</c>
+    /// with a plain error must keep round-tripping — these public converters have always accepted
+    /// any <see cref="IError"/> and that contract is preserved.
     /// </summary>
     [Fact]
     public void WriteJson_FailedWithPlainError_WritesUnknownCodeAndFailureType()
@@ -72,6 +75,21 @@ public sealed class ResultJsonConverterTests
         json.Should().Contain("\"code\":\"Unknown\"");
         json.Should().Contain("\"type\":\"Failure\"");
         json.Should().Contain("\"message\":\"something went wrong\"");
+    }
+
+    /// <summary>
+    /// Verifies that the JSON literal <c>null</c> deserialises to a null <see cref="Result"/>
+    /// rather than throwing on JObject.Load. WriteJson emits null for a null Result, so the
+    /// reader must accept it symmetrically.
+    /// </summary>
+    [Fact]
+    public void ReadJson_NullJsonPayload_ReturnsNull()
+    {
+        // Act
+        var result = JsonConvert.DeserializeObject<Result>("null", Settings);
+
+        // Assert
+        result.Should().BeNull();
     }
 
     /// <summary>

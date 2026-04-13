@@ -6,7 +6,8 @@ namespace IntegratoR.Abstractions.Common.Results;
 
 /// <summary>
 /// Newtonsoft.Json converter for the non-generic <see cref="Result"/> type.
-/// Serializes <c>isSuccess</c> and <c>errors</c> (array of code/message/type objects).
+/// Property names and the IError ↔ primitives mapping are owned by <see cref="ResultJsonShape"/>
+/// so this converter stays in lockstep with the System.Text.Json equivalent.
 /// </summary>
 public class ResultJsonConverter : JsonConverter<Result>
 {
@@ -19,71 +20,34 @@ public class ResultJsonConverter : JsonConverter<Result>
         }
 
         writer.WriteStartObject();
-        writer.WritePropertyName("isSuccess");
+        writer.WritePropertyName(ResultJsonShape.IsSuccess);
         writer.WriteValue(value.IsSuccess);
-        writer.WritePropertyName("errors");
-        WriteErrors(writer, value.Errors);
+
+        if (!value.IsSuccess)
+        {
+            writer.WritePropertyName(ResultJsonShape.Errors);
+            NewtonsoftResultErrorSerializer.Write(writer, value.Errors);
+        }
+
         writer.WriteEndObject();
     }
 
     public override Result? ReadJson(JsonReader reader, Type objectType, Result? existingValue, bool hasExistingValue, JsonSerializer serializer)
     {
+        if (reader.TokenType == JsonToken.Null)
+            return null;
+
         var obj = JObject.Load(reader);
-        var isSuccess = obj["isSuccess"]?.Value<bool>() ?? false;
+        var isSuccess = obj[ResultJsonShape.IsSuccess]?.Value<bool>() ?? false;
 
         if (isSuccess)
             return Result.Ok();
 
-        var errors = ReadErrors(obj["errors"]);
+        IReadOnlyList<IError> errors = NewtonsoftResultErrorSerializer.Read(obj[ResultJsonShape.Errors]);
+        if (errors.Count == 0)
+            return Result.Fail(ResultJsonShape.MissingErrorsError());
+
         return Result.Fail(errors);
-    }
-
-    internal static void WriteErrors(JsonWriter writer, IReadOnlyList<IError> errors)
-    {
-        writer.WriteStartArray();
-        foreach (var error in errors)
-        {
-            writer.WriteStartObject();
-            if (error is IntegrationError ie)
-            {
-                writer.WritePropertyName("code");
-                writer.WriteValue(ie.Code);
-                writer.WritePropertyName("message");
-                writer.WriteValue(ie.Message);
-                writer.WritePropertyName("type");
-                writer.WriteValue(ie.Type.ToString());
-            }
-            else
-            {
-                writer.WritePropertyName("code");
-                writer.WriteValue("Unknown");
-                writer.WritePropertyName("message");
-                writer.WriteValue(error.Message);
-                writer.WritePropertyName("type");
-                writer.WriteValue(ErrorType.Failure.ToString());
-            }
-            writer.WriteEndObject();
-        }
-        writer.WriteEndArray();
-    }
-
-    internal static List<IError> ReadErrors(JToken? errorsToken)
-    {
-        var errors = new List<IError>();
-        if (errorsToken is not JArray arr)
-            return errors;
-
-        foreach (var item in arr)
-        {
-            var code = item["code"]?.Value<string>() ?? "Unknown";
-            var message = item["message"]?.Value<string>() ?? "Unknown error";
-            var typeStr = item["type"]?.Value<string>() ?? "Failure";
-            var type = Enum.TryParse<ErrorType>(typeStr, out var parsed) ? parsed : ErrorType.Failure;
-
-            errors.Add(new IntegrationError(code, message, type));
-        }
-
-        return errors;
     }
 }
 
@@ -111,34 +75,67 @@ public class ResultGenericJsonConverter : JsonConverter
         var errors = (IReadOnlyList<IError>)resultType.GetProperty(nameof(Result.Errors))!.GetValue(value)!;
 
         writer.WriteStartObject();
-        writer.WritePropertyName("isSuccess");
+        writer.WritePropertyName(ResultJsonShape.IsSuccess);
         writer.WriteValue(isSuccess);
 
         if (isSuccess)
         {
             var valueProperty = resultType.GetProperty(nameof(Result<object>.Value))!;
             var innerValue = valueProperty.GetValue(value);
-            writer.WritePropertyName("value");
+            writer.WritePropertyName(ResultJsonShape.Value);
             serializer.Serialize(writer, innerValue);
         }
+        else
+        {
+            writer.WritePropertyName(ResultJsonShape.Errors);
+            NewtonsoftResultErrorSerializer.Write(writer, errors);
+        }
 
-        writer.WritePropertyName("errors");
-        ResultJsonConverter.WriteErrors(writer, errors);
         writer.WriteEndObject();
     }
 
     public override object? ReadJson(JsonReader reader, Type objectType, object? existingValue, JsonSerializer serializer)
     {
+        if (reader.TokenType == JsonToken.Null)
+            return null;
+
         var obj = JObject.Load(reader);
-        var isSuccess = obj["isSuccess"]?.Value<bool>() ?? false;
+        var isSuccess = obj[ResultJsonShape.IsSuccess]?.Value<bool>() ?? false;
         var valueType = objectType.GetGenericArguments()[0];
+
+        var failMethod = typeof(Result).GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+            .First(m => m.Name == "Fail" && m.IsGenericMethod && m.GetParameters().Length == 1
+                && m.GetParameters()[0].ParameterType == typeof(IEnumerable<IError>))
+            .MakeGenericMethod(valueType);
 
         if (isSuccess)
         {
-            var valueToken = obj["value"];
-            var value = valueToken is not null
-                ? valueToken.ToObject(valueType, serializer)
-                : null;
+            if (!obj.TryGetValue(ResultJsonShape.Value, out JToken? valueToken))
+            {
+                // Corrupted payload: success but no value field. Convert to a failure rather
+                // than silently materialising default(T).
+                return failMethod.Invoke(null, [new IError[] { ResultJsonShape.MissingValueError() }]);
+            }
+
+            object? value;
+            if (valueToken.Type == JTokenType.Null)
+            {
+                // Explicit null on a non-nullable value type (e.g. Result<int>) is corruption,
+                // not a legitimate "success carrying default(T)". Symmetric with the
+                // missing-value branch above.
+                bool isNonNullableValueType = valueType.IsValueType
+                    && Nullable.GetUnderlyingType(valueType) is null;
+                if (isNonNullableValueType)
+                {
+                    return failMethod.Invoke(null, [new IError[] { ResultJsonShape.MissingValueError() }]);
+                }
+
+                value = null;
+            }
+            else
+            {
+                value = valueToken.ToObject(valueType, serializer);
+            }
 
             // Call Result.Ok<T>(value) via reflection
             var okMethod = typeof(Result).GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
@@ -147,13 +144,10 @@ public class ResultGenericJsonConverter : JsonConverter
             return okMethod.Invoke(null, [value]);
         }
 
-        var errors = ResultJsonConverter.ReadErrors(obj["errors"]);
+        IReadOnlyList<IError> errors = NewtonsoftResultErrorSerializer.Read(obj[ResultJsonShape.Errors]);
+        if (errors.Count == 0)
+            errors = new IError[] { ResultJsonShape.MissingErrorsError() };
 
-        // Call Result.Fail<T>(errors) via reflection
-        var failMethod = typeof(Result).GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
-            .First(m => m.Name == "Fail" && m.IsGenericMethod && m.GetParameters().Length == 1
-                && m.GetParameters()[0].ParameterType == typeof(IEnumerable<IError>))
-            .MakeGenericMethod(valueType);
         return failMethod.Invoke(null, [errors]);
     }
 }
@@ -173,36 +167,105 @@ public class ResultJsonConverter<T> : JsonConverter<Result<T>>
         }
 
         writer.WriteStartObject();
-        writer.WritePropertyName("isSuccess");
+        writer.WritePropertyName(ResultJsonShape.IsSuccess);
         writer.WriteValue(value.IsSuccess);
 
         if (value.IsSuccess)
         {
-            writer.WritePropertyName("value");
+            writer.WritePropertyName(ResultJsonShape.Value);
             serializer.Serialize(writer, value.Value);
         }
+        else
+        {
+            writer.WritePropertyName(ResultJsonShape.Errors);
+            NewtonsoftResultErrorSerializer.Write(writer, value.Errors);
+        }
 
-        writer.WritePropertyName("errors");
-        ResultJsonConverter.WriteErrors(writer, value.Errors);
         writer.WriteEndObject();
     }
 
     public override Result<T>? ReadJson(JsonReader reader, Type objectType, Result<T>? existingValue, bool hasExistingValue, JsonSerializer serializer)
     {
+        if (reader.TokenType == JsonToken.Null)
+            return null;
+
         var obj = JObject.Load(reader);
-        var isSuccess = obj["isSuccess"]?.Value<bool>() ?? false;
+        var isSuccess = obj[ResultJsonShape.IsSuccess]?.Value<bool>() ?? false;
 
         if (isSuccess)
         {
-            var valueToken = obj["value"];
-            var value = valueToken is not null
-                ? valueToken.ToObject<T>(serializer)
-                : default;
+            if (!obj.TryGetValue(ResultJsonShape.Value, out JToken? valueToken))
+            {
+                // Corrupted payload: success but no value field. Convert to a failure with a
+                // synthetic error rather than silently returning Result.Ok(default(T)).
+                return Result.Fail<T>(ResultJsonShape.MissingValueError());
+            }
 
+            if (valueToken.Type == JTokenType.Null)
+            {
+                // Explicit null on a non-nullable value type (e.g. Result<int>) is corruption,
+                // not a legitimate "success carrying default(T)". Symmetric with the
+                // missing-value branch above.
+                if (typeof(T).IsValueType && Nullable.GetUnderlyingType(typeof(T)) is null)
+                {
+                    return Result.Fail<T>(ResultJsonShape.MissingValueError());
+                }
+
+                return Result.Ok(default(T)!);
+            }
+
+            T? value = valueToken.ToObject<T>(serializer);
             return Result.Ok(value!);
         }
 
-        var errors = ResultJsonConverter.ReadErrors(obj["errors"]);
+        IReadOnlyList<IError> errors = NewtonsoftResultErrorSerializer.Read(obj[ResultJsonShape.Errors]);
+        if (errors.Count == 0)
+            return Result.Fail<T>(ResultJsonShape.MissingErrorsError());
+
         return Result.Fail<T>(errors);
+    }
+}
+
+/// <summary>
+/// Newtonsoft.Json plumbing for the errors array. Lives outside <see cref="ResultJsonConverter{T}"/>
+/// so it isn't duplicated per closed <c>T</c>, and delegates to <see cref="ResultJsonShape"/> for
+/// the actual IError ↔ primitives mapping.
+/// </summary>
+internal static class NewtonsoftResultErrorSerializer
+{
+    public static void Write(JsonWriter writer, IReadOnlyList<IError> errors)
+    {
+        writer.WriteStartArray();
+        foreach (IError error in errors)
+        {
+            (string code, string message, ErrorType type) = ResultJsonShape.Project(error);
+
+            writer.WriteStartObject();
+            writer.WritePropertyName(ResultJsonShape.Code);
+            writer.WriteValue(code);
+            writer.WritePropertyName(ResultJsonShape.Message);
+            writer.WriteValue(message);
+            writer.WritePropertyName(ResultJsonShape.Type);
+            writer.WriteValue(type.ToString());
+            writer.WriteEndObject();
+        }
+        writer.WriteEndArray();
+    }
+
+    public static IReadOnlyList<IError> Read(JToken? errorsToken)
+    {
+        if (errorsToken is not JArray arr)
+            return Array.Empty<IError>();
+
+        List<IError> errors = new(arr.Count);
+        foreach (var item in arr)
+        {
+            errors.Add(ResultJsonShape.Hydrate(
+                item[ResultJsonShape.Code]?.Value<string>(),
+                item[ResultJsonShape.Message]?.Value<string>(),
+                item[ResultJsonShape.Type]?.Value<string>()));
+        }
+
+        return errors;
     }
 }

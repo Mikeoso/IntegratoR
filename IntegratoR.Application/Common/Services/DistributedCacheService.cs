@@ -1,4 +1,5 @@
 using System.Text.Json;
+using IntegratoR.Abstractions.Common.Results.SystemText;
 using IntegratoR.Abstractions.Interfaces.Services;
 using Microsoft.Extensions.Caching.Distributed;
 
@@ -20,10 +21,10 @@ namespace IntegratoR.Application.Common.Services;
 public class DistributedCacheService : ICacheService
 {
     private readonly IDistributedCache _cache;
-    private static readonly JsonSerializerOptions SerializerOptions = new()
+    private static readonly JsonSerializerOptions SerializerOptions = new JsonSerializerOptions
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-    };
+    }.AddResultConverters();
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DistributedCacheService"/> class.

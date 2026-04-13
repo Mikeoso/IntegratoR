@@ -2,6 +2,8 @@
 
   <ItemGroup>
     <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
+    <PackageReference Include="Microsoft.DurableTask.Abstractions" />
+    <PackageReference Include="Microsoft.DurableTask.Worker" />
   </ItemGroup>
 
   <ItemGroup>

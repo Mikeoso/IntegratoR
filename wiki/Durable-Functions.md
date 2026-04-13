@@ -1,14 +1,48 @@
 # Durable Functions
 
+The Durable Functions isolated worker SDK uses **System.Text.Json** to serialise activity inputs
+and outputs into the task hub. Without a custom converter, `Result<T>` cannot be deserialised on
+replay and activities throw *"JSON value could not be converted to FluentResults.Result..."*.
+
+**No setup required** — `services.AddIntegratoR(configuration)` automatically registers the
+`Result<T>` converters with `DurableTaskWorkerOptions.DataConverter`. Activities and
+orchestrators can return `Result<T>` and `Result` directly:
+
 ```csharp
-// Program.cs — register Result converters for Durable Functions serialisation
-JsonConvert.DefaultSettings = () => new JsonSerializerSettings
+// Program.cs — Result converters for Durable Functions are wired by AddIntegratoR
+services.AddIntegratoR(context.Configuration, integrator =>
 {
-    Converters = { new ResultJsonConverter(), new ResultGenericJsonConverter() }
-};
+    integrator.AddConsumerHandlers(clientAssembly);
+});
 ```
 
-Without these converters, `Result<T>` loses error metadata after orchestration replay.
+The registration is lazy: consumers not using Durable Functions never resolve
+`DurableTaskWorkerOptions` and pay zero runtime cost. Consumers who want to customise the
+data converter further can call `services.Configure<DurableTaskWorkerOptions>(...)` after
+`AddIntegratoR` — the last configurator wins.
+
+> **If you replace `DataConverter` with your own, call `jsonOptions.AddResultConverters()`
+> on the underlying `JsonSerializerOptions` to retain `Result<T>` round-tripping.** A
+> consumer who installs a fresh `JsonDataConverter(jsonOptions)` without this call loses
+> the auto-wired Result converters and reintroduces the original *"JSON value could not be
+> converted to FluentResults.Result..."* failure on activity replay.
+
+## Two JSON serialisers in this project
+
+IntegratoR uses **two** JSON serialisers and `Result<T>` needs converters in both:
+
+- **System.Text.Json** — the Durable Functions isolated worker SDK and `DistributedCacheService`.
+  Configured via `DurableTaskWorkerOptions.DataConverter` (above) and
+  `DistributedCacheService.SerializerOptions`. STJ converters live in
+  `IntegratoR.Abstractions/Common/Results/SystemText/`.
+- **Newtonsoft.Json** — the RELion API client (`[JsonProperty]` attributes,
+  `JsonConvert.DeserializeObject`) and HTTP trigger payloads. Configured globally via
+  `JsonConvert.DefaultSettings` in `Program.cs`. Newtonsoft converters live in
+  `IntegratoR.Abstractions/Common/Results/`.
+
+Both converter families delegate to the serialiser-agnostic `ResultJsonShape` helper for
+property names and the `IError ↔ (code, message, type)` mapping, so the JSON shape stays
+in lockstep across both.
 
 ## Activity Functions
 

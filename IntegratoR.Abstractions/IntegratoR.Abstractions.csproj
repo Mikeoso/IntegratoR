@@ -6,4 +6,8 @@
     <PackageReference Include="Newtonsoft.Json" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="IntegratoR.Abstractions.Tests" />
+  </ItemGroup>
+
 </Project>
