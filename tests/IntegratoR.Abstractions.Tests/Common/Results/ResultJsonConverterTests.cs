@@ -78,6 +78,21 @@ public sealed class ResultJsonConverterTests
     }
 
     /// <summary>
+    /// Verifies that the JSON literal <c>null</c> deserialises to a null <see cref="Result"/>
+    /// rather than throwing on JObject.Load. WriteJson emits null for a null Result, so the
+    /// reader must accept it symmetrically.
+    /// </summary>
+    [Fact]
+    public void ReadJson_NullJsonPayload_ReturnsNull()
+    {
+        // Act
+        var result = JsonConvert.DeserializeObject<Result>("null", Settings);
+
+        // Assert
+        result.Should().BeNull();
+    }
+
+    /// <summary>
     /// Verifies that a JSON string representing a successful result deserializes to <c>Result.Ok()</c>.
     /// </summary>
     [Fact]

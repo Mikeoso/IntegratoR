@@ -393,4 +393,64 @@ public sealed class ResultJsonConverterTests
         IntegrationError error = (IntegrationError)result.Errors[0];
         error.Code.Should().Be("Serialization.MissingErrors");
     }
+
+    /// <summary>
+    /// Verifies that a JSON literal <c>null</c> payload deserialises to a null Result&lt;T&gt;
+    /// rather than throwing. Symmetric with Write which emits null for a null Result&lt;T&gt;.
+    /// </summary>
+    [Fact]
+    public void Read_NullJsonPayload_ReturnsNull()
+    {
+        // Arrange
+        JsonSerializerOptions options = BuildOptions();
+
+        // Act
+        Result<int>? result = JsonSerializer.Deserialize<Result<int>>("null", options);
+
+        // Assert
+        result.Should().BeNull();
+    }
+
+    /// <summary>
+    /// Verifies that an explicit <c>"value": null</c> on a non-nullable value type (e.g.
+    /// Result&lt;int&gt;) is treated as corruption and returns a failed Result with the
+    /// MissingValue synthetic error — rather than silently returning Result.Ok(0).
+    /// Symmetric with the missing-value-field handling.
+    /// </summary>
+    [Fact]
+    public void Read_SuccessJsonExplicitNullValueOnNonNullableValueType_ReturnsFailedResult()
+    {
+        // Arrange
+        JsonSerializerOptions options = BuildOptions();
+        string corruptedJson = "{\"isSuccess\":true,\"value\":null}";
+
+        // Act
+        Result<int>? result = JsonSerializer.Deserialize<Result<int>>(corruptedJson, options);
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.IsFailed.Should().BeTrue();
+        IntegrationError error = (IntegrationError)result.Errors[0];
+        error.Code.Should().Be("Serialization.MissingValue");
+    }
+
+    /// <summary>
+    /// Verifies that an explicit <c>"value": null</c> on a nullable value type
+    /// (e.g. Result&lt;int?&gt;) is still legitimate and round-trips as Result.Ok(null).
+    /// </summary>
+    [Fact]
+    public void Read_SuccessJsonExplicitNullValueOnNullableValueType_ReturnsSuccessfulNullResult()
+    {
+        // Arrange
+        JsonSerializerOptions options = BuildOptions();
+        string json = "{\"isSuccess\":true,\"value\":null}";
+
+        // Act
+        Result<int?>? result = JsonSerializer.Deserialize<Result<int?>>(json, options);
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.IsSuccess.Should().BeTrue();
+        result.Value.Should().BeNull();
+    }
 }

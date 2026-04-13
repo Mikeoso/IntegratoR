@@ -34,6 +34,9 @@ public class ResultJsonConverter : JsonConverter<Result>
 
     public override Result? ReadJson(JsonReader reader, Type objectType, Result? existingValue, bool hasExistingValue, JsonSerializer serializer)
     {
+        if (reader.TokenType == JsonToken.Null)
+            return null;
+
         var obj = JObject.Load(reader);
         var isSuccess = obj[ResultJsonShape.IsSuccess]?.Value<bool>() ?? false;
 
@@ -93,6 +96,9 @@ public class ResultGenericJsonConverter : JsonConverter
 
     public override object? ReadJson(JsonReader reader, Type objectType, object? existingValue, JsonSerializer serializer)
     {
+        if (reader.TokenType == JsonToken.Null)
+            return null;
+
         var obj = JObject.Load(reader);
         var isSuccess = obj[ResultJsonShape.IsSuccess]?.Value<bool>() ?? false;
         var valueType = objectType.GetGenericArguments()[0];
@@ -111,9 +117,25 @@ public class ResultGenericJsonConverter : JsonConverter
                 return failMethod.Invoke(null, [new IError[] { ResultJsonShape.MissingValueError() }]);
             }
 
-            var value = valueToken.Type == JTokenType.Null
-                ? null
-                : valueToken.ToObject(valueType, serializer);
+            object? value;
+            if (valueToken.Type == JTokenType.Null)
+            {
+                // Explicit null on a non-nullable value type (e.g. Result<int>) is corruption,
+                // not a legitimate "success carrying default(T)". Symmetric with the
+                // missing-value branch above.
+                bool isNonNullableValueType = valueType.IsValueType
+                    && Nullable.GetUnderlyingType(valueType) is null;
+                if (isNonNullableValueType)
+                {
+                    return failMethod.Invoke(null, [new IError[] { ResultJsonShape.MissingValueError() }]);
+                }
+
+                value = null;
+            }
+            else
+            {
+                value = valueToken.ToObject(valueType, serializer);
+            }
 
             // Call Result.Ok<T>(value) via reflection
             var okMethod = typeof(Result).GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
@@ -164,6 +186,9 @@ public class ResultJsonConverter<T> : JsonConverter<Result<T>>
 
     public override Result<T>? ReadJson(JsonReader reader, Type objectType, Result<T>? existingValue, bool hasExistingValue, JsonSerializer serializer)
     {
+        if (reader.TokenType == JsonToken.Null)
+            return null;
+
         var obj = JObject.Load(reader);
         var isSuccess = obj[ResultJsonShape.IsSuccess]?.Value<bool>() ?? false;
 
@@ -176,10 +201,20 @@ public class ResultJsonConverter<T> : JsonConverter<Result<T>>
                 return Result.Fail<T>(ResultJsonShape.MissingValueError());
             }
 
-            T? value = valueToken.Type == JTokenType.Null
-                ? default
-                : valueToken.ToObject<T>(serializer);
+            if (valueToken.Type == JTokenType.Null)
+            {
+                // Explicit null on a non-nullable value type (e.g. Result<int>) is corruption,
+                // not a legitimate "success carrying default(T)". Symmetric with the
+                // missing-value branch above.
+                if (typeof(T).IsValueType && Nullable.GetUnderlyingType(typeof(T)) is null)
+                {
+                    return Result.Fail<T>(ResultJsonShape.MissingValueError());
+                }
 
+                return Result.Ok(default(T)!);
+            }
+
+            T? value = valueToken.ToObject<T>(serializer);
             return Result.Ok(value!);
         }
 

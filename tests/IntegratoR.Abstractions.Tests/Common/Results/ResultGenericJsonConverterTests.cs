@@ -146,4 +146,40 @@ public sealed class ResultGenericJsonConverterTests
         error.Message.Should().Be("Generic failure");
         error.Type.Should().Be(ErrorType.Failure);
     }
+
+    /// <summary>
+    /// Verifies that the JSON literal <c>null</c> deserialises to a null Result&lt;T&gt; rather
+    /// than throwing on JObject.Load.
+    /// </summary>
+    [Fact]
+    public void ReadJson_NullJsonPayload_ReturnsNull()
+    {
+        // Act
+        var result = JsonConvert.DeserializeObject<Result<int>>("null", Settings);
+
+        // Assert
+        result.Should().BeNull();
+    }
+
+    /// <summary>
+    /// Verifies that an explicit <c>"value": null</c> on a non-nullable value type is treated
+    /// as corruption and returns Result.Fail with the MissingValue synthetic error rather than
+    /// crashing inside the reflection-based Result.Ok&lt;int&gt;(null) call.
+    /// </summary>
+    [Fact]
+    public void ReadJson_SuccessJsonExplicitNullValueOnNonNullableValueType_ReturnsFailedResult()
+    {
+        // Arrange
+        var json = "{\"isSuccess\":true,\"value\":null}";
+
+        // Act
+        var result = JsonConvert.DeserializeObject<Result<int>>(json, Settings);
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.IsFailed.Should().BeTrue();
+        var error = result.Errors.OfType<IntegrationError>().FirstOrDefault();
+        error.Should().NotBeNull();
+        error!.Code.Should().Be("Serialization.MissingValue");
+    }
 }

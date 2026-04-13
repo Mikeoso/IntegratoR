@@ -68,10 +68,20 @@ public sealed class ResultJsonConverter<T> : JsonConverter<Result<T>>
                 return Result.Fail<T>(ResultJsonShape.MissingValueError());
             }
 
-            T? value = valueElement.ValueKind == JsonValueKind.Null
-                ? default
-                : valueElement.Deserialize<T>(options);
+            if (valueElement.ValueKind == JsonValueKind.Null)
+            {
+                // Explicit null on a non-nullable value type (e.g. Result<int>) is corruption,
+                // not a legitimate "success carrying default(T)". Symmetric with the
+                // missing-value branch above.
+                if (typeof(T).IsValueType && Nullable.GetUnderlyingType(typeof(T)) is null)
+                {
+                    return Result.Fail<T>(ResultJsonShape.MissingValueError());
+                }
 
+                return Result.Ok(default(T)!);
+            }
+
+            T? value = valueElement.Deserialize<T>(options);
             return Result.Ok(value!);
         }
 

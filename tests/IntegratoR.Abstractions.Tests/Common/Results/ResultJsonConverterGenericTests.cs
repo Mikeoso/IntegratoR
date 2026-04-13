@@ -147,4 +147,45 @@ public sealed class ResultJsonConverterGenericTests
         error.Message.Should().Be("A message");
         error.Type.Should().Be(ErrorType.Validation);
     }
+
+    /// <summary>
+    /// Verifies that the JSON literal <c>null</c> deserialises to a null Result&lt;T&gt; rather
+    /// than throwing on JObject.Load. WriteJson emits null for a null Result&lt;T&gt;, so the
+    /// reader must accept it symmetrically.
+    /// </summary>
+    [Fact]
+    public void ReadJson_NullJsonPayload_ReturnsNull()
+    {
+        // Arrange
+        var settings = BuildSettings<int>();
+
+        // Act
+        var result = JsonConvert.DeserializeObject<Result<int>>("null", settings);
+
+        // Assert
+        result.Should().BeNull();
+    }
+
+    /// <summary>
+    /// Verifies that an explicit <c>"value": null</c> on a non-nullable value type is treated
+    /// as corruption and returns Result.Fail with the MissingValue synthetic error rather than
+    /// silently producing Result.Ok(0).
+    /// </summary>
+    [Fact]
+    public void ReadJson_SuccessJsonExplicitNullValueOnNonNullableValueType_ReturnsFailedResult()
+    {
+        // Arrange
+        var settings = BuildSettings<int>();
+        var json = "{\"isSuccess\":true,\"value\":null}";
+
+        // Act
+        var result = JsonConvert.DeserializeObject<Result<int>>(json, settings);
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.IsFailed.Should().BeTrue();
+        var error = result.Errors.OfType<IntegrationError>().FirstOrDefault();
+        error.Should().NotBeNull();
+        error!.Code.Should().Be("Serialization.MissingValue");
+    }
 }
