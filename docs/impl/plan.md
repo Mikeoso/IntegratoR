@@ -91,24 +91,27 @@ All three experts unanimously reject this option:
 
 This eliminates the "central migration challenge" that originally estimated 5-8 weeks. The interfaces can potentially be preserved as-is.
 
-### 4.4 Critical Landmine: Property Name Resolution
+### 4.4 ✅ RESOLVED — Property Name Resolution
 
-**PanoramicData's expression parser uses CLR property names, not `[JsonPropertyName]` values.**
+**Status:** Fixed via `IntegratoR.OData.Common.Filters.IntegratoRODataExpressionTranslator`. See PR adding "Honour [JsonPropertyName] in OData filter expressions".
 
-Example from `LedgerJournalHeader`:
+**The problem (preserved for posterity):** PanoramicData's expression parser used `MemberInfo.Name` directly and ignored `[JsonPropertyName]`. Example from `LedgerJournalHeader`:
 ```csharp
 [JsonPropertyName("dataAreaId")]  // OData expects: dataAreaId
 public required string DataAreaId { get; set; }  // CLR name: DataAreaId
 ```
+`x => x.DataAreaId == "USMF"` produced `$filter=DataAreaId eq 'USMF'` instead of `$filter=dataAreaId eq 'USMF'`. D365 F&O is case-sensitive and rejected/ignored the filter.
 
-The expression `x => x.DataAreaId == "USMF"` would produce `$filter=DataAreaId eq 'USMF'` when D365 F&O expects `$filter=dataAreaId eq 'USMF'`. **This will break for any entity where CLR name != OData property name.**
+**Scope:** Confirmed via metadata.xml inventory: D365 F&O has **479 camelCase fields against 19,604 PascalCase**. The legacy X++ system fields (`dataAreaId`, `validFrom`, `validTo`, `inventDimId`, `recId`-family, `itemId`, `custAccount`, `transDate`, etc.) are camelCase on almost every company-scoped table.
 
-**Solutions (ranked by pragmatism):**
+**The fix:** A standalone expression translator in IntegratoR (`IntegratoRODataExpressionTranslator`) — derived from PanoramicData's own `ODataQueryBuilder.ExpressionParsing.cs` and `ODataQueryBuilder.LambdaParsing.cs` (MIT, copyright Panoramic Data Limited; full attribution in `THIRD_PARTY_LICENSES.md`) — patches the `MemberInfo.Name` reads to consult `[JsonPropertyName]` first via a cached `ResolveJsonName` helper. `ODataClientAdapter` calls the translator before invoking PanoramicData's string-based `Filter(string)` / `Select(string)` / `Expand(string)` overloads, bypassing the broken expression parser entirely. Public API (`IODataService<T>.FindAsync(Expression<Func<T, bool>>)`) is unchanged — consumers do not need to modify any code.
 
-1. **Configure `JsonNamingPolicy.CamelCase`** on `ODataClientOptions.JsonSerializerOptions` — if PanoramicData uses this for expression resolution, it fixes `DataAreaId` → `dataAreaId` globally. Must verify in spike.
-2. **Contribute to PanoramicData** — add `[JsonPropertyName]` attribute support in `GetMemberPath()`. Surgical change, MIT-licensed, active maintainer.
-3. **Rename CLR properties** to match OData names — ugly, violates C# conventions, large ripple.
-4. **Switch to string-based filters** — nuclear option, ripples through all interfaces and consumers.
+**Solutions evaluated (do not revisit):**
+
+1. ❌ ~~**Configure `JsonNamingPolicy.CamelCase`**~~ — catastrophic. With 479 camelCase vs 19,604 PascalCase fields, applying global camelCase breaks 97.6% of fields to fix 2.4%.
+2. ✅ **Contribute to PanoramicData** — pursued in parallel as a long-term upstream fix. When merged and released, the in-tree translator can be deleted and the adapter can revert to `query.Filter(expression)`.
+3. ❌ **Rename CLR properties** — would scale poorly (every new entity brings new camelCase fields), proliferating pragma suppressions, breaking changes per consumer, Application Insights / KQL queries break.
+4. ❌ **Switch to string-based filters** — explicitly rejected: consumers should not write raw OData filter strings.
 
 ### 4.5 Additional Gaps Identified
 

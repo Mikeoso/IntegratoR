@@ -333,9 +333,7 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
             var keyDict = new Dictionary<string, object>();
             for (var i = 0; i < keyProperties.Length; i++)
             {
-                var jsonName = keyProperties[i].GetCustomAttribute<System.Text.Json.Serialization.JsonPropertyNameAttribute>()?.Name
-                    ?? keyProperties[i].Name;
-                keyDict[jsonName] = keyValues[i];
+                keyDict[PropertyNameResolver.Resolve(keyProperties[i])] = keyValues[i];
             }
             return keyDict;
         }
@@ -403,7 +401,7 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
             .Select(p =>
             {
                 var odataField = p.GetCustomAttribute<ODataFieldAttribute>();
-                var payloadName = p.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? p.Name;
+                var payloadName = PropertyNameResolver.Resolve(p);
                 var defaultValue = p.PropertyType.IsValueType
                     ? Activator.CreateInstance(p.PropertyType)
                     : null;
