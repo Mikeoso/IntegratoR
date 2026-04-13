@@ -110,7 +110,7 @@ public required string DataAreaId { get; set; }  // CLR name: DataAreaId
 
 1. ❌ ~~**Configure `JsonNamingPolicy.CamelCase`**~~ — catastrophic. With 479 camelCase vs 19,604 PascalCase fields, applying global camelCase breaks 97.6% of fields to fix 2.4%.
 2. ✅ **Contribute to PanoramicData** — pursued in parallel as a long-term upstream fix. When merged and released, the in-tree translator can be deleted and the adapter can revert to `query.Filter(expression)`.
-3. ❌ **Rename CLR properties** — would scale poorly (every new entity brings new camelCase fields), wuchering pragma suppressions, breaking changes per consumer, Application Insights / KQL queries break.
+3. ❌ **Rename CLR properties** — would scale poorly (every new entity brings new camelCase fields), proliferating pragma suppressions, breaking changes per consumer, Application Insights / KQL queries break.
 4. ❌ **Switch to string-based filters** — explicitly rejected: consumers should not write raw OData filter strings.
 
 ### 4.5 Additional Gaps Identified

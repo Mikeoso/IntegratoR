@@ -58,10 +58,23 @@ internal static class IntegratoRODataExpressionTranslator
     /// <summary>
     /// Converts a member selector expression into a comma-separated OData <c>$select</c> field list.
     /// </summary>
+    /// <exception cref="NotSupportedException">
+    /// Thrown when the selector shape does not resolve to any selectable members (e.g. an
+    /// unsupported expression form). Failing fast prevents emitting an invalid <c>$select=</c>
+    /// query parameter that the OData server would reject with a less helpful error.
+    /// </exception>
     public static string ToSelectString<T>(Expression<Func<T, object>> selector)
     {
         ArgumentNullException.ThrowIfNull(selector);
         var members = GetMemberNames(selector.Body);
+
+        if (members.Count == 0)
+        {
+            throw new NotSupportedException(
+                $"The select expression '{selector}' did not resolve to any selectable OData members. " +
+                "Use a property access (x => x.Property) or an anonymous type (x => new { x.A, x.B }).");
+        }
+
         return string.Join(",", members);
     }
 
@@ -69,11 +82,22 @@ internal static class IntegratoRODataExpressionTranslator
     /// Converts a navigation selector expression into an OData <c>$expand</c> clause supporting
     /// nested expand and per-segment <c>$select</c>.
     /// </summary>
+    /// <exception cref="NotSupportedException">
+    /// Thrown when the selector shape does not resolve to any expand paths.
+    /// </exception>
     public static string ToExpandString<T>(Expression<Func<T, object>> selector)
     {
         ArgumentNullException.ThrowIfNull(selector);
         var pathInfos = GetExpandMemberPathsWithInfo(selector.Body);
         var fields = BuildNestedExpandFieldsWithInfo(pathInfos);
+
+        if (fields.Count == 0)
+        {
+            throw new NotSupportedException(
+                $"The expand expression '{selector}' did not resolve to any OData expand paths. " +
+                "Use a navigation property access (x => x.Navigation) or an anonymous type of navigation properties.");
+        }
+
         return string.Join(",", fields);
     }
 
@@ -142,9 +166,13 @@ internal static class IntegratoRODataExpressionTranslator
             return result;
         }
 
+        // preferInterpretation: true avoids System.Reflection.Emit.DynamicMethod, which is
+        // broken on .NET 10 preview for some closure shapes (throws InvalidProgramException).
+        // The interpreter is slower per-call but only fires on cold paths the reflection fast
+        // path can't handle.
         var objectMember = Expression.Convert(expression, typeof(object));
         var getterLambda = Expression.Lambda<Func<object>>(objectMember);
-        var getter = getterLambda.Compile();
+        var getter = getterLambda.Compile(preferInterpretation: true);
         return getter();
     }
 
@@ -171,14 +199,25 @@ internal static class IntegratoRODataExpressionTranslator
             current = memberExpr.Expression;
         }
 
-        if (current is not ConstantExpression constant)
+        // Two valid roots: a ConstantExpression (closure capture / instance member chain) or
+        // null (static field/property — memberExpr.Expression is null when the member is static).
+        // Without the static-root branch, static-field accesses would fall through to the
+        // Expression.Compile() path which is broken on .NET 10 preview for some shapes.
+        object? value;
+        if (current is ConstantExpression constant)
+        {
+            value = constant.Value;
+        }
+        else if (current is null && memberChain.Count > 0)
+        {
+            value = null; // static root — first member must be FieldInfo/PropertyInfo with no instance
+        }
+        else
         {
             return false;
         }
 
-        object? value = constant.Value;
-
-        while (memberChain.Count > 0 && value is not null)
+        while (memberChain.Count > 0)
         {
             var member = memberChain.Pop();
 
@@ -188,6 +227,13 @@ internal static class IntegratoRODataExpressionTranslator
                 PropertyInfo prop => prop.GetValue(value),
                 _ => null
             };
+
+            // After the first hop, any further member access on a null instance is invalid.
+            // (Walking deeper would NRE inside reflection.) Return what we have so far.
+            if (value is null && memberChain.Count > 0)
+            {
+                return false;
+            }
         }
 
         result = value;
@@ -378,23 +424,42 @@ internal static class IntegratoRODataExpressionTranslator
 
         var objectMember = Expression.Convert(member, typeof(object));
         var getterLambda = Expression.Lambda<Func<object>>(objectMember);
-        var getter = getterLambda.Compile();
+        var getter = getterLambda.Compile(preferInterpretation: true);
         return getter();
     }
 
+    // Numeric and date/time values are formatted with InvariantCulture so the emitted OData
+    // literals are valid regardless of the host process's CurrentCulture (e.g. a German locale
+    // would otherwise emit "1,23" for a decimal, which is not a valid OData numeric literal).
+    //
     // The Enum arm is intentionally absent: C# `==` comparisons on enum properties get
-    // compiled with Convert(enum, int) on both sides, and ParseBinaryExpression strips
-    // Convert before reaching FormatValue. The emitted form is the underlying integer
-    // (e.g. `Status eq 1`), which D365 F&O OData accepts. Locked in by
+    // compiled with Convert(enum, int) on both sides, and ParseBinaryExpression strips Convert
+    // before reaching FormatValue. The emitted form is the underlying integer (e.g.
+    // `Status eq 1`), which D365 F&O OData accepts. Locked in by
     // ToFilterString_EnumComparison_EmitsUnderlyingIntegerValue.
     private static string FormatValue(object? value) => value switch
     {
         null => "null",
         string s => $"'{s.Replace("'", "''")}'",
-        bool b => b.ToString().ToLowerInvariant(),
+        bool b => b ? "true" : "false",
+        byte by => by.ToString(CultureInfo.InvariantCulture),
+        sbyte sb => sb.ToString(CultureInfo.InvariantCulture),
+        short sh => sh.ToString(CultureInfo.InvariantCulture),
+        ushort us => us.ToString(CultureInfo.InvariantCulture),
+        int i => i.ToString(CultureInfo.InvariantCulture),
+        uint ui => ui.ToString(CultureInfo.InvariantCulture),
+        long l => l.ToString(CultureInfo.InvariantCulture),
+        ulong ul => ul.ToString(CultureInfo.InvariantCulture),
+        float f => f.ToString("R", CultureInfo.InvariantCulture),
+        double d => d.ToString("R", CultureInfo.InvariantCulture),
+        decimal m => m.ToString(CultureInfo.InvariantCulture),
         DateTime dt => FormatDateTime(dt),
         DateTimeOffset dto => $"{dto.UtcDateTime:yyyy-MM-ddTHH:mm:ssZ}",
+        DateOnly d => d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+        TimeOnly t => t.ToString("HH:mm:ss.fffffff", CultureInfo.InvariantCulture),
+        TimeSpan ts => $"duration'{System.Xml.XmlConvert.ToString(ts)}'",
         Guid g => g.ToString(),
+        IFormattable formattable => formattable.ToString(null, CultureInfo.InvariantCulture),
         _ => value.ToString() ?? "null"
     };
 

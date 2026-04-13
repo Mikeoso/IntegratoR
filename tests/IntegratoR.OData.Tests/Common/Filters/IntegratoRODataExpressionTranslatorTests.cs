@@ -31,6 +31,9 @@ public sealed class IntegratoRODataExpressionTranslatorTests
         public bool IsPosted { get; set; }
         public DateTime TransDate { get; set; }
         public DateTimeOffset CreatedAt { get; set; }
+        public DateOnly DueDate { get; set; }
+        public long LineCount { get; set; }
+        public Guid RecordId { get; set; }
         public Status Status { get; set; }
         public NestedNavigation? Nested { get; set; }
     }
@@ -254,8 +257,8 @@ public sealed class IntegratoRODataExpressionTranslatorTests
     /// Enum comparisons via <c>==</c> get compiled by C# with an implicit Convert-to-underlying-type
     /// on both sides. The translator (matching PanoramicData) strips the Convert and emits the
     /// integer value. D365 F&O OData accepts integer enum values in $filter, so this is correct.
-    /// To force the named-string form, callers must wrap the constant: <c>x.Status.Equals(Status.Posted)</c>
-    /// (which produces a method-call expression that preserves the enum type).
+    /// The named-string form (<c>'Posted'</c>) is not currently supported by the translator —
+    /// callers should rely on the integer form shown here.
     /// </summary>
     [Fact]
     public void ToFilterString_EnumComparison_EmitsUnderlyingIntegerValue()
@@ -425,13 +428,29 @@ public sealed class IntegratoRODataExpressionTranslatorTests
     }
 
     // -----------------------------------------------------------------------------------------
-    // ADDITIONAL VALUE TYPES
+    // COLLECTION CONTAINS → "in" CLAUSE
     //
-    // NOTE: Coverage for collection-Contains → OData `in (...)` clause is intentionally
-    // omitted here. Verified empirically: static readonly fields and inline NewArrayExpression
-    // literals both fail with InvalidProgramException — the Contains-as-in path falls back to
-    // Expression.Compile() for the collection argument, which is broken on .NET 10 preview for
-    // all tested shapes. Re-add when the underlying runtime issue is fixed.
+    // Use a List<T> (or any IEnumerable<T> reference type) for the collection. On .NET 10 the
+    // C# compiler prefers MemoryExtensions.Contains<T>(ReadOnlySpan<T>, T) over
+    // Enumerable.Contains<T>(IEnumerable<T>, T) when the receiver is T[], and ReadOnlySpan<T>
+    // is byref-like which neither the interpreter nor TryEvaluateWithReflection can hydrate.
+    // List<T> avoids the span overload entirely.
+    // -----------------------------------------------------------------------------------------
+
+    private static readonly List<string> StaticCompanies = ["USMF", "DEMF", "GBSI"];
+
+    [Fact]
+    public void ToFilterString_StaticListContainsProperty_EmitsInClauseWithJsonName()
+    {
+        Expression<Func<JournalEntity, bool>> filter = x => StaticCompanies.Contains(x.DataAreaId);
+
+        var result = IntegratoRODataExpressionTranslator.ToFilterString(filter);
+
+        result.Should().Be("dataAreaId in ('USMF','DEMF','GBSI')");
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // ADDITIONAL VALUE TYPES
     // -----------------------------------------------------------------------------------------
 
     [Fact]
@@ -455,6 +474,87 @@ public sealed class IntegratoRODataExpressionTranslatorTests
         // Expected emits the moment normalised to UTC (12:30Z), proving FormatValue's
         // DateTimeOffset arm converts to UtcDateTime before formatting.
         result.Should().Be("CreatedAt eq 2026-04-13T12:30:00Z");
+    }
+
+    /// <summary>
+    /// Decimal literals must use InvariantCulture — without that, a German-locale process would
+    /// emit "1,23" instead of "1.23" and D365 would reject the filter as an invalid numeric literal.
+    /// This test runs under the test process's culture but the expectation is that the translator
+    /// is culture-independent, so the result is the same in any locale.
+    /// </summary>
+    [Fact]
+    public void ToFilterString_DecimalComparison_UsesInvariantCulture()
+    {
+        Expression<Func<JournalEntity, bool>> filter = x => x.Amount > 1234.56m;
+
+        var result = IntegratoRODataExpressionTranslator.ToFilterString(filter);
+
+        result.Should().Be("Amount gt 1234.56");
+    }
+
+    [Fact]
+    public void ToFilterString_LongComparison_UsesInvariantCulture()
+    {
+        long threshold = 9_999_999_999L;
+        Expression<Func<JournalEntity, bool>> filter = x => x.LineCount > threshold;
+
+        var result = IntegratoRODataExpressionTranslator.ToFilterString(filter);
+
+        result.Should().Be("LineCount gt 9999999999");
+    }
+
+    [Fact]
+    public void ToFilterString_DateOnlyComparison_EmitsIsoDateOnly()
+    {
+        var due = new DateOnly(2026, 4, 13);
+        Expression<Func<JournalEntity, bool>> filter = x => x.DueDate == due;
+
+        var result = IntegratoRODataExpressionTranslator.ToFilterString(filter);
+
+        result.Should().Be("DueDate eq 2026-04-13");
+    }
+
+    [Fact]
+    public void ToFilterString_GuidComparison_EmitsBareGuid()
+    {
+        var id = new Guid("a3a8b7e3-1c2f-4a5b-9c0d-1e2f3a4b5c6d");
+        Expression<Func<JournalEntity, bool>> filter = x => x.RecordId == id;
+
+        var result = IntegratoRODataExpressionTranslator.ToFilterString(filter);
+
+        result.Should().Be("RecordId eq a3a8b7e3-1c2f-4a5b-9c0d-1e2f3a4b5c6d");
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // EMPTY SELECT/EXPAND GUARDS
+    // -----------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// A select expression that doesn't resolve to any selectable members must throw rather
+    /// than silently producing <c>$select=</c> with an empty list (which the OData server would
+    /// reject with a less helpful error).
+    /// </summary>
+    [Fact]
+    public void ToSelectString_UnsupportedShape_Throws()
+    {
+        // Constant-only selector — no member access, so GetMemberNames returns []
+        Expression<Func<JournalEntity, object>> selector = x => "literal";
+
+        Action act = () => IntegratoRODataExpressionTranslator.ToSelectString(selector);
+
+        act.Should().Throw<NotSupportedException>()
+            .WithMessage("*did not resolve to any selectable OData members*");
+    }
+
+    [Fact]
+    public void ToExpandString_UnsupportedShape_Throws()
+    {
+        Expression<Func<JournalEntity, object>> selector = x => "literal";
+
+        Action act = () => IntegratoRODataExpressionTranslator.ToExpandString(selector);
+
+        act.Should().Throw<NotSupportedException>()
+            .WithMessage("*did not resolve to any OData expand paths*");
     }
 
     // -----------------------------------------------------------------------------------------
