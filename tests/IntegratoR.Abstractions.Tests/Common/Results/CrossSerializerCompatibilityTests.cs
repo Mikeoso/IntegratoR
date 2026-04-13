@@ -157,4 +157,41 @@ public sealed class CrossSerializerCompatibilityTests
         roundTripped!.IsFailed.Should().BeTrue();
         ((IntegrationError)roundTripped.Errors[0]).Code.Should().Be("X");
     }
+
+    /// <summary>
+    /// Non-generic successful <see cref="Result"/>: Newtonsoft writes, STJ reads. Pins the
+    /// success-path cross-serialiser contract that was previously only implicitly covered.
+    /// </summary>
+    [Fact]
+    public void Newtonsoft_Write_Stj_Read_NonGenericSuccessResult_RoundTrips()
+    {
+        // Arrange
+        Result original = Result.Ok();
+
+        // Act
+        string json = Newtonsoft.Json.JsonConvert.SerializeObject(original, NewtonsoftSettings);
+        Result? roundTripped = System.Text.Json.JsonSerializer.Deserialize<Result>(json, StjOptions());
+
+        // Assert
+        roundTripped.Should().NotBeNull();
+        roundTripped!.IsSuccess.Should().BeTrue();
+    }
+
+    /// <summary>
+    /// Non-generic successful <see cref="Result"/>: STJ writes, Newtonsoft reads.
+    /// </summary>
+    [Fact]
+    public void Stj_Write_Newtonsoft_Read_NonGenericSuccessResult_RoundTrips()
+    {
+        // Arrange
+        Result original = Result.Ok();
+
+        // Act
+        string json = System.Text.Json.JsonSerializer.Serialize(original, StjOptions());
+        Result? roundTripped = Newtonsoft.Json.JsonConvert.DeserializeObject<Result>(json, NewtonsoftSettings);
+
+        // Assert
+        roundTripped.Should().NotBeNull();
+        roundTripped!.IsSuccess.Should().BeTrue();
+    }
 }

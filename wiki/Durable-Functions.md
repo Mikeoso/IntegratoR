@@ -21,6 +21,12 @@ The registration is lazy: consumers not using Durable Functions never resolve
 data converter further can call `services.Configure<DurableTaskWorkerOptions>(...)` after
 `AddIntegratoR` — the last configurator wins.
 
+> **If you replace `DataConverter` with your own, call `jsonOptions.AddResultConverters()`
+> on the underlying `JsonSerializerOptions` to retain `Result<T>` round-tripping.** A
+> consumer who installs a fresh `JsonDataConverter(jsonOptions)` without this call loses
+> the auto-wired Result converters and reintroduces the original *"JSON value could not be
+> converted to FluentResults.Result..."* failure on activity replay.
+
 ## Two JSON serialisers in this project
 
 IntegratoR uses **two** JSON serialisers and `Result<T>` needs converters in both:

@@ -197,6 +197,40 @@ public class ServiceCollectionExtensionsTests
         reconstructed.Type.Should().Be(ErrorType.Failure);
     }
 
+    /// <summary>
+    /// Verifies that calling AddIntegratoR twice on the same service collection does not break
+    /// the Durable Functions data converter wiring. Two Configure&lt;DurableTaskWorkerOptions&gt;
+    /// actions stack and both fire on resolution; the last one wins. Either way the resolved
+    /// options must still carry a working JsonDataConverter that round-trips Result&lt;T&gt;.
+    /// </summary>
+    [Fact]
+    public void AddIntegratoR_CalledTwice_DurableTaskDataConverterStillRoundTripsResult()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddLogging();
+        IConfiguration configuration = CreateMinimalConfiguration();
+
+        // Act
+        services.AddIntegratoR(configuration);
+        services.AddIntegratoR(configuration);
+
+        // Assert
+        ServiceProvider provider = services.BuildServiceProvider();
+        DurableTaskWorkerOptions options = provider.GetRequiredService<IOptions<DurableTaskWorkerOptions>>().Value;
+        options.DataConverter.Should().BeOfType<JsonDataConverter>();
+
+        var error = new IntegrationError("Activity.Failed", "fail", ErrorType.Failure);
+        Result<string> original = Result.Fail<string>(error);
+
+        string? serialised = options.DataConverter.Serialize(original);
+        Result<string>? roundTripped = options.DataConverter.Deserialize(serialised, typeof(Result<string>)) as Result<string>;
+
+        roundTripped.Should().NotBeNull();
+        roundTripped!.IsFailed.Should().BeTrue();
+        ((IntegrationError)roundTripped.Errors[0]).Code.Should().Be("Activity.Failed");
+    }
+
     [Fact]
     public void AddIntegratoR_ODataSettings_BoundFromConfiguration()
     {

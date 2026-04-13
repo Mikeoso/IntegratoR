@@ -20,6 +20,12 @@ namespace Microsoft.Extensions.DependencyInjection;
 /// </summary>
 public static class IntegratoRServiceCollectionExtensions
 {
+    // Shared JsonSerializerOptions for the Durable Task data converter. STJ caches per-instance
+    // converter metadata on the options, so a single static readonly instance keeps that cache
+    // warm across the lifetime of the host. Matches the pattern in DistributedCacheService.
+    private static readonly JsonSerializerOptions DurableTaskJsonOptions =
+        new JsonSerializerOptions(JsonSerializerDefaults.Web).AddResultConverters();
+
     /// <summary>
     /// Registers core IntegratoR framework services (Application, OData, F&amp;O) with default settings.
     /// Optional modules such as RELion must be registered separately.
@@ -56,12 +62,12 @@ public static class IntegratoRServiceCollectionExtensions
         //    converters with the Durable Task worker so activities and orchestrators returning
         //    Result<T>/Result round-trip through the task hub. The Configure call is lazy:
         //    consumers not using Durable Functions never resolve DurableTaskWorkerOptions and
-        //    pay zero runtime cost.
+        //    pay zero runtime cost (the package reference itself is unconditional, but the
+        //    Microsoft.DurableTask.* packages are tiny and almost always already in the
+        //    dependency tree of an IntegratoR consumer building Azure Functions integrations).
         services.Configure<DurableTaskWorkerOptions>(options =>
         {
-            JsonSerializerOptions jsonOptions = new(JsonSerializerDefaults.Web);
-            jsonOptions.AddResultConverters();
-            options.DataConverter = new JsonDataConverter(jsonOptions);
+            options.DataConverter = new JsonDataConverter(DurableTaskJsonOptions);
         });
 
         // 5. Apply PostConfigure overrides if provided
