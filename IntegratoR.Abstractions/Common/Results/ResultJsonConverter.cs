@@ -40,7 +40,11 @@ public class ResultJsonConverter : JsonConverter<Result>
         if (isSuccess)
             return Result.Ok();
 
-        return Result.Fail(NewtonsoftResultErrorSerializer.Read(obj[ResultJsonShape.Errors]));
+        IReadOnlyList<IError> errors = NewtonsoftResultErrorSerializer.Read(obj[ResultJsonShape.Errors]);
+        if (errors.Count == 0)
+            return Result.Fail(ResultJsonShape.MissingErrorsError());
+
+        return Result.Fail(errors);
     }
 }
 
@@ -93,12 +97,23 @@ public class ResultGenericJsonConverter : JsonConverter
         var isSuccess = obj[ResultJsonShape.IsSuccess]?.Value<bool>() ?? false;
         var valueType = objectType.GetGenericArguments()[0];
 
+        var failMethod = typeof(Result).GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+            .First(m => m.Name == "Fail" && m.IsGenericMethod && m.GetParameters().Length == 1
+                && m.GetParameters()[0].ParameterType == typeof(IEnumerable<IError>))
+            .MakeGenericMethod(valueType);
+
         if (isSuccess)
         {
-            var valueToken = obj[ResultJsonShape.Value];
-            var value = valueToken is not null
-                ? valueToken.ToObject(valueType, serializer)
-                : null;
+            if (!obj.TryGetValue(ResultJsonShape.Value, out JToken? valueToken))
+            {
+                // Corrupted payload: success but no value field. Convert to a failure rather
+                // than silently materialising default(T).
+                return failMethod.Invoke(null, [new IError[] { ResultJsonShape.MissingValueError() }]);
+            }
+
+            var value = valueToken.Type == JTokenType.Null
+                ? null
+                : valueToken.ToObject(valueType, serializer);
 
             // Call Result.Ok<T>(value) via reflection
             var okMethod = typeof(Result).GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
@@ -107,13 +122,10 @@ public class ResultGenericJsonConverter : JsonConverter
             return okMethod.Invoke(null, [value]);
         }
 
-        var errors = NewtonsoftResultErrorSerializer.Read(obj[ResultJsonShape.Errors]);
+        IReadOnlyList<IError> errors = NewtonsoftResultErrorSerializer.Read(obj[ResultJsonShape.Errors]);
+        if (errors.Count == 0)
+            errors = new IError[] { ResultJsonShape.MissingErrorsError() };
 
-        // Call Result.Fail<T>(errors) via reflection
-        var failMethod = typeof(Result).GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
-            .First(m => m.Name == "Fail" && m.IsGenericMethod && m.GetParameters().Length == 1
-                && m.GetParameters()[0].ParameterType == typeof(IEnumerable<IError>))
-            .MakeGenericMethod(valueType);
         return failMethod.Invoke(null, [errors]);
     }
 }
@@ -157,15 +169,25 @@ public class ResultJsonConverter<T> : JsonConverter<Result<T>>
 
         if (isSuccess)
         {
-            var valueToken = obj[ResultJsonShape.Value];
-            var value = valueToken is not null
-                ? valueToken.ToObject<T>(serializer)
-                : default;
+            if (!obj.TryGetValue(ResultJsonShape.Value, out JToken? valueToken))
+            {
+                // Corrupted payload: success but no value field. Convert to a failure with a
+                // synthetic error rather than silently returning Result.Ok(default(T)).
+                return Result.Fail<T>(ResultJsonShape.MissingValueError());
+            }
+
+            T? value = valueToken.Type == JTokenType.Null
+                ? default
+                : valueToken.ToObject<T>(serializer);
 
             return Result.Ok(value!);
         }
 
-        return Result.Fail<T>(NewtonsoftResultErrorSerializer.Read(obj[ResultJsonShape.Errors]));
+        IReadOnlyList<IError> errors = NewtonsoftResultErrorSerializer.Read(obj[ResultJsonShape.Errors]);
+        if (errors.Count == 0)
+            return Result.Fail<T>(ResultJsonShape.MissingErrorsError());
+
+        return Result.Fail<T>(errors);
     }
 }
 
@@ -195,10 +217,10 @@ internal static class NewtonsoftResultErrorSerializer
         writer.WriteEndArray();
     }
 
-    public static List<IError> Read(JToken? errorsToken)
+    public static IReadOnlyList<IError> Read(JToken? errorsToken)
     {
         if (errorsToken is not JArray arr)
-            return new List<IError>();
+            return Array.Empty<IError>();
 
         List<IError> errors = new(arr.Count);
         foreach (var item in arr)

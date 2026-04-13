@@ -149,6 +149,61 @@ public sealed class ResultJsonShapeTests
     }
 
     /// <summary>
+    /// Verifies that Hydrate parses the type string case-insensitively. Without case insensitivity,
+    /// JSON produced by a different serialiser (e.g. <c>"notFound"</c>) would silently demote to
+    /// ErrorType.Failure, defeating the cross-serialiser compatibility goal.
+    /// </summary>
+    [Theory]
+    [InlineData("NotFound", ErrorType.NotFound)]
+    [InlineData("notfound", ErrorType.NotFound)]
+    [InlineData("NOTFOUND", ErrorType.NotFound)]
+    [InlineData("Validation", ErrorType.Validation)]
+    [InlineData("validation", ErrorType.Validation)]
+    [InlineData("VALIDATION", ErrorType.Validation)]
+    public void Hydrate_TypeStringCaseInsensitive_ParsesCorrectly(string typeString, ErrorType expected)
+    {
+        // Act
+        IntegrationError reconstructed = ResultJsonShape.Hydrate("Code", "msg", typeString);
+
+        // Assert
+        reconstructed.Type.Should().Be(expected);
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="ResultJsonShape.MissingValueError"/> returns a stable error
+    /// shape that converters can use when a successful Result is deserialised from JSON
+    /// missing the value field.
+    /// </summary>
+    [Fact]
+    public void MissingValueError_ReturnsStableErrorShape()
+    {
+        // Act
+        IntegrationError error = ResultJsonShape.MissingValueError();
+
+        // Assert
+        error.Code.Should().Be("Serialization.MissingValue");
+        error.Type.Should().Be(ErrorType.Failure);
+        error.Message.Should().Contain("missing");
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="ResultJsonShape.MissingErrorsError"/> returns a stable error
+    /// shape that converters can use when a failed Result is deserialised from JSON with no
+    /// error details.
+    /// </summary>
+    [Fact]
+    public void MissingErrorsError_ReturnsStableErrorShape()
+    {
+        // Act
+        IntegrationError error = ResultJsonShape.MissingErrorsError();
+
+        // Assert
+        error.Code.Should().Be("Serialization.MissingErrors");
+        error.Type.Should().Be(ErrorType.Failure);
+        error.Message.Should().Contain("no error details");
+    }
+
+    /// <summary>
     /// Verifies that Project followed by Hydrate is a lossless round-trip for an IntegrationError.
     /// This is the contract both converters rely on.
     /// </summary>

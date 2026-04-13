@@ -307,4 +307,90 @@ public sealed class ResultJsonConverterTests
         reconstructed.Message.Should().Be("something went wrong");
         reconstructed.Type.Should().Be(ErrorType.Failure);
     }
+
+    /// <summary>
+    /// Verifies that deserialising a corrupted "successful" payload that is missing the required
+    /// <c>value</c> field produces a failed Result with the synthetic Serialization.MissingValue
+    /// error rather than silently returning Result.Ok(default(T)). This is the regression coverage
+    /// for the silent-default(T) issue flagged in code review.
+    /// </summary>
+    [Fact]
+    public void Read_SuccessJsonMissingValueField_ReturnsFailedResultWithSyntheticError()
+    {
+        // Arrange
+        JsonSerializerOptions options = BuildOptions();
+        string corruptedJson = "{\"isSuccess\":true}";
+
+        // Act
+        Result<int>? result = JsonSerializer.Deserialize<Result<int>>(corruptedJson, options);
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.IsFailed.Should().BeTrue();
+        IntegrationError error = (IntegrationError)result.Errors[0];
+        error.Code.Should().Be("Serialization.MissingValue");
+    }
+
+    /// <summary>
+    /// Verifies that deserialising a "successful" payload with an explicit null value field
+    /// (which is legitimate for nullable T) is still handled correctly and not confused with
+    /// the missing-value corruption case.
+    /// </summary>
+    [Fact]
+    public void Read_SuccessJsonWithExplicitNullValue_ReturnsSuccessfulResultWithNull()
+    {
+        // Arrange
+        JsonSerializerOptions options = BuildOptions();
+        string explicitNullJson = "{\"isSuccess\":true,\"value\":null}";
+
+        // Act
+        Result<PersonModel?>? result = JsonSerializer.Deserialize<Result<PersonModel?>>(explicitNullJson, options);
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.IsSuccess.Should().BeTrue();
+        result.Value.Should().BeNull();
+    }
+
+    /// <summary>
+    /// Verifies that deserialising a corrupted "failed" payload with an empty errors array
+    /// produces a failed Result with the synthetic Serialization.MissingErrors error rather
+    /// than a failed Result with no error details.
+    /// </summary>
+    [Fact]
+    public void Read_FailedJsonWithEmptyErrors_ReturnsFailedResultWithSyntheticError()
+    {
+        // Arrange
+        JsonSerializerOptions options = BuildOptions();
+        string corruptedJson = "{\"isSuccess\":false,\"errors\":[]}";
+
+        // Act
+        Result<int>? result = JsonSerializer.Deserialize<Result<int>>(corruptedJson, options);
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.IsFailed.Should().BeTrue();
+        IntegrationError error = (IntegrationError)result.Errors[0];
+        error.Code.Should().Be("Serialization.MissingErrors");
+    }
+
+    /// <summary>
+    /// Verifies the same missing-errors handling for the non-generic <see cref="Result"/>.
+    /// </summary>
+    [Fact]
+    public void NonGenericResult_Read_FailedJsonWithEmptyErrors_ReturnsFailedResultWithSyntheticError()
+    {
+        // Arrange
+        JsonSerializerOptions options = BuildOptions();
+        string corruptedJson = "{\"isSuccess\":false}";
+
+        // Act
+        Result? result = JsonSerializer.Deserialize<Result>(corruptedJson, options);
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.IsFailed.Should().BeTrue();
+        IntegrationError error = (IntegrationError)result.Errors[0];
+        error.Code.Should().Be("Serialization.MissingErrors");
+    }
 }

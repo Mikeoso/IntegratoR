@@ -61,17 +61,27 @@ public sealed class ResultJsonConverter<T> : JsonConverter<Result<T>>
 
         if (isSuccess)
         {
-            T? value = default;
-            if (root.TryGetProperty(ResultJsonShape.Value, out JsonElement valueElement)
-                && valueElement.ValueKind != JsonValueKind.Null)
+            if (!root.TryGetProperty(ResultJsonShape.Value, out JsonElement valueElement))
             {
-                value = valueElement.Deserialize<T>(options);
+                // Corrupted payload: success but no value field. Convert to a failure with a
+                // synthetic error rather than silently returning Result.Ok(default(T)).
+                return Result.Fail<T>(ResultJsonShape.MissingValueError());
             }
+
+            T? value = valueElement.ValueKind == JsonValueKind.Null
+                ? default
+                : valueElement.Deserialize<T>(options);
 
             return Result.Ok(value!);
         }
 
-        return Result.Fail<T>(StjResultErrorSerializer.Read(root));
+        IReadOnlyList<IError> errors = StjResultErrorSerializer.Read(root);
+        if (errors.Count == 0)
+        {
+            return Result.Fail<T>(ResultJsonShape.MissingErrorsError());
+        }
+
+        return Result.Fail<T>(errors);
     }
 
     public override void Write(Utf8JsonWriter writer, Result<T> value, JsonSerializerOptions options)
@@ -120,7 +130,13 @@ public sealed class NonGenericResultJsonConverter : JsonConverter<Result>
             return Result.Ok();
         }
 
-        return Result.Fail(StjResultErrorSerializer.Read(root));
+        IReadOnlyList<IError> errors = StjResultErrorSerializer.Read(root);
+        if (errors.Count == 0)
+        {
+            return Result.Fail(ResultJsonShape.MissingErrorsError());
+        }
+
+        return Result.Fail(errors);
     }
 
     public override void Write(Utf8JsonWriter writer, Result value, JsonSerializerOptions options)
@@ -161,12 +177,12 @@ internal static class StjResultErrorSerializer
         writer.WriteEndArray();
     }
 
-    public static List<IError> Read(JsonElement root)
+    public static IReadOnlyList<IError> Read(JsonElement root)
     {
         if (!root.TryGetProperty(ResultJsonShape.Errors, out JsonElement errorsElement)
             || errorsElement.ValueKind != JsonValueKind.Array)
         {
-            return new List<IError>();
+            return Array.Empty<IError>();
         }
 
         List<IError> errors = new(errorsElement.GetArrayLength());

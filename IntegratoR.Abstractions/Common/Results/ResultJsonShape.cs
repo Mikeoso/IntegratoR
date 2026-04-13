@@ -42,11 +42,13 @@ internal static class ResultJsonShape
     /// <summary>
     /// Reconstructs an <see cref="IntegrationError"/> from JSON primitives, applying fallbacks
     /// for missing fields so partial or older JSON payloads still deserialise to a usable error.
+    /// The type string is parsed case-insensitively so a payload produced by a different
+    /// serialiser (e.g. <c>"notFound"</c>) round-trips correctly.
     /// </summary>
     public static IntegrationError Hydrate(string? code, string? message, string? type)
     {
         ErrorType parsedType = ErrorType.Failure;
-        if (!string.IsNullOrEmpty(type) && Enum.TryParse(type, out ErrorType parsed))
+        if (!string.IsNullOrEmpty(type) && Enum.TryParse(type, ignoreCase: true, out ErrorType parsed))
         {
             parsedType = parsed;
         }
@@ -56,4 +58,25 @@ internal static class ResultJsonShape
             message ?? UnknownMessage,
             parsedType);
     }
+
+    /// <summary>
+    /// Synthetic error returned by both converters when a successful Result is deserialised from
+    /// JSON that is missing the <c>value</c> property entirely. This converts a corrupted
+    /// "success" entry into an explicit failure rather than silently returning <c>default(T)</c>.
+    /// </summary>
+    public static IntegrationError MissingValueError() =>
+        new("Serialization.MissingValue",
+            "Successful Result deserialised from JSON that is missing the required 'value' field.",
+            ErrorType.Failure);
+
+    /// <summary>
+    /// Synthetic error returned by both converters when a failed Result is deserialised from
+    /// JSON whose <c>errors</c> array is missing or empty. A failed Result with no error details
+    /// would be unusable for downstream consumers; this preserves the failure signal with a
+    /// concrete error.
+    /// </summary>
+    public static IntegrationError MissingErrorsError() =>
+        new("Serialization.MissingErrors",
+            "Failed Result deserialised from JSON with no error details.",
+            ErrorType.Failure);
 }
