@@ -32,12 +32,11 @@
 // ---------------------------------------------------------------------------------------------
 
 using System.Collections;
-using System.Collections.Concurrent;
 using System.Collections.Frozen;
 using System.Globalization;
 using System.Linq.Expressions;
 using System.Reflection;
-using System.Text.Json.Serialization;
+using IntegratoR.OData.Common.Annotations;
 
 namespace IntegratoR.OData.Common.Filters;
 
@@ -80,18 +79,13 @@ internal static class IntegratoRODataExpressionTranslator
 
     // -----------------------------------------------------------------------------------------
     // [JsonPropertyName] resolution — the ONE patched line vs PanoramicData
+    //
+    // Delegates to PropertyNameResolver so the same lookup (and cache) is used by
+    // ODataService.BuildCompositeKeyObject and CreatePayload as well. This is the single
+    // behavioural difference from upstream PanoramicData's parser.
     // -----------------------------------------------------------------------------------------
 
-    private static readonly ConcurrentDictionary<MemberInfo, string> JsonNameCache = new();
-
-    /// <summary>
-    /// Resolves the on-the-wire OData property name for a CLR member, honouring
-    /// <see cref="JsonPropertyNameAttribute"/> if present. This is the single behavioural
-    /// difference from upstream PanoramicData's parser.
-    /// </summary>
-    private static string ResolveJsonName(MemberInfo member) =>
-        JsonNameCache.GetOrAdd(member, static m =>
-            m.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? m.Name);
+    private static string ResolveJsonName(MemberInfo member) => PropertyNameResolver.Resolve(member);
 
     // -----------------------------------------------------------------------------------------
     // Filter parsing — derived from ODataQueryBuilder.ExpressionParsing.cs
@@ -388,6 +382,11 @@ internal static class IntegratoRODataExpressionTranslator
         return getter();
     }
 
+    // The Enum arm is intentionally absent: C# `==` comparisons on enum properties get
+    // compiled with Convert(enum, int) on both sides, and ParseBinaryExpression strips
+    // Convert before reaching FormatValue. The emitted form is the underlying integer
+    // (e.g. `Status eq 1`), which D365 F&O OData accepts. Locked in by
+    // ToFilterString_EnumComparison_EmitsUnderlyingIntegerValue.
     private static string FormatValue(object? value) => value switch
     {
         null => "null",
@@ -396,7 +395,6 @@ internal static class IntegratoRODataExpressionTranslator
         DateTime dt => FormatDateTime(dt),
         DateTimeOffset dto => $"{dto.UtcDateTime:yyyy-MM-ddTHH:mm:ssZ}",
         Guid g => g.ToString(),
-        Enum e => $"'{e}'",
         _ => value.ToString() ?? "null"
     };
 

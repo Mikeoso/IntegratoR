@@ -66,11 +66,8 @@ public class ODataClientAdapter : IODataClientAdapter
     {
         var query = _client.For<TEntity>(entitySet);
 
-        // Route LINQ expressions through IntegratoRODataExpressionTranslator instead of
-        // PanoramicData's expression API. The translator honours [JsonPropertyName] when
-        // building OData property paths, which PanoramicData's parser does not (it reads
-        // MemberInfo.Name directly). This is required for D365 F&O fields like dataAreaId
-        // whose CLR name is PascalCase but OData wire name is camelCase.
+        // Route LINQ expressions through IntegratoRODataExpressionTranslator so [JsonPropertyName]
+        // is honoured on property paths. See that file's header for the full rationale.
         if (filter is not null) query = query.Filter(IntegratoRODataExpressionTranslator.ToFilterString(filter));
         if (expand is not null) query = query.Expand(IntegratoRODataExpressionTranslator.ToExpandString(expand));
         if (select is not null) query = query.Select(IntegratoRODataExpressionTranslator.ToSelectString(select));

@@ -30,6 +30,7 @@ public sealed class IntegratoRODataExpressionTranslatorTests
         public decimal Amount { get; set; }
         public bool IsPosted { get; set; }
         public DateTime TransDate { get; set; }
+        public DateTimeOffset CreatedAt { get; set; }
         public Status Status { get; set; }
         public NestedNavigation? Nested { get; set; }
     }
@@ -446,12 +447,14 @@ public sealed class IntegratoRODataExpressionTranslatorTests
     [Fact]
     public void ToFilterString_DateTimeOffsetComparison_EmitsIsoUtc()
     {
-        var date = new DateTimeOffset(2026, 4, 13, 12, 0, 0, TimeSpan.Zero);
-        Expression<Func<JournalEntity, bool>> filter = x => x.TransDate == date.UtcDateTime;
+        var moment = new DateTimeOffset(2026, 4, 13, 14, 30, 0, TimeSpan.FromHours(2));
+        Expression<Func<JournalEntity, bool>> filter = x => x.CreatedAt == moment;
 
         var result = IntegratoRODataExpressionTranslator.ToFilterString(filter);
 
-        result.Should().Be("TransDate eq 2026-04-13T12:00:00Z");
+        // Expected emits the moment normalised to UTC (12:30Z), proving FormatValue's
+        // DateTimeOffset arm converts to UtcDateTime before formatting.
+        result.Should().Be("CreatedAt eq 2026-04-13T12:30:00Z");
     }
 
     // -----------------------------------------------------------------------------------------
