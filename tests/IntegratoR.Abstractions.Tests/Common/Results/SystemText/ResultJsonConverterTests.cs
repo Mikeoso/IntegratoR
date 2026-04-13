@@ -26,6 +26,7 @@ public sealed class ResultJsonConverterTests
 
     /// <summary>
     /// Verifies that a successful Result with a primitive value serialises to the documented JSON shape.
+    /// The errors array is omitted on success to keep the cached payload small.
     /// </summary>
     [Fact]
     public void Serialize_SuccessWithPrimitiveValue_WritesIsSuccessAndValue()
@@ -40,7 +41,7 @@ public sealed class ResultJsonConverterTests
         // Assert
         json.Should().Contain("\"isSuccess\":true");
         json.Should().Contain("\"value\":42");
-        json.Should().Contain("\"errors\":[]");
+        json.Should().NotContain("\"errors\"");
     }
 
     /// <summary>

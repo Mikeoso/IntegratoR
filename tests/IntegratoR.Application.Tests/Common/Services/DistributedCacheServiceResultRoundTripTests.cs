@@ -17,7 +17,7 @@ namespace IntegratoR.Application.Tests.Common.Services;
 /// </summary>
 public sealed class DistributedCacheServiceResultRoundTripTests
 {
-    private sealed record TestEntity(string Code, string Description, decimal Amount);
+    private sealed record CachePayload(string Code, string Description, decimal Amount);
 
     private static DistributedCacheService CreateSut()
     {
@@ -35,12 +35,12 @@ public sealed class DistributedCacheServiceResultRoundTripTests
     {
         // Arrange
         DistributedCacheService sut = CreateSut();
-        var entity = new TestEntity("ENT-001", "Test entity", 1234.56m);
-        Result<TestEntity> original = Result.Ok(entity);
+        var entity = new CachePayload("ENT-001", "Test entity", 1234.56m);
+        Result<CachePayload> original = Result.Ok(entity);
 
         // Act
         await sut.SetAsync("key", original);
-        Result<TestEntity>? roundTripped = await sut.GetAsync<Result<TestEntity>>("key");
+        Result<CachePayload>? roundTripped = await sut.GetAsync<Result<CachePayload>>("key");
 
         // Assert
         roundTripped.Should().NotBeNull();
@@ -62,11 +62,11 @@ public sealed class DistributedCacheServiceResultRoundTripTests
             "OData.NotFound",
             "Customer 'C001' not found.",
             ErrorType.NotFound);
-        Result<TestEntity> original = Result.Fail<TestEntity>(error);
+        Result<CachePayload> original = Result.Fail<CachePayload>(error);
 
         // Act
         await sut.SetAsync("key", original);
-        Result<TestEntity>? roundTripped = await sut.GetAsync<Result<TestEntity>>("key");
+        Result<CachePayload>? roundTripped = await sut.GetAsync<Result<CachePayload>>("key");
 
         // Assert
         roundTripped.Should().NotBeNull();
@@ -87,17 +87,17 @@ public sealed class DistributedCacheServiceResultRoundTripTests
     {
         // Arrange
         DistributedCacheService sut = CreateSut();
-        var entities = new List<TestEntity>
+        var entities = new List<CachePayload>
         {
             new("ENT-001", "First", 100m),
             new("ENT-002", "Second", 200m),
             new("ENT-003", "Third", 300m)
         };
-        Result<List<TestEntity>> original = Result.Ok(entities);
+        Result<List<CachePayload>> original = Result.Ok(entities);
 
         // Act
         await sut.SetAsync("key", original);
-        Result<List<TestEntity>>? roundTripped = await sut.GetAsync<Result<List<TestEntity>>>("key");
+        Result<List<CachePayload>>? roundTripped = await sut.GetAsync<Result<List<CachePayload>>>("key");
 
         // Assert
         roundTripped.Should().NotBeNull();

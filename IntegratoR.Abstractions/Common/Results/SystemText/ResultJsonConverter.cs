@@ -52,13 +52,13 @@ public sealed class ResultJsonConverter<T> : JsonConverter<Result<T>>
         using JsonDocument document = JsonDocument.ParseValue(ref reader);
         JsonElement root = document.RootElement;
 
-        bool isSuccess = root.TryGetProperty("isSuccess", out JsonElement isSuccessElement)
+        bool isSuccess = root.TryGetProperty(ResultJsonShape.IsSuccess, out JsonElement isSuccessElement)
             && isSuccessElement.GetBoolean();
 
         if (isSuccess)
         {
             T? value = default;
-            if (root.TryGetProperty("value", out JsonElement valueElement)
+            if (root.TryGetProperty(ResultJsonShape.Value, out JsonElement valueElement)
                 && valueElement.ValueKind != JsonValueKind.Null)
             {
                 value = valueElement.Deserialize<T>(options);
@@ -67,72 +67,87 @@ public sealed class ResultJsonConverter<T> : JsonConverter<Result<T>>
             return Result.Ok(value!);
         }
 
-        List<IError> errors = ReadErrors(root);
-        return Result.Fail<T>(errors);
+        return Result.Fail<T>(ResultJsonShape.ReadErrors(root));
     }
 
     public override void Write(Utf8JsonWriter writer, Result<T> value, JsonSerializerOptions options)
     {
         writer.WriteStartObject();
-        writer.WriteBoolean("isSuccess", value.IsSuccess);
+        writer.WriteBoolean(ResultJsonShape.IsSuccess, value.IsSuccess);
 
         if (value.IsSuccess)
         {
-            writer.WritePropertyName("value");
+            writer.WritePropertyName(ResultJsonShape.Value);
             JsonSerializer.Serialize(writer, value.Value, options);
         }
-
-        writer.WritePropertyName("errors");
-        WriteErrors(writer, value.Errors);
+        else
+        {
+            writer.WritePropertyName(ResultJsonShape.Errors);
+            ResultJsonShape.WriteErrors(writer, value.Errors);
+        }
 
         writer.WriteEndObject();
     }
+}
 
-    internal static void WriteErrors(Utf8JsonWriter writer, IReadOnlyList<IError> errors)
+/// <summary>
+/// Shared JSON property-name constants and error (de)serialisation helpers for the
+/// System.Text.Json <see cref="Result{T}"/> converter family. Lives outside the generic
+/// <see cref="ResultJsonConverter{T}"/> so the helper methods are shared across all closed
+/// generics rather than duplicated per <c>T</c>.
+/// </summary>
+internal static class ResultJsonShape
+{
+    public const string IsSuccess = "isSuccess";
+    public const string Value = "value";
+    public const string Errors = "errors";
+    public const string Code = "code";
+    public const string Message = "message";
+    public const string Type = "type";
+
+    public static void WriteErrors(Utf8JsonWriter writer, IReadOnlyList<IError> errors)
     {
         writer.WriteStartArray();
         foreach (IError error in errors)
         {
+            if (error is not IntegrationError integrationError)
+            {
+                throw new InvalidOperationException(
+                    $"Unsupported IError type '{error.GetType().FullName}'. " +
+                    $"Only {nameof(IntegrationError)} can be serialised by {nameof(ResultJsonShape)}.");
+            }
+
             writer.WriteStartObject();
-            if (error is IntegrationError integrationError)
-            {
-                writer.WriteString("code", integrationError.Code);
-                writer.WriteString("message", integrationError.Message);
-                writer.WriteString("type", integrationError.Type.ToString());
-            }
-            else
-            {
-                writer.WriteString("code", "Unknown");
-                writer.WriteString("message", error.Message);
-                writer.WriteString("type", ErrorType.Failure.ToString());
-            }
+            writer.WriteString(Code, integrationError.Code);
+            writer.WriteString(Message, integrationError.Message);
+            writer.WriteString(Type, integrationError.Type.ToString());
             writer.WriteEndObject();
         }
         writer.WriteEndArray();
     }
 
-    internal static List<IError> ReadErrors(JsonElement root)
+    public static List<IError> ReadErrors(JsonElement root)
     {
-        List<IError> errors = new();
-
-        if (!root.TryGetProperty("errors", out JsonElement errorsElement)
+        if (!root.TryGetProperty(Errors, out JsonElement errorsElement)
             || errorsElement.ValueKind != JsonValueKind.Array)
         {
-            return errors;
+            return new List<IError>();
         }
+
+        List<IError> errors = new(errorsElement.GetArrayLength());
 
         foreach (JsonElement errorElement in errorsElement.EnumerateArray())
         {
-            string code = errorElement.TryGetProperty("code", out JsonElement codeElement)
+            string code = errorElement.TryGetProperty(Code, out JsonElement codeElement)
                 ? codeElement.GetString() ?? "Unknown"
                 : "Unknown";
 
-            string message = errorElement.TryGetProperty("message", out JsonElement messageElement)
+            string message = errorElement.TryGetProperty(Message, out JsonElement messageElement)
                 ? messageElement.GetString() ?? "Unknown error"
                 : "Unknown error";
 
             ErrorType type = ErrorType.Failure;
-            if (errorElement.TryGetProperty("type", out JsonElement typeElement)
+            if (errorElement.TryGetProperty(Type, out JsonElement typeElement)
                 && Enum.TryParse(typeElement.GetString(), out ErrorType parsed))
             {
                 type = parsed;

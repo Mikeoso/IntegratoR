@@ -12,8 +12,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Newtonsoft.Json;
 
-// Configure Newtonsoft.Json default settings. Retained for any code paths still using
-// Newtonsoft.Json (e.g. RELion DTOs and HTTP trigger payloads).
 JsonConvert.DefaultSettings = () => new JsonSerializerSettings
 {
     Converters = { new ResultJsonConverter(), new ResultGenericJsonConverter() }
@@ -54,9 +52,6 @@ var host = new HostBuilder()
         services.AddApplicationInsightsTelemetryWorkerService();
         services.ConfigureFunctionsApplicationInsights();
 
-        // Configure the Durable Task worker's data converter to round-trip Result<T>.
-        // The isolated worker SDK uses System.Text.Json by default, which cannot deserialise
-        // FluentResults Result<T> without these converters.
         services.Configure<DurableTaskWorkerOptions>(options =>
         {
             JsonSerializerOptions jsonOptions = new(JsonSerializerDefaults.Web);
