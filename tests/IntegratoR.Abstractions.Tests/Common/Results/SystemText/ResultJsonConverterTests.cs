@@ -185,10 +185,11 @@ public sealed class ResultJsonConverterTests
     }
 
     /// <summary>
-    /// Verifies that AddResultConverters adds the factory and returns the same options instance.
+    /// Verifies that AddResultConverters registers both the generic factory and the non-generic
+    /// Result converter, and returns the same options instance for fluent chaining.
     /// </summary>
     [Fact]
-    public void AddResultConverters_RegistersFactoryAndReturnsOptions()
+    public void AddResultConverters_RegistersBothConvertersAndReturnsOptions()
     {
         // Arrange
         var options = new JsonSerializerOptions();
@@ -199,6 +200,26 @@ public sealed class ResultJsonConverterTests
         // Assert
         returned.Should().BeSameAs(options);
         options.Converters.Should().ContainSingle(c => c is ResultJsonConverterFactory);
+        options.Converters.Should().ContainSingle(c => c is NonGenericResultJsonConverter);
+    }
+
+    /// <summary>
+    /// Verifies that AddResultConverters is idempotent — calling it twice on the same options
+    /// instance does not register duplicate converters.
+    /// </summary>
+    [Fact]
+    public void AddResultConverters_CalledTwice_DoesNotDuplicate()
+    {
+        // Arrange
+        var options = new JsonSerializerOptions();
+
+        // Act
+        options.AddResultConverters();
+        options.AddResultConverters();
+
+        // Assert
+        options.Converters.OfType<ResultJsonConverterFactory>().Should().ContainSingle();
+        options.Converters.OfType<NonGenericResultJsonConverter>().Should().ContainSingle();
     }
 
     /// <summary>
@@ -212,5 +233,78 @@ public sealed class ResultJsonConverterTests
 
         // Assert
         act.Should().Throw<ArgumentNullException>();
+    }
+
+    /// <summary>
+    /// Verifies that the non-generic Result converter round-trips a successful Result.Ok().
+    /// This is the regression case for activities returning the non-generic Result through
+    /// CallActivityAsync&lt;Result&gt;(...).
+    /// </summary>
+    [Fact]
+    public void NonGenericResult_RoundTrip_SuccessResult()
+    {
+        // Arrange
+        Result original = Result.Ok();
+        JsonSerializerOptions options = BuildOptions();
+
+        // Act
+        string json = JsonSerializer.Serialize(original, options);
+        Result? roundTripped = JsonSerializer.Deserialize<Result>(json, options);
+
+        // Assert
+        json.Should().Contain("\"isSuccess\":true");
+        json.Should().NotContain("\"errors\"");
+        roundTripped.Should().NotBeNull();
+        roundTripped!.IsSuccess.Should().BeTrue();
+    }
+
+    /// <summary>
+    /// Verifies that the non-generic Result converter round-trips a failed Result with
+    /// IntegrationError metadata intact.
+    /// </summary>
+    [Fact]
+    public void NonGenericResult_RoundTrip_FailedResultWithIntegrationError()
+    {
+        // Arrange
+        var error = new IntegrationError("Activity.Failed", "Activity failed.", ErrorType.Failure);
+        Result original = Result.Fail(error);
+        JsonSerializerOptions options = BuildOptions();
+
+        // Act
+        string json = JsonSerializer.Serialize(original, options);
+        Result? roundTripped = JsonSerializer.Deserialize<Result>(json, options);
+
+        // Assert
+        roundTripped.Should().NotBeNull();
+        roundTripped!.IsFailed.Should().BeTrue();
+        IntegrationError reconstructed = (IntegrationError)roundTripped.Errors[0];
+        reconstructed.Code.Should().Be("Activity.Failed");
+        reconstructed.Message.Should().Be("Activity failed.");
+        reconstructed.Type.Should().Be(ErrorType.Failure);
+    }
+
+    /// <summary>
+    /// Verifies that the non-generic Result converter round-trips a failed Result with a plain
+    /// (non-IntegrationError) error using the lenient fallback shape — this is the contract
+    /// the Newtonsoft converters have always honoured and that ResultJsonShape.Project now matches.
+    /// </summary>
+    [Fact]
+    public void NonGenericResult_RoundTrip_FailedResultWithPlainError()
+    {
+        // Arrange
+        Result original = Result.Fail("something went wrong");
+        JsonSerializerOptions options = BuildOptions();
+
+        // Act
+        string json = JsonSerializer.Serialize(original, options);
+        Result? roundTripped = JsonSerializer.Deserialize<Result>(json, options);
+
+        // Assert
+        roundTripped.Should().NotBeNull();
+        roundTripped!.IsFailed.Should().BeTrue();
+        IntegrationError reconstructed = (IntegrationError)roundTripped.Errors[0];
+        reconstructed.Code.Should().Be("Unknown");
+        reconstructed.Message.Should().Be("something went wrong");
+        reconstructed.Type.Should().Be(ErrorType.Failure);
     }
 }

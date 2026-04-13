@@ -39,21 +39,41 @@ public sealed class ResultJsonShapeTests
     }
 
     /// <summary>
-    /// Verifies that Project throws on any IError that is not an IntegrationError. IntegrationError
-    /// is the only IError implementation in this codebase; a defensive fallback would be dead code.
+    /// Verifies that Project falls back to (Unknown, error.Message, Failure) for any non-IntegrationError.
+    /// The Newtonsoft converters in this assembly are public API and have always accepted any IError;
+    /// preserving that contract avoids an unannounced breaking change for downstream callers.
     /// </summary>
     [Fact]
-    public void Project_NonIntegrationError_Throws()
+    public void Project_NonIntegrationError_FallsBackToUnknownAndFailure()
     {
         // Arrange
         var customError = new CustomError("Something failed");
 
         // Act
-        Action act = () => ResultJsonShape.Project(customError);
+        (string code, string message, ErrorType type) = ResultJsonShape.Project(customError);
 
         // Assert
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*Unsupported IError type*CustomError*");
+        code.Should().Be("Unknown");
+        message.Should().Be("Something failed");
+        type.Should().Be(ErrorType.Failure);
+    }
+
+    /// <summary>
+    /// Verifies that Project falls back to "Unknown error" when a non-IntegrationError has an empty message.
+    /// </summary>
+    [Fact]
+    public void Project_NonIntegrationErrorWithEmptyMessage_FallsBackToUnknownError()
+    {
+        // Arrange
+        var customError = new CustomError(string.Empty);
+
+        // Act
+        (string code, string message, ErrorType type) = ResultJsonShape.Project(customError);
+
+        // Assert
+        code.Should().Be("Unknown");
+        message.Should().Be("Unknown error");
+        type.Should().Be(ErrorType.Failure);
     }
 
     /// <summary>

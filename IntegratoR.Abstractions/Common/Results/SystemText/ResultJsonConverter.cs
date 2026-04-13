@@ -11,8 +11,9 @@ namespace IntegratoR.Abstractions.Common.Results.SystemText;
 /// the Durable Functions isolated worker (<c>JsonDataConverter</c>) and the distributed cache.
 /// </summary>
 /// <remarks>
-/// The non-generic <see cref="Result"/> type is intentionally not handled here because no current
-/// System.Text.Json code path in the codebase serialises it. Add a converter for it if that changes.
+/// The non-generic <see cref="Result"/> type is handled separately by
+/// <see cref="NonGenericResultJsonConverter"/>. Both are registered together by
+/// <see cref="JsonSerializerOptionsExtensions.AddResultConverters"/>.
 /// </remarks>
 public sealed class ResultJsonConverterFactory : JsonConverterFactory
 {
@@ -84,6 +85,50 @@ public sealed class ResultJsonConverter<T> : JsonConverter<Result<T>>
             JsonSerializer.Serialize(writer, value.Value, options);
         }
         else
+        {
+            writer.WritePropertyName(ResultJsonShape.Errors);
+            StjResultErrorSerializer.Write(writer, value.Errors);
+        }
+
+        writer.WriteEndObject();
+    }
+}
+
+/// <summary>
+/// System.Text.Json converter for the non-generic <see cref="Result"/> type. Required because
+/// some Durable Functions activities and orchestrators in this codebase return the non-generic
+/// <c>Result</c> (e.g. <c>context.CallActivityAsync&lt;Result&gt;(...)</c>), and the closed-generic
+/// factory <see cref="ResultJsonConverterFactory"/> only handles <see cref="Result{T}"/>.
+/// </summary>
+public sealed class NonGenericResultJsonConverter : JsonConverter<Result>
+{
+    public override Result? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.Null)
+        {
+            return null;
+        }
+
+        using JsonDocument document = JsonDocument.ParseValue(ref reader);
+        JsonElement root = document.RootElement;
+
+        bool isSuccess = root.TryGetProperty(ResultJsonShape.IsSuccess, out JsonElement isSuccessElement)
+            && isSuccessElement.GetBoolean();
+
+        if (isSuccess)
+        {
+            return Result.Ok();
+        }
+
+        return Result.Fail(StjResultErrorSerializer.Read(root));
+    }
+
+    public override void Write(Utf8JsonWriter writer, Result value, JsonSerializerOptions options)
+    {
+        writer.WriteStartObject();
+        writer.WriteBoolean(ResultJsonShape.IsSuccess, value.IsSuccess);
+
+        if (!value.IsSuccess)
         {
             writer.WritePropertyName(ResultJsonShape.Errors);
             StjResultErrorSerializer.Write(writer, value.Errors);

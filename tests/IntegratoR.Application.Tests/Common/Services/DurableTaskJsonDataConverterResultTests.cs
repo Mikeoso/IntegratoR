@@ -113,4 +113,57 @@ public sealed class DurableTaskJsonDataConverterResultTests
         deserialized!.IsSuccess.Should().BeTrue();
         deserialized.Value.Should().BeEquivalentTo(headers);
     }
+
+    /// <summary>
+    /// Verifies that a non-generic <see cref="Result"/> (e.g. <c>Result.Ok()</c> from an activity
+    /// or sub-orchestrator returning the non-generic Result) round-trips through Durable Task
+    /// serialisation. JournalOrchestrators uses this shape via
+    /// <c>context.CallActivityAsync&lt;Result&gt;(...)</c> and
+    /// <c>context.CallSubOrchestratorAsync&lt;Result&gt;(...)</c>.
+    /// </summary>
+    [Fact]
+    public void Serialize_Deserialize_NonGenericSuccessfulResult_RoundTrips()
+    {
+        // Arrange
+        JsonDataConverter converter = CreateConverter();
+        Result original = Result.Ok();
+
+        // Act
+        string? serialized = converter.Serialize(original);
+        Result? deserialized = converter.Deserialize(serialized, typeof(Result)) as Result;
+
+        // Assert
+        deserialized.Should().NotBeNull();
+        deserialized!.IsSuccess.Should().BeTrue();
+    }
+
+    /// <summary>
+    /// Verifies that a non-generic failed <see cref="Result"/> with an
+    /// <see cref="IntegrationError"/> round-trips through Durable Task serialisation.
+    /// </summary>
+    [Fact]
+    public void Serialize_Deserialize_NonGenericFailedResult_PreservesIntegrationErrorMetadata()
+    {
+        // Arrange
+        JsonDataConverter converter = CreateConverter();
+        var error = new IntegrationError(
+            "SubOrchestrator.Failed",
+            "Sub-orchestrator failed for company 'USMF'.",
+            ErrorType.Failure);
+        Result original = Result.Fail(error);
+
+        // Act
+        string? serialized = converter.Serialize(original);
+        Result? deserialized = converter.Deserialize(serialized, typeof(Result)) as Result;
+
+        // Assert
+        deserialized.Should().NotBeNull();
+        deserialized!.IsFailed.Should().BeTrue();
+        deserialized.Errors.Should().HaveCount(1);
+
+        IntegrationError reconstructed = (IntegrationError)deserialized.Errors[0];
+        reconstructed.Code.Should().Be("SubOrchestrator.Failed");
+        reconstructed.Message.Should().Be("Sub-orchestrator failed for company 'USMF'.");
+        reconstructed.Type.Should().Be(ErrorType.Failure);
+    }
 }

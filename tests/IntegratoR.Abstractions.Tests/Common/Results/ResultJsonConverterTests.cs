@@ -57,23 +57,24 @@ public sealed class ResultJsonConverterTests
     }
 
     /// <summary>
-    /// Verifies that the converter throws on non-<see cref="IntegrationError"/> errors. Per
-    /// project convention <see cref="IntegrationError"/> is the only <see cref="IError"/>
-    /// implementation; a defensive fallback would be dead code, so the converter delegates
-    /// to <see cref="ResultJsonShape.Project"/> which throws to make any future violation loud.
+    /// Verifies that a failed result with a plain <see cref="Error"/> (non-<see cref="IntegrationError"/>)
+    /// serializes with code "Unknown" and type "Failure". Library consumers using <c>Result.Fail("...")</c>
+    /// with a plain error must keep round-tripping — these public converters have always accepted
+    /// any <see cref="IError"/> and that contract is preserved.
     /// </summary>
     [Fact]
-    public void WriteJson_FailedWithPlainError_Throws()
+    public void WriteJson_FailedWithPlainError_WritesUnknownCodeAndFailureType()
     {
         // Arrange
         var result = Result.Fail("something went wrong");
 
         // Act
-        Action act = () => JsonConvert.SerializeObject(result, Settings);
+        var json = JsonConvert.SerializeObject(result, Settings);
 
         // Assert
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*Unsupported IError type*");
+        json.Should().Contain("\"code\":\"Unknown\"");
+        json.Should().Contain("\"type\":\"Failure\"");
+        json.Should().Contain("\"message\":\"something went wrong\"");
     }
 
     /// <summary>

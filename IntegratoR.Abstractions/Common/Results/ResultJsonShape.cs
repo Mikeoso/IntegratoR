@@ -22,21 +22,21 @@ internal static class ResultJsonShape
 
     /// <summary>
     /// Projects an <see cref="IError"/> into the three primitives both converters write.
-    /// Throws on any non-<see cref="IntegrationError"/> because <see cref="IntegrationError"/>
-    /// is the only <see cref="IError"/> implementation in this codebase. A defensive fallback
-    /// would be dead code (per <c>common.md</c>: "do not add error handling for scenarios that
-    /// cannot happen"); throwing makes any future violation loud and immediate.
+    /// Preserves the richer <see cref="IntegrationError"/> fields when available, and falls
+    /// back to <c>(Unknown, error.Message, Failure)</c> for any other <see cref="IError"/>
+    /// so library consumers using <c>Result.Fail("...")</c> with a plain error continue to
+    /// round-trip without throwing. The Newtonsoft converters in this assembly are public
+    /// API and have always accepted any <see cref="IError"/>; preserving that contract avoids
+    /// an unannounced breaking change for downstream callers.
     /// </summary>
     public static (string Code, string Message, ErrorType Type) Project(IError error)
     {
-        if (error is not IntegrationError integrationError)
+        if (error is IntegrationError integrationError)
         {
-            throw new InvalidOperationException(
-                $"Unsupported IError type '{error.GetType().FullName}'. " +
-                $"Only {nameof(IntegrationError)} can be serialised by {nameof(ResultJsonShape)}.");
+            return (integrationError.Code, integrationError.Message, integrationError.Type);
         }
 
-        return (integrationError.Code, integrationError.Message, integrationError.Type);
+        return (UnknownCode, string.IsNullOrEmpty(error.Message) ? UnknownMessage : error.Message, ErrorType.Failure);
     }
 
     /// <summary>
