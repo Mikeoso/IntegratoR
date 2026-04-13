@@ -1,5 +1,6 @@
 using System.Linq.Expressions;
 using IntegratoR.Abstractions.Interfaces.Entity;
+using IntegratoR.OData.Common.Filters;
 using IntegratoR.OData.Domain.Models;
 using IntegratoR.OData.Interfaces.Services;
 using PanoramicData.OData.Client;
@@ -65,9 +66,14 @@ public class ODataClientAdapter : IODataClientAdapter
     {
         var query = _client.For<TEntity>(entitySet);
 
-        if (filter is not null) query = query.Filter(filter);
-        if (expand is not null) query = query.Expand(expand);
-        if (select is not null) query = query.Select(select);
+        // Route LINQ expressions through IntegratoRODataExpressionTranslator instead of
+        // PanoramicData's expression API. The translator honours [JsonPropertyName] when
+        // building OData property paths, which PanoramicData's parser does not (it reads
+        // MemberInfo.Name directly). This is required for D365 F&O fields like dataAreaId
+        // whose CLR name is PascalCase but OData wire name is camelCase.
+        if (filter is not null) query = query.Filter(IntegratoRODataExpressionTranslator.ToFilterString(filter));
+        if (expand is not null) query = query.Expand(IntegratoRODataExpressionTranslator.ToExpandString(expand));
+        if (select is not null) query = query.Select(IntegratoRODataExpressionTranslator.ToSelectString(select));
         if (skip.HasValue) query = query.Skip(skip.Value);
         if (top.HasValue) query = query.Top(top.Value);
 
@@ -112,7 +118,7 @@ public class ODataClientAdapter : IODataClientAdapter
         where TEntity : class, IEntity
     {
         var query = _client.For<TEntity>(entitySet);
-        if (filter is not null) query = query.Filter(filter);
+        if (filter is not null) query = query.Filter(IntegratoRODataExpressionTranslator.ToFilterString(filter));
 
         var count = await _client.GetCountAsync(query, cancellationToken).ConfigureAwait(false);
         return (int)count;
