@@ -18,10 +18,11 @@ public sealed class ResultJsonConverterTests
     };
 
     /// <summary>
-    /// Verifies that a successful result is serialized with <c>isSuccess=true</c> and an empty errors array.
+    /// Verifies that a successful result is serialized with <c>isSuccess=true</c> and the
+    /// errors array is omitted entirely (saves bytes on the cache/Durable activity hot path).
     /// </summary>
     [Fact]
-    public void WriteJson_SuccessResult_WritesIsSuccessTrueAndEmptyErrors()
+    public void WriteJson_SuccessResult_WritesIsSuccessTrueAndOmitsErrors()
     {
         // Arrange
         var result = Result.Ok();
@@ -31,7 +32,7 @@ public sealed class ResultJsonConverterTests
 
         // Assert
         json.Should().Contain("\"isSuccess\":true");
-        json.Should().Contain("\"errors\":[]");
+        json.Should().NotContain("\"errors\"");
     }
 
     /// <summary>
@@ -56,22 +57,23 @@ public sealed class ResultJsonConverterTests
     }
 
     /// <summary>
-    /// Verifies that a failed result with a plain <see cref="Error"/> (non-<see cref="IntegrationError"/>)
-    /// serializes with code "Unknown" and type "Failure".
+    /// Verifies that the converter throws on non-<see cref="IntegrationError"/> errors. Per
+    /// project convention <see cref="IntegrationError"/> is the only <see cref="IError"/>
+    /// implementation; a defensive fallback would be dead code, so the converter delegates
+    /// to <see cref="ResultJsonShape.Project"/> which throws to make any future violation loud.
     /// </summary>
     [Fact]
-    public void WriteJson_FailedWithPlainError_WritesUnknownCodeAndFailureType()
+    public void WriteJson_FailedWithPlainError_Throws()
     {
         // Arrange
         var result = Result.Fail("something went wrong");
 
         // Act
-        var json = JsonConvert.SerializeObject(result, Settings);
+        Action act = () => JsonConvert.SerializeObject(result, Settings);
 
         // Assert
-        json.Should().Contain("\"code\":\"Unknown\"");
-        json.Should().Contain("\"type\":\"Failure\"");
-        json.Should().Contain("\"message\":\"something went wrong\"");
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*Unsupported IError type*");
     }
 
     /// <summary>

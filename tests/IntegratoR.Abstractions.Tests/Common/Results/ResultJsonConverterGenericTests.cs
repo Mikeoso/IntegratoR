@@ -21,10 +21,11 @@ public sealed class ResultJsonConverterGenericTests
     };
 
     /// <summary>
-    /// Verifies that a successful result is serialized with <c>isSuccess=true</c>, the inner value, and an empty errors array.
+    /// Verifies that a successful result is serialized with <c>isSuccess=true</c>, the inner value,
+    /// and the errors array is omitted entirely (saves bytes on the cache/Durable activity hot path).
     /// </summary>
     [Fact]
-    public void WriteJson_SuccessWithValue_WritesIsSuccessValueAndEmptyErrors()
+    public void WriteJson_SuccessWithValue_WritesIsSuccessAndValueAndOmitsErrors()
     {
         // Arrange
         var result = Result.Ok(99);
@@ -36,7 +37,7 @@ public sealed class ResultJsonConverterGenericTests
         // Assert
         json.Should().Contain("\"isSuccess\":true");
         json.Should().Contain("\"value\":99");
-        json.Should().Contain("\"errors\":[]");
+        json.Should().NotContain("\"errors\"");
     }
 
     /// <summary>

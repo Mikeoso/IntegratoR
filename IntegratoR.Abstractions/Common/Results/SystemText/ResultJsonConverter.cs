@@ -32,12 +32,15 @@ public sealed class ResultJsonConverterFactory : JsonConverterFactory
 }
 
 /// <summary>
-/// System.Text.Json converter for a closed <see cref="Result{T}"/>. Mirrors the JSON shape produced
-/// by the Newtonsoft.Json converters in <see cref="ResultJsonConverter"/> for cross-serializer compatibility:
+/// System.Text.Json converter for a closed <see cref="Result{T}"/>. Mirrors the JSON shape
+/// produced by the Newtonsoft.Json converters in <c>ResultJsonConverter</c> for cross-serialiser
+/// compatibility:
 /// <code>
 /// { "isSuccess": true,  "value": { ... } }
 /// { "isSuccess": false, "errors": [ { "code": "...", "message": "...", "type": "..." } ] }
 /// </code>
+/// Property names and the IError ↔ primitives mapping are owned by <see cref="ResultJsonShape"/>
+/// so both converters stay in lockstep.
 /// </summary>
 /// <typeparam name="T">The value type wrapped by <see cref="Result{T}"/>.</typeparam>
 public sealed class ResultJsonConverter<T> : JsonConverter<Result<T>>
@@ -67,7 +70,7 @@ public sealed class ResultJsonConverter<T> : JsonConverter<Result<T>>
             return Result.Ok(value!);
         }
 
-        return Result.Fail<T>(ResultJsonShape.ReadErrors(root));
+        return Result.Fail<T>(StjResultErrorSerializer.Read(root));
     }
 
     public override void Write(Utf8JsonWriter writer, Result<T> value, JsonSerializerOptions options)
@@ -83,7 +86,7 @@ public sealed class ResultJsonConverter<T> : JsonConverter<Result<T>>
         else
         {
             writer.WritePropertyName(ResultJsonShape.Errors);
-            ResultJsonShape.WriteErrors(writer, value.Errors);
+            StjResultErrorSerializer.Write(writer, value.Errors);
         }
 
         writer.WriteEndObject();
@@ -91,44 +94,31 @@ public sealed class ResultJsonConverter<T> : JsonConverter<Result<T>>
 }
 
 /// <summary>
-/// Shared JSON property-name constants and error (de)serialisation helpers for the
-/// System.Text.Json <see cref="Result{T}"/> converter family. Lives outside the generic
-/// <see cref="ResultJsonConverter{T}"/> so the helper methods are shared across all closed
-/// generics rather than duplicated per <c>T</c>.
+/// System.Text.Json plumbing for the errors array. Lives outside the generic
+/// <see cref="ResultJsonConverter{T}"/> so it isn't duplicated per closed <c>T</c>, and delegates
+/// to <see cref="ResultJsonShape"/> for the actual IError ↔ primitives mapping.
 /// </summary>
-internal static class ResultJsonShape
+internal static class StjResultErrorSerializer
 {
-    public const string IsSuccess = "isSuccess";
-    public const string Value = "value";
-    public const string Errors = "errors";
-    public const string Code = "code";
-    public const string Message = "message";
-    public const string Type = "type";
-
-    public static void WriteErrors(Utf8JsonWriter writer, IReadOnlyList<IError> errors)
+    public static void Write(Utf8JsonWriter writer, IReadOnlyList<IError> errors)
     {
         writer.WriteStartArray();
         foreach (IError error in errors)
         {
-            if (error is not IntegrationError integrationError)
-            {
-                throw new InvalidOperationException(
-                    $"Unsupported IError type '{error.GetType().FullName}'. " +
-                    $"Only {nameof(IntegrationError)} can be serialised by {nameof(ResultJsonShape)}.");
-            }
+            (string code, string message, ErrorType type) = ResultJsonShape.Project(error);
 
             writer.WriteStartObject();
-            writer.WriteString(Code, integrationError.Code);
-            writer.WriteString(Message, integrationError.Message);
-            writer.WriteString(Type, integrationError.Type.ToString());
+            writer.WriteString(ResultJsonShape.Code, code);
+            writer.WriteString(ResultJsonShape.Message, message);
+            writer.WriteString(ResultJsonShape.Type, type.ToString());
             writer.WriteEndObject();
         }
         writer.WriteEndArray();
     }
 
-    public static List<IError> ReadErrors(JsonElement root)
+    public static List<IError> Read(JsonElement root)
     {
-        if (!root.TryGetProperty(Errors, out JsonElement errorsElement)
+        if (!root.TryGetProperty(ResultJsonShape.Errors, out JsonElement errorsElement)
             || errorsElement.ValueKind != JsonValueKind.Array)
         {
             return new List<IError>();
@@ -138,22 +128,19 @@ internal static class ResultJsonShape
 
         foreach (JsonElement errorElement in errorsElement.EnumerateArray())
         {
-            string code = errorElement.TryGetProperty(Code, out JsonElement codeElement)
-                ? codeElement.GetString() ?? "Unknown"
-                : "Unknown";
+            string? code = errorElement.TryGetProperty(ResultJsonShape.Code, out JsonElement codeElement)
+                ? codeElement.GetString()
+                : null;
 
-            string message = errorElement.TryGetProperty(Message, out JsonElement messageElement)
-                ? messageElement.GetString() ?? "Unknown error"
-                : "Unknown error";
+            string? message = errorElement.TryGetProperty(ResultJsonShape.Message, out JsonElement messageElement)
+                ? messageElement.GetString()
+                : null;
 
-            ErrorType type = ErrorType.Failure;
-            if (errorElement.TryGetProperty(Type, out JsonElement typeElement)
-                && Enum.TryParse(typeElement.GetString(), out ErrorType parsed))
-            {
-                type = parsed;
-            }
+            string? type = errorElement.TryGetProperty(ResultJsonShape.Type, out JsonElement typeElement)
+                ? typeElement.GetString()
+                : null;
 
-            errors.Add(new IntegrationError(code, message, type));
+            errors.Add(ResultJsonShape.Hydrate(code, message, type));
         }
 
         return errors;

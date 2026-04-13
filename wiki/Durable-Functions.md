@@ -1,14 +1,39 @@
 # Durable Functions
 
+The Durable Functions isolated worker SDK uses **System.Text.Json** to serialise activity inputs
+and outputs into the task hub. Without a custom converter, `Result<T>` cannot be deserialised on
+replay and activities throw *"JSON value could not be converted to FluentResults.Result..."*.
+
+Wire `AddResultConverters()` into `DurableTaskWorkerOptions.DataConverter` in `Program.cs`:
+
 ```csharp
 // Program.cs — register Result converters for Durable Functions serialisation
-JsonConvert.DefaultSettings = () => new JsonSerializerSettings
+services.Configure<DurableTaskWorkerOptions>(options =>
 {
-    Converters = { new ResultJsonConverter(), new ResultGenericJsonConverter() }
-};
+    JsonSerializerOptions jsonOptions = new(JsonSerializerDefaults.Web);
+    jsonOptions.AddResultConverters();
+    options.DataConverter = new JsonDataConverter(jsonOptions);
+});
 ```
 
 Without these converters, `Result<T>` loses error metadata after orchestration replay.
+
+## Two JSON serialisers in this project
+
+IntegratoR uses **two** JSON serialisers and `Result<T>` needs converters in both:
+
+- **System.Text.Json** — the Durable Functions isolated worker SDK and `DistributedCacheService`.
+  Configured via `DurableTaskWorkerOptions.DataConverter` (above) and
+  `DistributedCacheService.SerializerOptions`. STJ converters live in
+  `IntegratoR.Abstractions/Common/Results/SystemText/`.
+- **Newtonsoft.Json** — the RELion API client (`[JsonProperty]` attributes,
+  `JsonConvert.DeserializeObject`) and HTTP trigger payloads. Configured globally via
+  `JsonConvert.DefaultSettings` in `Program.cs`. Newtonsoft converters live in
+  `IntegratoR.Abstractions/Common/Results/`.
+
+Both converter families delegate to the serialiser-agnostic `ResultJsonShape` helper for
+property names and the `IError ↔ (code, message, type)` mapping, so the JSON shape stays
+in lockstep across both.
 
 ## Activity Functions
 
