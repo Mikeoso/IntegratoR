@@ -63,6 +63,12 @@ public sealed class IntegratoRODataExpressionTranslatorTests
         public List<JournalLine> Lines { get; set; } = new();
     }
 
+    private sealed class EntityWithJsonNamedNavigation
+    {
+        [JsonPropertyName("nestedNav")]
+        public NestedNavigation? NavigationProperty { get; set; }
+    }
+
     private enum Status { Draft, Posted, Reversed }
 
     // -----------------------------------------------------------------------------------------
@@ -337,6 +343,16 @@ public sealed class IntegratoRODataExpressionTranslatorTests
     }
 
     [Fact]
+    public void ToExpandString_NavigationPropertyWithJsonPropertyName_UsesJsonName()
+    {
+        Expression<Func<EntityWithJsonNamedNavigation, object>> selector = x => x.NavigationProperty!;
+
+        var result = IntegratoRODataExpressionTranslator.ToExpandString(selector);
+
+        result.Should().Be("nestedNav");
+    }
+
+    [Fact]
     public void ToExpandString_NullSelector_Throws()
     {
         Action act = () => IntegratoRODataExpressionTranslator.ToExpandString<JournalEntity>(null!);
@@ -411,12 +427,10 @@ public sealed class IntegratoRODataExpressionTranslatorTests
     // ADDITIONAL VALUE TYPES
     //
     // NOTE: Coverage for collection-Contains → OData `in (...)` clause is intentionally
-    // omitted here. PanoramicData's Contains-as-in path falls back to Expression.Compile()
-    // for closure-captured collections, which throws InvalidProgramException on .NET 10
-    // preview for some shapes. This is unrelated to the [JsonPropertyName] patch and pre-
-    // exists in upstream PanoramicData — track upstream / .NET runtime fixes and re-add
-    // the test when the underlying bug is resolved.
-    // -----------------------------------------------------------------------------------------
+    // omitted here. Verified empirically: static readonly fields and inline NewArrayExpression
+    // literals both fail with InvalidProgramException — the Contains-as-in path falls back to
+    // Expression.Compile() for the collection argument, which is broken on .NET 10 preview for
+    // all tested shapes. Re-add when the underlying runtime issue is fixed.
     // -----------------------------------------------------------------------------------------
 
     [Fact]
