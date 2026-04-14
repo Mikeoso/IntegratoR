@@ -13,8 +13,19 @@ namespace IntegratoR.OData.Common.Services;
 /// </summary>
 public class ODataClientAdapter : IODataClientAdapter
 {
-    private static readonly System.Text.Json.JsonSerializerOptions CaseInsensitiveOptions =
-        new() { PropertyNameCaseInsensitive = true };
+    // Exposed as internal for regression tests in IntegratoR.OData.Tests (see InternalsVisibleTo).
+    internal static readonly System.Text.Json.JsonSerializerOptions CaseInsensitiveOptions =
+        new()
+        {
+            PropertyNameCaseInsensitive = true,
+            // D365 F&O OData v4 serialises enum values as string names (e.g. "PostingLayer":
+            // "Current"). STJ's default enum converter only handles numeric values, so without
+            // this converter every CreateCommand/UpdateCommand against an entity with an enum
+            // property would throw on the round-trip deserialisation in DeserializeResponse.
+            // Registering the converter once here covers every enum in every F&O entity going
+            // through the dictionary-payload path.
+            Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() }
+        };
 
     private readonly ODataClient _client;
 
@@ -49,7 +60,29 @@ public class ODataClientAdapter : IODataClientAdapter
         CancellationToken cancellationToken = default)
         where TEntity : class, IEntity
     {
-        var query = _client.For<TEntity>(entitySet).Key(key);
+        // PanoramicData's IBoundClient.Key only exposes Key(object) — there is no
+        // Key(IDictionary<string, object>) or Key(params object[]) overload that the C# compiler
+        // can bind to. Passing a composite-key dictionary through Key(object) calls .ToString()
+        // on the dict and produces a malformed OData key like
+        // "EntitySet(System.Collections.Generic.Dictionary`2[...])". Bypass the broken Key API
+        // entirely for composite keys: build an OData $filter with eq predicates on each key
+        // field and rely on GetFirstOrDefaultAsync. A composite key uniquely identifies the
+        // entity by definition, so the filter returns exactly one row. The literal formatter is
+        // reused from IntegratoRODataExpressionTranslator so the wire shape stays in lockstep
+        // with filter/select/expand translations for every primitive type (Guid, DateOnly,
+        // TimeOnly, decimal-with-German-locale, etc.).
+        var query = _client.For<TEntity>(entitySet);
+        if (key is IDictionary<string, object> compositeKey)
+        {
+            string filter = string.Join(
+                " and ",
+                compositeKey.Select(kv => $"{kv.Key} eq {IntegratoRODataExpressionTranslator.FormatValue(kv.Value)}"));
+            query = query.Filter(filter);
+        }
+        else
+        {
+            query = query.Key(key);
+        }
         return await _client.GetFirstOrDefaultAsync(query, cancellationToken).ConfigureAwait(false);
     }
 
