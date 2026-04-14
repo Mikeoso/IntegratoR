@@ -79,7 +79,6 @@ public class LedgerJournalLine : BaseEntity<string>
     /// </summary>
     [Required]
     [JsonPropertyName("CurrencyCode")]
-    [ODataField(IgnoreOnCreate = true)]
     public virtual required string CurrencyCode { get; set; }
 
     /// <summary>
