@@ -55,7 +55,18 @@ internal static class ApplicationDependencyInjection
         services.AddSingleton<ODataMetadataProvider>();
 
         // Configure HttpClient with Polly policies
-        services.AddHttpClient("ODataClient")
+        services.AddHttpClient("ODataClient", (serviceProvider, httpClient) =>
+            {
+                var settings = serviceProvider.GetRequiredService<IOptions<ODataSettings>>().Value;
+
+                httpClient.Timeout = TimeSpan.FromSeconds(settings.Timeout);
+
+                // Normalise the configured URL: HttpClient.BaseAddress silently drops preceding path
+                // segments when a relative request URI starts with '/' UNLESS BaseAddress ends with '/'.
+                // We do NOT mutate settings.Url itself — IOptions<ODataSettings>.Value.Url continues
+                // to reflect what the consumer wrote.
+                httpClient.BaseAddress = new Uri(NormaliseBaseUrl(settings.Url));
+            })
             .AddHttpMessageHandler<ODataAuthenticationHandler>()
             // Retry Policy - handles transient failures with exponential backoff
             .AddPolicyHandler((serviceProvider, request) =>
@@ -113,12 +124,14 @@ internal static class ApplicationDependencyInjection
             var httpClient = serviceProvider.GetRequiredService<IHttpClientFactory>()
                 .CreateClient("ODataClient");
 
-            httpClient.Timeout = TimeSpan.FromSeconds(settings.Timeout);
-            httpClient.BaseAddress = new Uri(settings.Url);
+            // Timeout and BaseAddress are configured via AddHttpClient above. We only need to pass
+            // the same normalised URL to ODataClientOptions.BaseUrl so PanoramicData's independent
+            // URL composition stays in lockstep with HttpClient.BaseAddress.
+            string normalisedUrl = NormaliseBaseUrl(settings.Url);
 
             var options = new ODataClientOptions
             {
-                BaseUrl = settings.Url,
+                BaseUrl = normalisedUrl,
                 HttpClient = httpClient
             };
 
@@ -169,6 +182,18 @@ internal static class ApplicationDependencyInjection
         services.AddScoped(typeof(IODataService<>), typeof(ODataService<>));
         services.AddScoped(typeof(IODataBatchService<>), typeof(ODataService<>));
     }
+
+    /// <summary>
+    /// Appends a trailing slash to the configured OData base URL if absent.
+    /// Required because <see cref="HttpClient.BaseAddress"/> silently drops preceding path
+    /// segments when a relative request URI starts with '/' unless the base address ends with '/'.
+    /// </summary>
+    /// <remarks>
+    /// Exposed as <c>internal</c> for regression tests in <c>IntegratoR.OData.Tests</c>
+    /// (see <c>InternalsVisibleTo</c> in the csproj).
+    /// </remarks>
+    internal static string NormaliseBaseUrl(string url)
+        => url.TrimEnd('/') + "/";
 
     /// <summary>
     /// Calculates retry delay with exponential backoff and jitter.
