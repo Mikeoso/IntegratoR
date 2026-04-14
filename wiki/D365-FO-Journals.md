@@ -2,26 +2,33 @@
 
 ```csharp
 // Create a journal header, build dimension strings, and add lines
-var header = new LedgerJournalHeader
+LedgerJournalHeader header = new()
 {
     DataAreaId = "USMF", JournalName = "GenJrn", Description = "Monthly accruals"
 };
-Result<LedgerJournalHeader> headerResult = await mediator.Send(
-    new CreateLedgerJournalHeaderCommand<LedgerJournalHeader>(header), cancellationToken);
+Result<LedgerJournalHeader> headerResult = await mediator
+    .Send(new CreateCommand<LedgerJournalHeader>(header), cancellationToken)
+    .ConfigureAwait(false);
 
 if (headerResult.IsFailed) return; // handle error
 string batchNumber = headerResult.Value.JournalBatchNumber!; // server-generated, e.g. "000234"
 ```
+
+The `IntegratoR.SampleFunction` project demonstrates this flow end-to-end in
+`LedgerJournalSmokeTestTrigger` (`POST /api/smoke/ledger-journal`): create header, get by
+key, filter by `dataAreaId`, create a balanced debit/credit line pair, update, and
+best-effort cleanup — all through the generic `CreateCommand<T>`, `UpdateCommand<T>`,
+`DeleteCommand<T>`, `GetByKeyQuery<T>`, and `GetByFilterQuery<T>` dispatched via MediatR.
 
 ## LedgerJournalHeader
 
 `LedgerJournalHeader : BaseEntity<string>` maps to the `LedgerJournalHeaders` OData entity set (`LedgerJournalTable` table). Composite key: `DataAreaId` + `JournalBatchNumber`.
 
 ```csharp
+using IntegratoR.Abstractions.Common.CQRS.Commands;
 using IntegratoR.OData.FO.Domain.Entities.LedgerJournal;
-using IntegratoR.OData.FO.Features.Commands.LedgerJournals.CreateLedgerJournalHeader;
 
-var header = new LedgerJournalHeader
+LedgerJournalHeader header = new()
 {
     DataAreaId = "USMF",
     JournalName = "GenJrn",
@@ -29,8 +36,9 @@ var header = new LedgerJournalHeader
     IntegrationKey = "EXT-2026-03-001" // optional idempotency key
 };
 
-Result<LedgerJournalHeader> result = await mediator.Send(
-    new CreateLedgerJournalHeaderCommand<LedgerJournalHeader>(header), cancellationToken);
+Result<LedgerJournalHeader> result = await mediator
+    .Send(new CreateCommand<LedgerJournalHeader>(header), cancellationToken)
+    .ConfigureAwait(false);
 // JournalBatchNumber excluded from POST (ODataField IgnoreOnCreate) — F&O assigns it
 ```
 
@@ -46,17 +54,18 @@ Result<LedgerJournalHeader> result = await mediator.Send(
 | `JournalTotalDebit` | `decimal` | No | -- | Server-calculated: sum of line debits (not stripped from payload, but D365 ignores client values) |
 | `JournalTotalCredit` | `decimal` | No | -- | Server-calculated: sum of line credits (not stripped from payload, but D365 ignores client values) |
 
-Batch creation uses `CreateLedgerJournalHeadersCommand<LedgerJournalHeader>(headers)` returning `Result` (non-generic — batch commands do not return created entities).
+Batch creation uses `CreateBatchCommand<LedgerJournalHeader>(headers)` returning `Result` (non-generic — batch commands do not return created entities). See [[Batch-Operations]].
 
 ## LedgerJournalLine
 
 `LedgerJournalLine : BaseEntity<string>` maps to `LedgerJournalLines` (`LedgerJournalTrans` table). Composite key: `DataAreaId` + `JournalBatchNumber` + `LineNumber`.
 
 ```csharp
-using IntegratoR.OData.FO.Features.Commands.LedgerJournals.CreateLedgerJournalLine;
+using IntegratoR.Abstractions.Common.CQRS.Commands;
+using IntegratoR.OData.FO.Domain.Entities.LedgerJournal;
 using IntegratoR.OData.FO.Domain.Enums.LedgerJournals;
 
-var debitLine = new LedgerJournalLine
+LedgerJournalLine debitLine = new()
 {
     DataAreaId = "USMF",
     JournalBatchNumber = batchNumber,
@@ -68,7 +77,7 @@ var debitLine = new LedgerJournalLine
     TransactionText = "Rent expense"          // excluded from POST payload
 };
 
-var creditLine = new LedgerJournalLine
+LedgerJournalLine creditLine = new()
 {
     DataAreaId = "USMF",
     JournalBatchNumber = batchNumber,
@@ -80,8 +89,9 @@ var creditLine = new LedgerJournalLine
     TransactionText = "Rent accrual"          // excluded from POST payload
 };
 
-Result<LedgerJournalLine> debitResult = await mediator.Send(
-    new CreateLedgerJournalLineCommand<LedgerJournalLine>(debitLine), cancellationToken);
+Result<LedgerJournalLine> debitResult = await mediator
+    .Send(new CreateCommand<LedgerJournalLine>(debitLine), cancellationToken)
+    .ConfigureAwait(false);
 // LineNumber is server-generated (IgnoreOnCreate), e.g. 1.0000
 ```
 
@@ -114,7 +124,7 @@ Most properties have `[ODataField(IgnoreOnCreate = true)]` — D365 F&O populate
 using IntegratoR.OData.FO.Builders;
 using IntegratoR.OData.FO.Domain.Models.FinancialDimensions;
 
-var format = new DimensionFormat { Delimiter = "-", Segments = ["MainAccount", "BusinessUnit", "CostCenter"] };
+DimensionFormat format = new() { Delimiter = "-", Segments = ["MainAccount", "BusinessUnit", "CostCenter"] };
 
 string account = new FinancialDimensionBuilder()
     .Initialize(format)             // Initialize(DimensionFormat) -> FinancialDimensionBuilder
@@ -137,11 +147,13 @@ Rather than hardcoding `DimensionFormat`, fetch it from F&O with GetDimensionOrd
 using IntegratoR.OData.FO.Domain.Enums.Dimensions;
 using IntegratoR.OData.FO.Features.Queries.Dimensions.GetDimensionOrder;
 
-var query = new GetDimensionOrdersQuery(
+GetDimensionOrdersQuery query = new(
     "LedgerDimension",
     DimensionHierarchyType.DataEntityLedgerDimensionFormat);
 
-Result<DimensionFormat> formatResult = await mediator.Send(query, cancellationToken);
+Result<DimensionFormat> formatResult = await mediator
+    .Send(query, cancellationToken)
+    .ConfigureAwait(false);
 // CacheKey: "GetDimensionOrdersQuery-LedgerDimension-DataEntityLedgerDimensionFormat"
 
 string accountDisplayValue = new FinancialDimensionBuilder()
@@ -163,19 +175,21 @@ string accountDisplayValue = new FinancialDimensionBuilder()
 
 ```csharp
 // 1. Fetch dimension format from F&O
-Result<DimensionFormat> format = await mediator.Send(
-    new GetDimensionOrdersQuery("LedgerDimension",
-        DimensionHierarchyType.DataEntityLedgerDimensionFormat), cancellationToken);
+Result<DimensionFormat> format = await mediator
+    .Send(new GetDimensionOrdersQuery("LedgerDimension",
+        DimensionHierarchyType.DataEntityLedgerDimensionFormat), cancellationToken)
+    .ConfigureAwait(false);
 
-var dimBuilder = new FinancialDimensionBuilder();
+FinancialDimensionBuilder dimBuilder = new();
 
 // 2. Create journal header
-var header = new LedgerJournalHeader
+LedgerJournalHeader header = new()
 {
     DataAreaId = "USMF", JournalName = "GenJrn", Description = "March accruals"
 };
-Result<LedgerJournalHeader> headerResult = await mediator.Send(
-    new CreateLedgerJournalHeaderCommand<LedgerJournalHeader>(header), cancellationToken);
+Result<LedgerJournalHeader> headerResult = await mediator
+    .Send(new CreateCommand<LedgerJournalHeader>(header), cancellationToken)
+    .ConfigureAwait(false);
 
 if (headerResult.IsFailed) return; // handle error
 string journalId = headerResult.Value.JournalBatchNumber!;
@@ -194,8 +208,8 @@ string creditAccount = dimBuilder
     .Add("BusinessUnit", "001")
     .Build(); // e.g. "200110-001--"
 
-var lines = new List<LedgerJournalLine>
-{
+List<LedgerJournalLine> lines =
+[
     new()
     {
         DataAreaId = "USMF", JournalBatchNumber = journalId,
@@ -212,10 +226,11 @@ var lines = new List<LedgerJournalLine>
         CurrencyCode = "USD", CreditAmount = 1500.00m,                         // CurrencyCode: excluded from POST payload
         TransDate = new DateTimeOffset(2026, 3, 31, 0, 0, 0, TimeSpan.Zero)   // required by C#, excluded from POST payload
     }
-};
+];
 
-Result lineResults = await mediator.Send(
-    new CreateLedgerJournalLinesCommand<LedgerJournalLine>(lines), cancellationToken);
+Result lineResults = await mediator
+    .Send(new CreateBatchCommand<LedgerJournalLine>(lines), cancellationToken)
+    .ConfigureAwait(false);
 ```
 
 ## See Also

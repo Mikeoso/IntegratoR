@@ -5,7 +5,8 @@ dotnet add package IntegratoR.Abstractions
 dotnet add package IntegratoR.Application
 dotnet add package IntegratoR.OData
 dotnet add package IntegratoR.OData.FO    # for D365 F&O
-dotnet add package IntegratoR.RELion      # for RELion API
+dotnet add package IntegratoR.Hosting     # for AddIntegratoR composition root
+dotnet add package IntegratoR.RELion      # optional — RELion API integration
 ```
 
 `IntegratoR.Abstractions` and `IntegratoR.Application` are required. The others are optional depending on your integration target. Core dependencies (FluentResults, MediatR, FluentValidation) are pulled in transitively.
@@ -36,24 +37,27 @@ See [[Configuration]] for the full property reference and authentication modes.
 ## Register Services
 
 ```csharp
-using IntegratoR.Application.Common.Extensions;
-using IntegratoR.OData.Common.Extensions;
-using IntegratoR.OData.FO.Common.Extensions;
+using System.Reflection;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
-var host = new HostBuilder()
+IHost host = new HostBuilder()
     .ConfigureFunctionsWorkerDefaults()
     .ConfigureServices((context, services) =>
     {
-        services.AddApplicationServices();                          // MediatR pipeline, validators, cache, auth
-        services.AddODataClient(context.Configuration);             // OData HTTP client, Polly policies
-        services.AddODataClientFOProxy(context.Configuration);      // D365 F&O handlers
+        Assembly clientAssembly = Assembly.GetExecutingAssembly();
+
+        services.AddIntegratoR(context.Configuration, integrator =>
+        {
+            integrator.AddConsumerHandlers(clientAssembly);
+        });
     })
     .Build();
 
 host.Run();
 ```
 
-`AddApplicationServices()` must be called **first** — it registers MediatR pipeline behaviours in order: Logging -> Validation -> Caching -> Handler. See [[Azure-Functions-Host]] for a production-ready `Program.cs`.
+`AddIntegratoR` is the single composition entry point. It registers the Application layer (MediatR pipeline behaviours in order Logging -> Validation -> Caching -> Handler, cache service, OAuth authenticator), the generic OData HTTP client with Polly policies, and the D365 F&O handlers. `AddConsumerHandlers` scans the provided assembly for host-level validators and MediatR handlers. See [[Azure-Functions-Host]] for a production-ready `Program.cs`.
 
 You can also configure programmatically instead of using `appsettings.json`:
 
@@ -110,14 +114,14 @@ See [[Entities]] for `BaseEntity<TKey>`, `ODataFieldAttribute`, and custom entit
 ## Send a Command
 
 ```csharp
-var header = new LedgerJournalHeader
+LedgerJournalHeader header = new()
 {
     DataAreaId = "USMF",
     JournalName = "GenJrn",
     Description = "Monthly accruals - March 2026"
 };
 
-var command = new CreateCommand<LedgerJournalHeader>(header);
+CreateCommand<LedgerJournalHeader> command = new(header);
 Result<LedgerJournalHeader> result = await mediator.Send(command, cancellationToken);
 
 if (result.IsSuccess)
@@ -133,12 +137,12 @@ if (result.IsSuccess)
 
 ```csharp
 // By composite key
-var query = new GetByKeyQuery<LedgerJournalHeader>(["USMF", "JBN-000431"]);
+GetByKeyQuery<LedgerJournalHeader> query = new(["USMF", "JBN-000431"]);
 Result<LedgerJournalHeader> result = await mediator.Send(query, cancellationToken);
 // result.Value contains the matching entity
 
 // By filter expression
-var filter = new GetByFilterQuery<LedgerJournalHeader>(
+GetByFilterQuery<LedgerJournalHeader> filter = new(
     h => h.DataAreaId == "USMF" && h.JournalName == "GenJrn");
 Result<IEnumerable<LedgerJournalHeader>> results = await mediator.Send(filter, cancellationToken);
 // results.Value contains all matching entities
@@ -146,17 +150,24 @@ Result<IEnumerable<LedgerJournalHeader>> results = await mediator.Send(filter, c
 
 See [[Queries]] for filter syntax and return types.
 
+## Try It End-to-End
+
+The `IntegratoR.SampleFunction` project in this repo exposes a single HTTP trigger,
+`LedgerJournalSmokeTestTrigger` at `POST /api/smoke/ledger-journal`, that exercises the
+same commands and queries shown above against a live D365 F&O sandbox — create header,
+get by key, filter by `dataAreaId`, create a balanced debit/credit line pair, update the
+header, and best-effort cleanup. It's the fastest way to confirm your credentials and
+configuration are correct before building your own endpoints.
+
 ## What Just Happened
 
 The steps above assembled a working integration pipeline:
 
 1. **NuGet packages** brought in the framework and its dependencies (MediatR, FluentResults, FluentValidation, Polly).
 2. **`ODataSettings`** configured the HTTP connection and OAuth credentials for your D365 F&O environment.
-3. **`AddApplicationServices()`** registered the MediatR pipeline (Logging -> Validation -> Caching -> Handler), cache service, and OAuth authenticator.
-4. **`AddODataClient()`** registered the generic OData HTTP client with Polly retry/circuit-breaker policies.
-5. **`AddODataClientFOProxy()`** registered the D365 F&O-specific entity handlers and validators.
-6. **The entity** mapped C# properties to OData JSON fields, with `[ODataField(IgnoreOnCreate = true)]` excluding server-generated values from the POST payload.
-7. **`CreateCommand<T>`** sent the entity through the full pipeline — logging the request, validating the entity, then POSTing to D365 and returning a `Result<T>` with the server-populated fields.
+3. **`AddIntegratoR()`** registered everything in the correct order: the MediatR pipeline (Logging -> Validation -> Caching -> Handler), the cache service and OAuth authenticator, the generic OData HTTP client with Polly retry/circuit-breaker policies, and the D365 F&O-specific entity handlers and validators.
+4. **The entity** mapped C# properties to OData JSON fields, with `[ODataField(IgnoreOnCreate = true)]` excluding server-generated values from the POST payload.
+5. **`CreateCommand<T>`** sent the entity through the full pipeline — logging the request, validating the entity, then POSTing to D365 and returning a `Result<T>` with the server-populated fields.
 
 ## When Things Go Wrong
 
@@ -178,7 +189,7 @@ The host throws at startup if `Url` is null or empty. Double-check your `appsett
 **Entity validation failure:**
 
 ```csharp
-var invalid = new LedgerJournalHeader
+LedgerJournalHeader invalid = new()
 {
     DataAreaId = "USMF",
     JournalName = "",           // empty — fails NotEmpty rule

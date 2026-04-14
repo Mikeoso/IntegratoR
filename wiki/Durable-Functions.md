@@ -36,9 +36,9 @@ IntegratoR uses **two** JSON serialisers and `Result<T>` needs converters in bot
   `DistributedCacheService.SerializerOptions`. STJ converters live in
   `IntegratoR.Abstractions/Common/Results/SystemText/`.
 - **Newtonsoft.Json** — the RELion API client (`[JsonProperty]` attributes,
-  `JsonConvert.DeserializeObject`) and HTTP trigger payloads. Configured globally via
-  `JsonConvert.DefaultSettings` in `Program.cs`. Newtonsoft converters live in
-  `IntegratoR.Abstractions/Common/Results/`.
+  `JsonConvert.DeserializeObject`) and any HTTP trigger payloads that opt into Newtonsoft.
+  Configured globally via `JsonConvert.DefaultSettings` in your host's `Program.cs`.
+  Newtonsoft converters live in `IntegratoR.Abstractions/Common/Results/`.
 
 Both converter families delegate to the serialiser-agnostic `ResultJsonShape` helper for
 property names and the `IError ↔ (code, message, type)` mapping, so the JSON shape stays
@@ -49,19 +49,19 @@ in lockstep across both.
 Activity functions wrap MediatR calls, returning `Result<T>` through orchestration state:
 
 ```csharp
-public class JournalActivities
+public sealed class LedgerJournalActivityFunctions
 {
     private readonly IMediator _mediator;
 
-    public JournalActivities(IMediator mediator) => _mediator = mediator;
+    public LedgerJournalActivityFunctions(IMediator mediator) => _mediator = mediator;
 
     [Function(nameof(CreateJournalHeader))]
     public async Task<Result<LedgerJournalHeader>> CreateJournalHeader(
         [ActivityTrigger] LedgerJournalHeader header,
         CancellationToken cancellationToken)
     {
-        var command = new CreateLedgerJournalHeaderCommand<LedgerJournalHeader>(header);
-        return await _mediator.Send(command, cancellationToken);
+        CreateCommand<LedgerJournalHeader> command = new(header);
+        return await _mediator.Send(command, cancellationToken).ConfigureAwait(false);
     }
 
     [Function(nameof(CreateJournalLine))]
@@ -69,24 +69,24 @@ public class JournalActivities
         [ActivityTrigger] LedgerJournalLine line,
         CancellationToken cancellationToken)
     {
-        var command = new CreateLedgerJournalLineCommand<LedgerJournalLine>(line);
-        return await _mediator.Send(command, cancellationToken);
+        CreateCommand<LedgerJournalLine> command = new(line);
+        return await _mediator.Send(command, cancellationToken).ConfigureAwait(false);
     }
 }
 ```
 
 ## Fan-Out/Fan-In Orchestration
 
-The orchestrator creates a header, then fans out to create lines in parallel and fans in to collect results:
+An orchestrator creates a header, then fans out to create lines in parallel and fans in to collect results:
 
 ```csharp
-public class JournalOrchestrator
+public sealed class JournalOrchestrator
 {
     [Function(nameof(CreateJournalOrchestration))]
     public async Task<Result<string>> CreateJournalOrchestration(
         [OrchestrationTrigger] TaskOrchestrationContext context)
     {
-        var header = new LedgerJournalHeader
+        LedgerJournalHeader header = new()
         {
             DataAreaId = "USMF",
             JournalName = "GenJrn",
@@ -94,16 +94,18 @@ public class JournalOrchestrator
         };
 
         Result<LedgerJournalHeader> headerResult = await context.CallActivityAsync<Result<LedgerJournalHeader>>(
-            nameof(JournalActivities.CreateJournalHeader), header);
+            nameof(LedgerJournalActivityFunctions.CreateJournalHeader), header);
 
         if (headerResult.IsFailed)
+        {
             return Result.Fail<string>(headerResult.Errors); // propagate activity errors
+        }
 
         string journalBatchNumber = headerResult.Value.JournalBatchNumber!;
 
         // Fan out — create lines in parallel
-        var lines = new List<LedgerJournalLine>
-        {
+        List<LedgerJournalLine> lines =
+        [
             new()
             {
                 DataAreaId = "USMF",
@@ -124,28 +126,35 @@ public class JournalOrchestrator
                 TransDate = new DateTimeOffset(2026, 3, 31, 0, 0, 0, TimeSpan.Zero),
                 CreditAmount = 1500.00m
             }
-        };
+        ];
 
-        var lineTasks = lines.Select(line =>
+        IEnumerable<Task<Result<LedgerJournalLine>>> lineTasks = lines.Select(line =>
             context.CallActivityAsync<Result<LedgerJournalLine>>(
-                nameof(JournalActivities.CreateJournalLine), line));
+                nameof(LedgerJournalActivityFunctions.CreateJournalLine), line));
 
         // Fan in — await all, aggregate failures
         Result<LedgerJournalLine>[] lineResults = await Task.WhenAll(lineTasks);
 
-        var failures = lineResults.Where(r => r.IsFailed).ToList();
-        if (failures.Any())
+        List<Result<LedgerJournalLine>> failures = lineResults.Where(r => r.IsFailed).ToList();
+        if (failures.Count > 0)
+        {
             return Result.Fail<string>(failures.SelectMany(f => f.Errors));
+        }
 
         return Result.Ok(journalBatchNumber);
     }
 }
 ```
 
+> The example classes above (`LedgerJournalActivityFunctions`, `JournalOrchestrator`) are illustrative
+> sketches — they live in your consuming project, not in the framework. The classes you
+> define against `IMediator` and the generic `CreateCommand<T>` type are enough to get
+> `Result<T>` round-tripping through the task hub.
+
 ## HTTP Starter
 
 ```csharp
-public class JournalStarter
+public sealed class JournalStarter
 {
     [Function(nameof(StartJournalOrchestration))]
     public async Task<HttpResponseData> StartJournalOrchestration(
@@ -174,7 +183,7 @@ throw new InvalidOperationException("Something went wrong");
 
 ## See Also
 
-- [[Azure-Functions-Host]] — host setup with `ResultJsonConverter` registration
+- [[Azure-Functions-Host]] — host setup and `AddIntegratoR` composition
 - [[Error-Handling]] — `Result<T>` pattern and `IntegrationError`
 - [[D365-FO-Journals]] — journal entities used in orchestrations
 - [[Batch-Operations]] — alternative to fan-out for bulk operations
