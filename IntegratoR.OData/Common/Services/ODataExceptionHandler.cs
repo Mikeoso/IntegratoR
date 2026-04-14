@@ -197,16 +197,15 @@ public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
 
             if (treatNotFoundAsSuccess)
             {
-                _logger.LogInformation(
-                    "{Operation} on {EntityType} - entity not found (treating as success). " +
-                    "Duration: {ElapsedMs}ms, Attempts: {Attempts}",
-                    context.OperationName, context.EntityType,
-                    stopwatch.ElapsedMilliseconds, attemptCount);
-
-                return (TResult)(object)Result.Ok();
+                return LogSuppressed404AndReturnOk<TResult>(context, stopwatch.Elapsed, attemptCount, requestUrl: null);
             }
 
             return HandleNotFound<TResult>(context, stopwatch.Elapsed, ex, attemptCount);
+        }
+        catch (ODataClientException clientEx) when (clientEx.StatusCode == 404 && treatNotFoundAsSuccess)
+        {
+            stopwatch.Stop();
+            return LogSuppressed404AndReturnOk<TResult>(context, stopwatch.Elapsed, attemptCount, clientEx.RequestUrl);
         }
         catch (Exception ex)
         {
@@ -374,10 +373,98 @@ public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
         }
         catch (JsonException)
         {
-            // Response body is not valid JSON — ignore
+            // APIM sometimes emits malformed JSON with unescaped quotes inside the error string
+            // (observed 2026-04-14: `{"error": "The provided value for "d365foenvironment" is not
+            // valid..."}`). Fall back to a best-effort lenient extractor so the consumer still
+            // sees a meaningful message instead of the generic "Request failed with status ...".
+            return ExtractLenientErrorMessage(responseBody);
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Best-effort fallback extractor for malformed JSON error bodies. Looks for the first
+    /// <c>"error"</c> or <c>"message"</c> key and returns everything after the first colon up to
+    /// the last quote that precedes a closing brace. Returns null if no recognisable fragment
+    /// is found.
+    /// </summary>
+    internal static string? ExtractLenientErrorMessage(string responseBody)
+    {
+        if (string.IsNullOrWhiteSpace(responseBody))
+        {
+            return null;
+        }
+
+        // Locate either "error" or "message" as the key. Prefer the inner "message" when both
+        // appear (most specific), else "error" which is the common top-level key.
+        int keyIndex = responseBody.IndexOf("\"message\"", StringComparison.Ordinal);
+        if (keyIndex < 0)
+        {
+            keyIndex = responseBody.IndexOf("\"error\"", StringComparison.Ordinal);
+        }
+        if (keyIndex < 0)
+        {
+            return null;
+        }
+
+        // Skip to the first colon after the key.
+        int colonIndex = responseBody.IndexOf(':', keyIndex);
+        if (colonIndex < 0 || colonIndex >= responseBody.Length - 1)
+        {
+            return null;
+        }
+
+        // Find the first opening quote after the colon — that marks the start of the value.
+        int valueStart = responseBody.IndexOf('"', colonIndex + 1);
+        if (valueStart < 0 || valueStart >= responseBody.Length - 1)
+        {
+            return null;
+        }
+        valueStart++;
+
+        // Find the last quote before the final closing brace — this survives embedded unescaped
+        // quotes in the value (which is exactly the APIM bug we are working around).
+        int lastBrace = responseBody.LastIndexOf('}');
+        if (lastBrace <= valueStart)
+        {
+            return null;
+        }
+        int valueEnd = responseBody.LastIndexOf('"', lastBrace - 1);
+        if (valueEnd <= valueStart)
+        {
+            return null;
+        }
+
+        string extracted = responseBody[valueStart..valueEnd].Trim();
+        return string.IsNullOrWhiteSpace(extracted) ? null : extracted;
+    }
+
+    /// <summary>
+    /// Emits a Warning and returns a success Result for a 404 that the caller opted to suppress
+    /// via <c>treatNotFoundAsSuccess</c>. An HTTP 404 suppressed this way is normal for
+    /// idempotent deletes, but it can also hide a silent failure where the request URL itself
+    /// was malformed — hence the Warning level and the request URL in the structured log so a
+    /// human reviewing the logs can distinguish "entity genuinely gone" from "client built the
+    /// wrong URL". <paramref name="requestUrl"/> is null when the source was an internal
+    /// <see cref="ODataNotFoundException"/> (no HTTP attempt was tied to a URL).
+    /// </summary>
+    private TResult LogSuppressed404AndReturnOk<TResult>(
+        OperationContext context,
+        TimeSpan elapsed,
+        int attemptCount,
+        string? requestUrl)
+        where TResult : IResultBase
+    {
+        _logger.LogWarning(
+            "{Operation} on {EntityType} returned HTTP 404 and is being treated as success " +
+            "because treatNotFoundAsSuccess is enabled. RequestUrl: {RequestUrl}. " +
+            "This may indicate a malformed request URL rather than a missing entity. " +
+            "Duration: {ElapsedMs}ms, Attempts: {Attempts}",
+            context.OperationName, context.EntityType, requestUrl ?? "(internal)",
+            elapsed.TotalMilliseconds, attemptCount);
+
+        return (TResult)(object)Result.Ok();
     }
 
     private TResult HandleNotFound<TResult>(
