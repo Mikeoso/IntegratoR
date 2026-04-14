@@ -1,17 +1,23 @@
+using System.Linq.Expressions;
 using FluentAssertions;
 using FluentResults;
 using FluentValidation;
+using IntegratoR.Abstractions.Common.CQRS.Commands;
+using IntegratoR.Abstractions.Common.CQRS.Queries;
 using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.Abstractions.Interfaces.Authentication;
 using IntegratoR.Abstractions.Interfaces.Services;
 using IntegratoR.OData.Domain.Settings;
+using IntegratoR.OData.FO.Domain.Entities.LedgerJournal;
 using IntegratoR.OData.FO.Domain.Models.Settings;
+using IntegratoR.TestKit.Assertions;
 using MediatR;
 using Microsoft.DurableTask.Converters;
 using Microsoft.DurableTask.Worker;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using NSubstitute;
 using Xunit;
 
 namespace IntegratoR.Hosting.Tests.Extensions;
@@ -249,6 +255,164 @@ public class ServiceCollectionExtensionsTests
         settings.Url.Should().Be("https://test.operations.dynamics.com/data");
         settings.Authentication.Mode.Should().Be(AuthenticationMode.OAuth);
         settings.Authentication.OAuth.ClientId.Should().Be("test-client-id");
+    }
+
+    // MediatR v12 only closes open generics against entity types in the SAME scanned assembly.
+    // The layer-local AddMediatR calls in AddApplicationServices() and AddODataClientFOProxy()
+    // therefore never see the open CreateCommandHandler<T> and LedgerJournalHeader together.
+    // AddIntegratoR has a combined-assembly scan (step 3b) that fixes this; these tests pin
+    // the behaviour — if the scan is removed they fail with "No service for type
+    // 'MediatR.IRequestHandler<...>'".
+    private static (ServiceProvider Provider, IService<LedgerJournalHeader> Service) BuildProviderWithSubstitutedService()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        IConfiguration configuration = CreateMinimalConfiguration();
+
+        services.AddIntegratoR(configuration);
+
+        // Override the open-generic ODataService<> registration with a closed substitute so
+        // the generic handlers resolve a fake instead of trying to hit the OData endpoint.
+        IService<LedgerJournalHeader> substitute = Substitute.For<IService<LedgerJournalHeader>>();
+        services.AddScoped(_ => substitute);
+
+        return (services.BuildServiceProvider(), substitute);
+    }
+
+    private static LedgerJournalHeader CreateTestHeader() => new()
+    {
+        DataAreaId = "test",
+        JournalName = "GenJrn",
+        Description = "smoke-test"
+    };
+
+    [Fact]
+    public async Task AddIntegratoR_ResolvesGenericCreateCommandHandler_ForFOEntity()
+    {
+        // Arrange
+        (ServiceProvider provider, IService<LedgerJournalHeader> service) = BuildProviderWithSubstitutedService();
+        await using (provider)
+        {
+            LedgerJournalHeader header = CreateTestHeader();
+            service.AddAsync(header, Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult(Result.Ok(header)));
+
+            using IServiceScope scope = provider.CreateScope();
+            IMediator mediator = scope.ServiceProvider.GetRequiredService<IMediator>();
+
+            // Act
+            Result<LedgerJournalHeader> result =
+                await mediator.Send(new CreateCommand<LedgerJournalHeader>(header), TestContext.Current.CancellationToken);
+
+            // Assert
+            result.Should().BeSuccessful();
+            result.Value.Should().BeSameAs(header);
+            await service.Received(1).AddAsync(header, Arg.Any<CancellationToken>());
+        }
+    }
+
+    [Fact]
+    public async Task AddIntegratoR_ResolvesGenericUpdateCommandHandler_ForFOEntity()
+    {
+        // Arrange
+        (ServiceProvider provider, IService<LedgerJournalHeader> service) = BuildProviderWithSubstitutedService();
+        await using (provider)
+        {
+            LedgerJournalHeader header = CreateTestHeader();
+            service.UpdateAsync(header, Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult(Result.Ok(header)));
+
+            using IServiceScope scope = provider.CreateScope();
+            IMediator mediator = scope.ServiceProvider.GetRequiredService<IMediator>();
+
+            // Act
+            Result<LedgerJournalHeader> result =
+                await mediator.Send(new UpdateCommand<LedgerJournalHeader>(header), TestContext.Current.CancellationToken);
+
+            // Assert
+            result.Should().BeSuccessful();
+            result.Value.Should().BeSameAs(header);
+            await service.Received(1).UpdateAsync(header, Arg.Any<CancellationToken>());
+        }
+    }
+
+    [Fact]
+    public async Task AddIntegratoR_ResolvesGenericDeleteCommandHandler_ForFOEntity()
+    {
+        // Arrange
+        (ServiceProvider provider, IService<LedgerJournalHeader> service) = BuildProviderWithSubstitutedService();
+        await using (provider)
+        {
+            LedgerJournalHeader header = CreateTestHeader();
+            service.DeleteAsync(header, Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult(Result.Ok()));
+
+            using IServiceScope scope = provider.CreateScope();
+            IMediator mediator = scope.ServiceProvider.GetRequiredService<IMediator>();
+
+            // Act
+            Result<LedgerJournalHeader> result =
+                await mediator.Send(new DeleteCommand<LedgerJournalHeader>(header), TestContext.Current.CancellationToken);
+
+            // Assert
+            result.Should().BeSuccessful();
+            result.Value.Should().BeSameAs(header);
+            await service.Received(1).DeleteAsync(header, Arg.Any<CancellationToken>());
+        }
+    }
+
+    [Fact]
+    public async Task AddIntegratoR_ResolvesGenericGetByKeyQueryHandler_ForFOEntity()
+    {
+        // Arrange
+        (ServiceProvider provider, IService<LedgerJournalHeader> service) = BuildProviderWithSubstitutedService();
+        await using (provider)
+        {
+            LedgerJournalHeader header = CreateTestHeader();
+            object[] key = ["test", "JB-001"];
+            service.GetByKeyAsync(key, Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult(Result.Ok(header)));
+
+            using IServiceScope scope = provider.CreateScope();
+            IMediator mediator = scope.ServiceProvider.GetRequiredService<IMediator>();
+
+            // Act
+            Result<LedgerJournalHeader> result =
+                await mediator.Send(new GetByKeyQuery<LedgerJournalHeader>(key), TestContext.Current.CancellationToken);
+
+            // Assert
+            result.Should().BeSuccessful();
+            result.Value.Should().BeSameAs(header);
+            await service.Received(1).GetByKeyAsync(key, Arg.Any<CancellationToken>());
+        }
+    }
+
+    [Fact]
+    public async Task AddIntegratoR_ResolvesGenericGetByFilterQueryHandler_ForFOEntity()
+    {
+        // Arrange
+        (ServiceProvider provider, IService<LedgerJournalHeader> service) = BuildProviderWithSubstitutedService();
+        await using (provider)
+        {
+            LedgerJournalHeader header = CreateTestHeader();
+            IEnumerable<LedgerJournalHeader> entities = [header];
+            service.FindAsync(Arg.Any<Expression<Func<LedgerJournalHeader, bool>>?>(), Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult(Result.Ok(entities)));
+
+            using IServiceScope scope = provider.CreateScope();
+            IMediator mediator = scope.ServiceProvider.GetRequiredService<IMediator>();
+
+            Expression<Func<LedgerJournalHeader, bool>> filter = h => h.DataAreaId == "test";
+
+            // Act
+            Result<IEnumerable<LedgerJournalHeader>> result =
+                await mediator.Send(new GetByFilterQuery<LedgerJournalHeader>(filter), TestContext.Current.CancellationToken);
+
+            // Assert
+            result.Should().BeSuccessful();
+            result.Value.Should().ContainSingle().Which.Should().BeSameAs(header);
+            await service.Received(1).FindAsync(Arg.Any<Expression<Func<LedgerJournalHeader, bool>>?>(), Arg.Any<CancellationToken>());
+        }
     }
 }
 
