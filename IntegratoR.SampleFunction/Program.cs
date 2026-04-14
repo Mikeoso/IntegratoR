@@ -1,7 +1,6 @@
 using System.Reflection;
 using Azure.Identity;
 using IntegratoR.Abstractions.Common.Results;
-using IntegratoR.RELion.Common.Extensions;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -52,7 +51,6 @@ var host = new HostBuilder()
         {
             integrator.AddConsumerHandlers(clientAssembly);
         });
-        services.AddRelionClient(context.Configuration);
     })
     .Build();
 
