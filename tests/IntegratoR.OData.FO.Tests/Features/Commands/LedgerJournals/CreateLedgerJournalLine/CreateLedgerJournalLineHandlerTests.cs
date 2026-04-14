@@ -1,3 +1,4 @@
+using FluentAssertions;
 using FluentResults;
 using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.Abstractions.Interfaces.Services;
@@ -125,5 +126,38 @@ public class CreateLedgerJournalLineHandlerTests
 
         // Assert
         result.Should().BeFailed();
+    }
+
+    /// <summary>
+    /// Regression test for Fix #9: ensures <see cref="LedgerJournalLine.CurrencyCode"/> is passed through
+    /// to the service layer on create. Previously the property carried
+    /// <c>[ODataField(IgnoreOnCreate = true)]</c>, which stripped the value from the wire payload and
+    /// caused D365 F&amp;O to reject the request with "Das Feld 'Währung' muss ausgefüllt werden" because
+    /// the "Allgemein" journal name has no default currency configured.
+    /// </summary>
+    [Fact]
+    public async Task CreateLedgerJournalLine_PayloadIncludes_CurrencyCode()
+    {
+        // Arrange
+        var service = Substitute.For<IService<LedgerJournalLine>>();
+        var logger = Substitute.For<ILogger<CreateLedgerJournalLineHandler<LedgerJournalLine>>>();
+        var handler = new CreateLedgerJournalLineHandler<LedgerJournalLine>(logger, service);
+
+        LedgerJournalLine line = BuildLine();
+        line.CurrencyCode = "EUR";
+
+        LedgerJournalLine? capturedEntity = null;
+        service.AddAsync(Arg.Do<LedgerJournalLine>(e => capturedEntity = e), Arg.Any<CancellationToken>())
+            .Returns(Result.Ok(line));
+
+        var command = new CreateLedgerJournalLineCommand<LedgerJournalLine>(line);
+
+        // Act
+        Result<LedgerJournalLine> result = await handler.Handle(command, CancellationToken.None);
+
+        // Assert
+        result.Should().BeSuccessful();
+        capturedEntity.Should().NotBeNull();
+        capturedEntity!.CurrencyCode.Should().Be("EUR");
     }
 }
