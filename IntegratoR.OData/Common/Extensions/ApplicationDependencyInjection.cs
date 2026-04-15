@@ -61,8 +61,14 @@ internal static class ApplicationDependencyInjection
 
                 httpClient.Timeout = TimeSpan.FromSeconds(settings.Timeout);
 
-                // Normalise the configured URL: HttpClient.BaseAddress silently drops preceding path
-                // segments when a relative request URI starts with '/' UNLESS BaseAddress ends with '/'.
+                // Normalise the configured URL: when a relative request URI does NOT start with '/',
+                // Uri composition treats the final segment of BaseAddress as a "file" and drops it
+                // unless BaseAddress ends with '/'. PanoramicData emits non-rooted relatives like
+                // "LedgerJournalHeaders", so a configured URL of "https://host/fo" without a trailing
+                // slash resolves to "https://host/LedgerJournalHeaders" — the "/fo" segment is lost.
+                // (Note: rooted relatives like "/LedgerJournalHeaders" always replace the path
+                // regardless of trailing slash, so those requests would still be broken. PanoramicData
+                // does not emit rooted relatives for us, so the trailing-slash fix is sufficient here.)
                 // We do NOT mutate settings.Url itself — IOptions<ODataSettings>.Value.Url continues
                 // to reflect what the consumer wrote.
                 httpClient.BaseAddress = new Uri(NormaliseBaseUrl(settings.Url));
@@ -135,7 +141,7 @@ internal static class ApplicationDependencyInjection
                 HttpClient = httpClient
             };
 
-            logger.LogInformation("OData client configured with base URL: {BaseUrl}", settings.Url);
+            logger.LogInformation("OData client configured with base URL: {BaseUrl}", normalisedUrl);
 
             return new ODataClient(options);
         });
