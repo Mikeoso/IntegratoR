@@ -341,6 +341,25 @@ public class ApplicationDependencyInjectionTests
     }
 
     /// <summary>
+    /// Pins that <see cref="ApplicationDependencyInjection.NormaliseBaseUrl"/> throws an
+    /// <see cref="ArgumentException"/> with a clear message when <c>ODataSettings.Url</c> is
+    /// missing or whitespace. Without the guard, <c>new Uri("/")</c> throws
+    /// <see cref="UriFormatException"/> at DI resolution — a misleading error for an operator
+    /// who simply forgot to set <c>Url</c> in configuration.
+    /// </summary>
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void NormaliseBaseUrl_NullOrWhitespace_ThrowsArgumentException(string? url)
+    {
+        Action act = () => ApplicationDependencyInjection.NormaliseBaseUrl(url!);
+
+        act.Should().Throw<ArgumentException>()
+            .WithMessage("*ODataSettings.Url must be set*");
+    }
+
+    /// <summary>
     /// Verifies that BaseAddress normalisation is local to the HttpClient wiring and does not
     /// mutate the public <see cref="ODataSettings.Url"/>. Consumers reading
     /// <see cref="IOptions{TOptions}"/> must see exactly what they wrote.

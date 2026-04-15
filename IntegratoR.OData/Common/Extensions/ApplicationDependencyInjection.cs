@@ -195,11 +195,23 @@ internal static class ApplicationDependencyInjection
     /// segments when a relative request URI starts with '/' unless the base address ends with '/'.
     /// </summary>
     /// <remarks>
-    /// Exposed as <c>internal</c> for regression tests in <c>IntegratoR.OData.Tests</c>
-    /// (see <c>InternalsVisibleTo</c> in the csproj).
+    /// Throws <see cref="ArgumentException"/> on null/whitespace so consumers get a clear error
+    /// at DI resolution instead of a misleading <see cref="UriFormatException"/> from
+    /// <see cref="Uri(string)"/>. Exposed as <c>internal</c> for regression tests in
+    /// <c>IntegratoR.OData.Tests</c> (see <c>InternalsVisibleTo</c> in the csproj).
     /// </remarks>
     internal static string NormaliseBaseUrl(string url)
-        => url.TrimEnd('/') + "/";
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            throw new ArgumentException(
+                "ODataSettings.Url must be set to a non-empty absolute URL before resolving the OData client. " +
+                "Check your configuration (appsettings.json / environment variables).",
+                nameof(url));
+        }
+
+        return url.TrimEnd('/') + "/";
+    }
 
     /// <summary>
     /// Calculates retry delay with exponential backoff and jitter.
