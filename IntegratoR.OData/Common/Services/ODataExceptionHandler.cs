@@ -385,9 +385,9 @@ public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
 
     /// <summary>
     /// Best-effort fallback extractor for malformed JSON error bodies. Looks for the first
-    /// <c>"error"</c> or <c>"message"</c> key and returns everything after the first colon up to
-    /// the last quote that precedes a closing brace. Returns null if no recognisable fragment
-    /// is found.
+    /// <c>"error"</c> or <c>"message"</c> key and returns the string value associated with it,
+    /// terminating at the first quote that is followed by a structural JSON delimiter
+    /// (<c>,</c> or <c>}</c>). Returns null if no recognisable fragment is found.
     /// </summary>
     internal static string? ExtractLenientErrorMessage(string responseBody)
     {
@@ -423,14 +423,38 @@ public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
         }
         valueStart++;
 
-        // Find the last quote before the final closing brace — this survives embedded unescaped
-        // quotes in the value (which is exactly the APIM bug we are working around).
+        // Bound the scan to the top-level closing brace so we never run past the JSON object.
         int lastBrace = responseBody.LastIndexOf('}');
         if (lastBrace <= valueStart)
         {
             return null;
         }
-        int valueEnd = responseBody.LastIndexOf('"', lastBrace - 1);
+
+        // Scan forward for the first quote that is immediately followed (ignoring whitespace)
+        // by a structural JSON delimiter — either ',' (next property starts) or '}' (object
+        // ends). This handles two malformed shapes:
+        //   {"error": "text with "unescaped" quotes"}     → terminates at the final "}
+        //   {"error": "x", "details": "y"}                → terminates at the first ","
+        // Quotes that appear mid-value without a following delimiter are treated as content.
+        int valueEnd = -1;
+        for (int i = valueStart; i <= lastBrace; i++)
+        {
+            if (responseBody[i] != '"')
+            {
+                continue;
+            }
+
+            int next = i + 1;
+            while (next < responseBody.Length && char.IsWhiteSpace(responseBody[next]))
+            {
+                next++;
+            }
+            if (next < responseBody.Length && (responseBody[next] == ',' || responseBody[next] == '}'))
+            {
+                valueEnd = i;
+                break;
+            }
+        }
         if (valueEnd <= valueStart)
         {
             return null;

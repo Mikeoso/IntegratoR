@@ -400,12 +400,15 @@ public class ODataExceptionHandlerTests
 
         // Assert
         result.Should().BeSuccessful();
-        _logger.Received().Log(
-            LogLevel.Warning,
-            Arg.Any<EventId>(),
-            Arg.Is<object>(state => state!.ToString()!.Contains(requestUrl)),
-            Arg.Any<Exception?>(),
-            Arg.Any<Func<object, Exception?, string>>());
+
+        // Inspect the underlying Log<TState> call directly — LogWarning dispatches through
+        // Log<FormattedLogValues>, which NSubstitute cannot match via Arg.Is<object>(...)
+        // because the closed generic type is different. ReceivedCalls() is type-agnostic.
+        var logCall = _logger.ReceivedCalls()
+            .Single(c => c.GetMethodInfo().Name == nameof(ILogger.Log));
+        object?[] args = logCall.GetArguments();
+        args[0].Should().Be(LogLevel.Warning);
+        args[2]!.ToString().Should().Contain(requestUrl);
     }
 
     /// <summary>
@@ -525,6 +528,10 @@ public class ODataExceptionHandlerTests
     [InlineData("""{"error": "simple"}""", "simple")]
     [InlineData("""{"message": "inner"}""", "inner")]
     [InlineData("""{"error": "has "inner" quotes"}""", """has "inner" quotes""")]
+    // Regression: when "error" is not the last property, the extractor must stop at the
+    // first structural delimiter (",") and not over-capture into subsequent properties.
+    [InlineData("""{"error": "x", "details": "y"}""", "x")]
+    [InlineData("""{"message": "primary", "code": "E42"}""", "primary")]
     public void ExtractLenientErrorMessage_ReturnsValue(string body, string expected)
     {
         string? result = ODataExceptionHandler<TestEntity>.ExtractLenientErrorMessage(body);
