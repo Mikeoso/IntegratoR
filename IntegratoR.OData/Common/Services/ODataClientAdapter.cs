@@ -74,6 +74,32 @@ public class ODataClientAdapter : IODataClientAdapter
         var query = _client.For<TEntity>(entitySet);
         if (key is IDictionary<string, object> compositeKey)
         {
+            if (compositeKey.Count == 0)
+            {
+                throw new ArgumentException(
+                    "Composite key dictionary must contain at least one key field. " +
+                    "An empty dictionary would emit a blank $filter and return an arbitrary row.",
+                    nameof(key));
+            }
+
+            // Each dictionary key is interpolated verbatim into the OData $filter. Reject any
+            // key that does not look like a simple OData property identifier so a caller that
+            // bypasses ODataService and hands the adapter a tainted dictionary cannot inject
+            // additional filter clauses (e.g. "JournalNum eq '1' or 1 eq 1"). Framework-internal
+            // callers go through ODataService.BuildCompositeKeyObject which derives keys from
+            // entity reflection via PropertyNameResolver, so they always pass this check.
+            foreach (KeyValuePair<string, object> kv in compositeKey)
+            {
+                if (!IsValidODataFieldName(kv.Key))
+                {
+                    throw new ArgumentException(
+                        $"Composite key field name '{kv.Key}' is not a valid OData property identifier. " +
+                        "Keys must match the pattern ^[A-Za-z_][A-Za-z0-9_.]*$ and come from entity " +
+                        "reflection (attribute-derived wire names), not user input.",
+                        nameof(key));
+                }
+            }
+
             string filter = string.Join(
                 " and ",
                 compositeKey.Select(kv => $"{kv.Key} eq {IntegratoRODataExpressionTranslator.FormatValue(kv.Value)}"));
@@ -84,6 +110,37 @@ public class ODataClientAdapter : IODataClientAdapter
             query = query.Key(key);
         }
         return await _client.GetFirstOrDefaultAsync(query, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Validates that a composite-key dictionary key matches a simple OData property identifier
+    /// shape: starts with a letter or underscore, followed by letters, digits, underscores, or
+    /// dots (to permit qualified names like <c>Namespace.Field</c>). Keys that fail this check
+    /// are rejected rather than interpolated into <c>$filter</c>.
+    /// </summary>
+    private static bool IsValidODataFieldName(string name)
+    {
+        if (string.IsNullOrEmpty(name))
+        {
+            return false;
+        }
+
+        char first = name[0];
+        if (!(char.IsLetter(first) || first == '_'))
+        {
+            return false;
+        }
+
+        for (int i = 1; i < name.Length; i++)
+        {
+            char c = name[i];
+            if (!(char.IsLetterOrDigit(c) || c == '_' || c == '.'))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /// <inheritdoc />

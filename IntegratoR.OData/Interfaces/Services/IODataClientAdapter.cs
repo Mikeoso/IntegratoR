@@ -23,6 +23,18 @@ public interface IODataClientAdapter
     /// <summary>
     /// Retrieves a single entity by its key. Returns null if not found.
     /// </summary>
+    /// <param name="entitySet">The OData entity set name.</param>
+    /// <param name="key">
+    /// Either a scalar key value (for single-key entities) or an
+    /// <see cref="IDictionary{TKey, TValue}"/> of <c>wireName → value</c> pairs for composite
+    /// keys. For composite keys, each dictionary key must be the <b>OData wire name</b> of the
+    /// property — i.e. what would appear in a <c>$filter</c> expression — not the CLR property
+    /// name. Framework callers obtain these names from entity reflection via
+    /// <c>PropertyNameResolver</c> (which honours <c>[JsonPropertyName]</c>). Wire names must
+    /// match <c>^[A-Za-z_][A-Za-z0-9_.]*$</c>; any other shape is rejected because the adapter
+    /// interpolates the key verbatim into <c>$filter</c>.
+    /// </param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     Task<TEntity?> FindByKeyAsync<TEntity>(
         string entitySet,
         object key,
