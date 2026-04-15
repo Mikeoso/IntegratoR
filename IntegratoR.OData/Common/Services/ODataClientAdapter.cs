@@ -13,8 +13,19 @@ namespace IntegratoR.OData.Common.Services;
 /// </summary>
 public class ODataClientAdapter : IODataClientAdapter
 {
-    private static readonly System.Text.Json.JsonSerializerOptions CaseInsensitiveOptions =
-        new() { PropertyNameCaseInsensitive = true };
+    // Exposed as internal for regression tests in IntegratoR.OData.Tests (see InternalsVisibleTo).
+    internal static readonly System.Text.Json.JsonSerializerOptions CaseInsensitiveOptions =
+        new()
+        {
+            PropertyNameCaseInsensitive = true,
+            // D365 F&O OData v4 serialises enum values as string names (e.g. "PostingLayer":
+            // "Current"). STJ's default enum converter only handles numeric values, so without
+            // this converter every CreateCommand/UpdateCommand against an entity with an enum
+            // property would throw on the round-trip deserialisation in DeserializeResponse.
+            // Registering the converter once here covers every enum in every F&O entity going
+            // through the dictionary-payload path.
+            Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() }
+        };
 
     private readonly ODataClient _client;
 
@@ -49,8 +60,87 @@ public class ODataClientAdapter : IODataClientAdapter
         CancellationToken cancellationToken = default)
         where TEntity : class, IEntity
     {
-        var query = _client.For<TEntity>(entitySet).Key(key);
+        // PanoramicData's IBoundClient.Key only exposes Key(object) — there is no
+        // Key(IDictionary<string, object>) or Key(params object[]) overload that the C# compiler
+        // can bind to. Passing a composite-key dictionary through Key(object) calls .ToString()
+        // on the dict and produces a malformed OData key like
+        // "EntitySet(System.Collections.Generic.Dictionary`2[...])". Bypass the broken Key API
+        // entirely for composite keys: build an OData $filter with eq predicates on each key
+        // field and rely on GetFirstOrDefaultAsync. A composite key uniquely identifies the
+        // entity by definition, so the filter returns exactly one row. The literal formatter is
+        // reused from IntegratoRODataExpressionTranslator so the wire shape stays in lockstep
+        // with filter/select/expand translations for every primitive type (Guid, DateOnly,
+        // TimeOnly, decimal-with-German-locale, etc.).
+        var query = _client.For<TEntity>(entitySet);
+        if (key is IDictionary<string, object> compositeKey)
+        {
+            if (compositeKey.Count == 0)
+            {
+                throw new ArgumentException(
+                    "Composite key dictionary must contain at least one key field. " +
+                    "An empty dictionary would emit a blank $filter and return an arbitrary row.",
+                    nameof(key));
+            }
+
+            // Each dictionary key is interpolated verbatim into the OData $filter. Reject any
+            // key that does not look like a simple OData property identifier so a caller that
+            // bypasses ODataService and hands the adapter a tainted dictionary cannot inject
+            // additional filter clauses (e.g. "JournalNum eq '1' or 1 eq 1"). Framework-internal
+            // callers go through ODataService.BuildCompositeKeyObject which derives keys from
+            // entity reflection via PropertyNameResolver, so they always pass this check.
+            foreach (KeyValuePair<string, object> kv in compositeKey)
+            {
+                if (!IsValidODataFieldName(kv.Key))
+                {
+                    throw new ArgumentException(
+                        $"Composite key field name '{kv.Key}' is not a valid OData property identifier. " +
+                        "Keys must match the pattern ^[A-Za-z_][A-Za-z0-9_.]*$ and come from entity " +
+                        "reflection (attribute-derived wire names), not user input.",
+                        nameof(key));
+                }
+            }
+
+            string filter = string.Join(
+                " and ",
+                compositeKey.Select(kv => $"{kv.Key} eq {IntegratoRODataExpressionTranslator.FormatValue(kv.Value)}"));
+            query = query.Filter(filter);
+        }
+        else
+        {
+            query = query.Key(key);
+        }
         return await _client.GetFirstOrDefaultAsync(query, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Validates that a composite-key dictionary key matches a simple OData property identifier
+    /// shape: starts with a letter or underscore, followed by letters, digits, underscores, or
+    /// dots (to permit qualified names like <c>Namespace.Field</c>). Keys that fail this check
+    /// are rejected rather than interpolated into <c>$filter</c>.
+    /// </summary>
+    private static bool IsValidODataFieldName(string name)
+    {
+        if (string.IsNullOrEmpty(name))
+        {
+            return false;
+        }
+
+        char first = name[0];
+        if (!(char.IsLetter(first) || first == '_'))
+        {
+            return false;
+        }
+
+        for (int i = 1; i < name.Length; i++)
+        {
+            char c = name[i];
+            if (!(char.IsLetterOrDigit(c) || c == '_' || c == '.'))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /// <inheritdoc />

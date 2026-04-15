@@ -376,6 +376,65 @@ public class ODataExceptionHandlerTests
         result.Should().HaveErrorType(ErrorType.NotFound);
     }
 
+    /// <summary>
+    /// Regression: when PanoramicData raises an HTTP 404 (not the internal ODataNotFoundException)
+    /// and the caller opted into treatNotFoundAsSuccess, the handler must still return success
+    /// — AND log a Warning that includes the request URL so operators can distinguish a genuine
+    /// not-found from a malformed-URL silent failure. This was the behaviour that let
+    /// LNR0000266–LNR0000269 leak into the JFI sandbox during the 2026-04-14 smoke test.
+    /// </summary>
+    [Fact]
+    public async Task ExecuteNonQueryAsync_HttpNotFoundTreatAsSuccess_ReturnsOkAndLogsWarningWithUrl()
+    {
+        // Arrange
+        var handler = CreateHandler();
+        const string requestUrl = "https://test.example.com/TestEntities(BadKey)";
+        var exception = new ODataClientException("Not found", 404, "", requestUrl);
+
+        // Act
+        var result = await handler.ExecuteNonQueryAsync(
+            "Delete",
+            () => throw exception,
+            cancellationToken: CancellationToken.None,
+            treatNotFoundAsSuccess: true);
+
+        // Assert
+        result.Should().BeSuccessful();
+
+        // Inspect the underlying Log<TState> call directly — LogWarning dispatches through
+        // Log<FormattedLogValues>, which NSubstitute cannot match via Arg.Is<object>(...)
+        // because the closed generic type is different. ReceivedCalls() is type-agnostic.
+        var logCall = _logger.ReceivedCalls()
+            .Single(c => c.GetMethodInfo().Name == nameof(ILogger.Log));
+        object?[] args = logCall.GetArguments();
+        args[0].Should().Be(LogLevel.Warning);
+        args[2]!.ToString().Should().Contain(requestUrl);
+    }
+
+    /// <summary>
+    /// Pins that an HTTP 404 WITHOUT treatNotFoundAsSuccess still produces a failed Result
+    /// (so the warning-suppression path does not leak into the normal error-reporting path).
+    /// </summary>
+    [Fact]
+    public async Task ExecuteNonQueryAsync_HttpNotFoundNotTreatAsSuccess_ReturnsNotFoundError()
+    {
+        // Arrange
+        var handler = CreateHandler();
+        var exception = new ODataClientException("Not found", 404, "", "https://test.example.com/TestEntities(123)");
+
+        // Act
+        var result = await handler.ExecuteNonQueryAsync(
+            "Delete",
+            () => throw exception,
+            cancellationToken: CancellationToken.None,
+            treatNotFoundAsSuccess: false);
+
+        // Assert
+        result.Should().BeFailed();
+        result.Should().HaveErrorCode("TestEntity.NotFound");
+        result.Should().HaveErrorType(ErrorType.NotFound);
+    }
+
     #region ExtractD365InnerError Tests
 
     /// <summary>
@@ -436,6 +495,66 @@ public class ODataExceptionHandlerTests
         string? result = ODataExceptionHandler<TestEntity>.ExtractD365InnerError("<html>Not JSON</html>");
 
         // Assert
+        result.Should().BeNull();
+    }
+
+    /// <summary>
+    /// Regression: APIM sometimes returns malformed JSON error bodies where unescaped quotes
+    /// inside the error string break <c>JsonDocument.Parse</c>. The lenient fallback must still
+    /// extract the human-readable message so the consumer-visible error is meaningful rather
+    /// than the generic "Request failed with status ...". Observed 2026-04-14 against the
+    /// IntegratoR sandbox APIM when the <c>d365foenvironment</c> header value was wrong.
+    /// </summary>
+    [Fact]
+    public void ExtractD365InnerError_MalformedJsonFromApim_ReturnsLenientExtraction()
+    {
+        // Arrange — exactly the body observed in the smoke-test session
+        const string responseBody = """{"error": "The provided value for "d365foenvironment" is not valid. Please refer to the provided api documentation"}""";
+
+        // Act
+        string? result = ODataExceptionHandler<TestEntity>.ExtractD365InnerError(responseBody);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Should().Contain("d365foenvironment");
+        result.Should().Contain("not valid");
+    }
+
+    /// <summary>
+    /// Direct unit test for the lenient extractor helper — pins the behaviour independent of
+    /// the JsonDocument fallback path.
+    /// </summary>
+    [Theory]
+    [InlineData("""{"error": "simple"}""", "simple")]
+    [InlineData("""{"message": "inner"}""", "inner")]
+    [InlineData("""{"error": "has "inner" quotes"}""", """has "inner" quotes""")]
+    // Regression: when "error" is not the last property, the extractor must stop at the
+    // first structural delimiter (",") and not over-capture into subsequent properties.
+    [InlineData("""{"error": "x", "details": "y"}""", "x")]
+    [InlineData("""{"message": "primary", "code": "E42"}""", "primary")]
+    // Precedence: when both "error" and "message" are present, the more specific "message"
+    // key wins because D365 wraps the human-readable text under error.innererror.message.
+    [InlineData("""{"error": {"code": "BadRequest", "message": "inner text"}}""", "inner text")]
+    public void ExtractLenientErrorMessage_ReturnsValue(string body, string expected)
+    {
+        string? result = ODataExceptionHandler<TestEntity>.ExtractLenientErrorMessage(body);
+
+        result.Should().Be(expected);
+    }
+
+    /// <summary>
+    /// The lenient extractor must return null when the body has no recognisable error/message
+    /// key. This pins that a garbage body does not produce a misleading "error" to the consumer.
+    /// </summary>
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("<html>nothing</html>")]
+    [InlineData("just random text no braces")]
+    public void ExtractLenientErrorMessage_NoRecognisableKey_ReturnsNull(string body)
+    {
+        string? result = ODataExceptionHandler<TestEntity>.ExtractLenientErrorMessage(body);
+
         result.Should().BeNull();
     }
 

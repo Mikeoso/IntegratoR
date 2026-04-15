@@ -1,4 +1,6 @@
+using System.Reflection;
 using FluentAssertions;
+using IntegratoR.OData.Common.Annotations;
 using IntegratoR.OData.FO.Domain.Entities.LedgerJournal;
 using Xunit;
 
@@ -61,5 +63,26 @@ public class LedgerJournalLineTests
         context.Should().ContainKey(nameof(LedgerJournalLine.JournalBatchNumber));
         context.Should().ContainKey(nameof(LedgerJournalLine.LineNumber));
         context.Should().ContainKey(nameof(LedgerJournalLine.CurrencyCode));
+    }
+
+    /// <summary>
+    /// Regression pin for the CurrencyCode create-payload bug uncovered by the 2026-04-14 smoke
+    /// test: the property was simultaneously [Required] and [ODataField(IgnoreOnCreate = true)],
+    /// which stripped CurrencyCode from the wire payload. D365 F&amp;O rejected the create with
+    /// "Das Feld 'Währung' muss ausgefüllt werden" for journal templates that do not set a
+    /// default currency (e.g. "Allgemein"). CurrencyCode MUST be included in the create payload.
+    /// </summary>
+    [Fact]
+    public void CurrencyCode_DoesNotCarry_IgnoreOnCreate()
+    {
+        PropertyInfo? property = typeof(LedgerJournalLine).GetProperty(nameof(LedgerJournalLine.CurrencyCode));
+
+        property.Should().NotBeNull();
+        ODataFieldAttribute? attribute = property!.GetCustomAttribute<ODataFieldAttribute>();
+
+        if (attribute is not null)
+        {
+            attribute.IgnoreOnCreate.Should().BeFalse("CurrencyCode is consumer-supplied and must reach the wire");
+        }
     }
 }

@@ -55,7 +55,24 @@ internal static class ApplicationDependencyInjection
         services.AddSingleton<ODataMetadataProvider>();
 
         // Configure HttpClient with Polly policies
-        services.AddHttpClient("ODataClient")
+        services.AddHttpClient("ODataClient", (serviceProvider, httpClient) =>
+            {
+                var settings = serviceProvider.GetRequiredService<IOptions<ODataSettings>>().Value;
+
+                httpClient.Timeout = TimeSpan.FromSeconds(settings.Timeout);
+
+                // Normalise the configured URL: when a relative request URI does NOT start with '/',
+                // Uri composition treats the final segment of BaseAddress as a "file" and drops it
+                // unless BaseAddress ends with '/'. PanoramicData emits non-rooted relatives like
+                // "LedgerJournalHeaders", so a configured URL of "https://host/fo" without a trailing
+                // slash resolves to "https://host/LedgerJournalHeaders" — the "/fo" segment is lost.
+                // (Note: rooted relatives like "/LedgerJournalHeaders" always replace the path
+                // regardless of trailing slash, so those requests would still be broken. PanoramicData
+                // does not emit rooted relatives for us, so the trailing-slash fix is sufficient here.)
+                // We do NOT mutate settings.Url itself — IOptions<ODataSettings>.Value.Url continues
+                // to reflect what the consumer wrote.
+                httpClient.BaseAddress = new Uri(NormaliseBaseUrl(settings.Url));
+            })
             .AddHttpMessageHandler<ODataAuthenticationHandler>()
             // Retry Policy - handles transient failures with exponential backoff
             .AddPolicyHandler((serviceProvider, request) =>
@@ -113,16 +130,18 @@ internal static class ApplicationDependencyInjection
             var httpClient = serviceProvider.GetRequiredService<IHttpClientFactory>()
                 .CreateClient("ODataClient");
 
-            httpClient.Timeout = TimeSpan.FromSeconds(settings.Timeout);
-            httpClient.BaseAddress = new Uri(settings.Url);
+            // Timeout and BaseAddress are configured via AddHttpClient above. We only need to pass
+            // the same normalised URL to ODataClientOptions.BaseUrl so PanoramicData's independent
+            // URL composition stays in lockstep with HttpClient.BaseAddress.
+            string normalisedUrl = NormaliseBaseUrl(settings.Url);
 
             var options = new ODataClientOptions
             {
-                BaseUrl = settings.Url,
+                BaseUrl = normalisedUrl,
                 HttpClient = httpClient
             };
 
-            logger.LogInformation("OData client configured with base URL: {BaseUrl}", settings.Url);
+            logger.LogInformation("OData client configured with base URL: {BaseUrl}", normalisedUrl);
 
             return new ODataClient(options);
         });
@@ -168,6 +187,30 @@ internal static class ApplicationDependencyInjection
         services.AddScoped(typeof(IntegratoR.Abstractions.Interfaces.Services.IService<>), typeof(ODataService<>));
         services.AddScoped(typeof(IODataService<>), typeof(ODataService<>));
         services.AddScoped(typeof(IODataBatchService<>), typeof(ODataService<>));
+    }
+
+    /// <summary>
+    /// Appends a trailing slash to the configured OData base URL if absent.
+    /// Required because <see cref="HttpClient.BaseAddress"/> silently drops preceding path
+    /// segments when a relative request URI starts with '/' unless the base address ends with '/'.
+    /// </summary>
+    /// <remarks>
+    /// Throws <see cref="ArgumentException"/> on null/whitespace so consumers get a clear error
+    /// at DI resolution instead of a misleading <see cref="UriFormatException"/> from
+    /// <see cref="Uri(string)"/>. Exposed as <c>internal</c> for regression tests in
+    /// <c>IntegratoR.OData.Tests</c> (see <c>InternalsVisibleTo</c> in the csproj).
+    /// </remarks>
+    internal static string NormaliseBaseUrl(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            throw new ArgumentException(
+                "ODataSettings.Url must be set to a non-empty absolute URL before resolving the OData client. " +
+                "Check your configuration (appsettings.json / environment variables).",
+                nameof(url));
+        }
+
+        return url.TrimEnd('/') + "/";
     }
 
     /// <summary>

@@ -58,6 +58,21 @@ public static class IntegratoRServiceCollectionExtensions
         // 3. F&O layer — MediatR handlers for D365 entities
         services.AddODataClientFOProxy(configuration);
 
+        // 3b. Cross-assembly generic handler closing.
+        // MediatR v12 only closes open generics against types in the SAME scanned assembly,
+        // so the layer-local AddMediatR calls in AddApplicationServices() and AddODataClientFOProxy()
+        // never see the open CreateCommandHandler<T> and the F&O entity types together. This call
+        // scans both assemblies in one pass so the closed IRequestHandler<CreateCommand<T>, ...>
+        // registrations are emitted for every F&O entity.
+        services.AddMediatR(cfg =>
+        {
+            cfg.RegisterGenericHandlers = true;
+            cfg.RegisterServicesFromAssembly(
+                typeof(IntegratoR.Application.Features.Common.Commands.CreateCommandHandler<>).Assembly);
+            cfg.RegisterServicesFromAssembly(
+                typeof(IntegratoR.OData.FO.Domain.Entities.LedgerJournal.LedgerJournalHeader).Assembly);
+        });
+
         // 4. Durable Functions Result<T> support — register the System.Text.Json Result
         //    converters with the Durable Task worker so activities and orchestrators returning
         //    Result<T>/Result round-trip through the task hub. The Configure call is lazy:

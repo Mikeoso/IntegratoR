@@ -437,7 +437,10 @@ internal static class IntegratoRODataExpressionTranslator
     // before reaching FormatValue. The emitted form is the underlying integer (e.g.
     // `Status eq 1`), which D365 F&O OData accepts. Locked in by
     // ToFilterString_EnumComparison_EmitsUnderlyingIntegerValue.
-    private static string FormatValue(object? value) => value switch
+    // Exposed as internal so ODataClientAdapter can reuse the same OData v4 literal formatter
+    // for composite-key $filter construction (see ODataClientAdapter.FindByKeyAsync). Keeps the
+    // filter/select/expand path and the composite-key bypass in lockstep on every primitive type.
+    internal static string FormatValue(object? value) => value switch
     {
         null => "null",
         string s => $"'{s.Replace("'", "''")}'",
