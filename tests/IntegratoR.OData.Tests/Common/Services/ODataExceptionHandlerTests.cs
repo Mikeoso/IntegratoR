@@ -532,6 +532,9 @@ public class ODataExceptionHandlerTests
     // first structural delimiter (",") and not over-capture into subsequent properties.
     [InlineData("""{"error": "x", "details": "y"}""", "x")]
     [InlineData("""{"message": "primary", "code": "E42"}""", "primary")]
+    // Precedence: when both "error" and "message" are present, the more specific "message"
+    // key wins because D365 wraps the human-readable text under error.innererror.message.
+    [InlineData("""{"error": {"code": "BadRequest", "message": "inner text"}}""", "inner text")]
     public void ExtractLenientErrorMessage_ReturnsValue(string body, string expected)
     {
         string? result = ODataExceptionHandler<TestEntity>.ExtractLenientErrorMessage(body);
