@@ -52,7 +52,7 @@
   </ItemGroup>
 
   <ItemGroup Label="Tooling">
-    <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="10.0.103" />
+    <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="10.0.202" />
     <PackageVersion Include="OData2Poco.CommandLine" Version="6.4.0" />
   </ItemGroup>
 
