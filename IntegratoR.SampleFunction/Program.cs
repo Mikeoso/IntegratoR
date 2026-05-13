@@ -1,4 +1,6 @@
 using System.Reflection;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Azure.Identity;
 using IntegratoR.Abstractions.Common.Results;
 using Microsoft.Azure.Functions.Worker;
@@ -46,6 +48,19 @@ var host = new HostBuilder()
 
         services.AddApplicationInsightsTelemetryWorkerService();
         services.ConfigureFunctionsApplicationInsights();
+
+        // Configure the Functions Worker's System.Text.Json options so HttpRequestData /
+        // HttpResponseData ReadFromJsonAsync / WriteAsJsonAsync accept string-valued enums
+        // (e.g. "HierarchyType": "DataEntityLedgerDimensionFormat"). Without this, the worker
+        // falls back to the STJ default which only accepts numeric enum values, forcing callers
+        // to look up the underlying integer. The worker's default JsonObjectSerializer reads
+        // from IOptions<JsonSerializerOptions>, so Configure<JsonSerializerOptions> mutates the
+        // live options instance the serializer already holds — no WorkerOptions.Serializer
+        // replacement required.
+        services.Configure<JsonSerializerOptions>(options =>
+        {
+            options.Converters.Add(new JsonStringEnumConverter());
+        });
 
         services.AddIntegratoR(context.Configuration, integrator =>
         {
