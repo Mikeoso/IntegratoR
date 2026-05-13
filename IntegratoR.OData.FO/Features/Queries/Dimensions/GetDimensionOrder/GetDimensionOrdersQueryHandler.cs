@@ -38,10 +38,10 @@ public class GetDimensionOrdersQueryHandler : IRequestHandler<GetDimensionOrders
 
         if (dimensionFormats.IsFailed)
         {
-            return Result.Fail<DimensionFormat>(new IntegrationError(
-                $"DimensionParameters.QueryFailed",
-                $"No Data returned by the query",
-                ErrorType.Failure));
+            // Propagate the underlying errors verbatim so the consumer sees the real cause
+            // (e.g. entity set not found, authentication failure, APIM rejection) instead of
+            // a generic "No Data returned by the query" that hides the diagnostics.
+            return Result.Fail<DimensionFormat>(dimensionFormats.Errors);
         }
         var financialDimensionFormat = dimensionFormats.Value?.FirstOrDefault();
 
@@ -49,10 +49,9 @@ public class GetDimensionOrdersQueryHandler : IRequestHandler<GetDimensionOrders
 
         if (dimensionParameters.IsFailed)
         {
-            return Result.Fail<DimensionFormat>(new IntegrationError(
-                $"DimensionParameters.QueryFailed",
-                $"No Data returned by the query",
-                ErrorType.Failure));
+            // Same rationale as above: surface the real underlying error from the
+            // DimensionParameters service instead of rewriting it.
+            return Result.Fail<DimensionFormat>(dimensionParameters.Errors);
         }
 
         var dimensionDelimiter = dimensionParameters.Value?.FirstOrDefault()?.DimensionSegmentDelimiter;

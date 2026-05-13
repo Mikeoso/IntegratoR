@@ -45,7 +45,7 @@ public class GetDimensionOrdersQueryHandlerTests
         // Arrange
         var dimParams = new DimensionParameters
         {
-            Key = "Default",
+            Key = 0,
             DimensionSegmentDelimiter = DimensionSegmentDelimiter.Hyphen
         };
         _dimParamsService.FindAll(Arg.Any<CancellationToken>())
@@ -141,7 +141,7 @@ public class GetDimensionOrdersQueryHandlerTests
         // Arrange
         var dimParams = new DimensionParameters
         {
-            Key = "Default",
+            Key = 0,
             DimensionSegmentDelimiter = DimensionSegmentDelimiter.Hyphen
         };
         _dimParamsService.FindAll(Arg.Any<CancellationToken>())
@@ -171,7 +171,7 @@ public class GetDimensionOrdersQueryHandlerTests
         // Arrange
         var dimParams = new DimensionParameters
         {
-            Key = "Default",
+            Key = 0,
             DimensionSegmentDelimiter = DimensionSegmentDelimiter.Hyphen
         };
         _dimParamsService.FindAll(Arg.Any<CancellationToken>())
