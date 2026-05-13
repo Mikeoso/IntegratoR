@@ -33,6 +33,7 @@
 
 using System.Collections;
 using System.Collections.Frozen;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Linq.Expressions;
 using System.Reflection;
@@ -242,6 +243,22 @@ internal static class IntegratoRODataExpressionTranslator
 
     private static string ParseBinaryExpression(BinaryExpression binary, ExpressionType? parentOperator)
     {
+        // Special case: enum-property-vs-constant-literal comparison. The C# compiler
+        // constant-folds `x.EnumProp == EnumType.Member` so the right operand arrives as
+        // `ConstantExpression(<int>, Int32)` — the enum type on the right is lost. D365 F&O
+        // OData v4 strictly type-checks enum operands and rejects `EnumProp eq 1` with
+        // "incompatible types ... 'Microsoft.Dynamics.DataEntities.EnumType' and 'Edm.Int32'".
+        // Reconstruct the enum type from the LEFT operand and emit the qualified-type form.
+        // Only fires when the right side is a literal int constant; captured-variable enum
+        // values still flow through the normal FormatValue Enum arm (which also emits the
+        // qualified-type form, see FormatValue).
+        if (TryFormatEnumConstantComparison(binary, out var enumResult))
+        {
+            // No OrElse/AndAlso paren-wrapping needed: the helper only fires for equality
+            // operators (eq/ne), which cannot be the enum comparison's own NodeType.
+            return enumResult;
+        }
+
         var left = ExpressionToODataFilter(binary.Left, binary.NodeType);
         var right = ExpressionToODataFilter(binary.Right, binary.NodeType);
 
@@ -258,6 +275,135 @@ internal static class IntegratoRODataExpressionTranslator
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Detects the <c>x.EnumProp &lt;op&gt; EnumLiteral</c> expression shape (where the compiler
+    /// has constant-folded the enum literal to an underlying integer <see cref="ConstantExpression"/>)
+    /// and emits the D365 F&amp;O-compatible qualified-type filter. Returns <c>false</c> without
+    /// modification if the expression is not an enum-constant comparison — callers fall through
+    /// to the generic parsing path.
+    /// </summary>
+    private static bool TryFormatEnumConstantComparison(BinaryExpression binary, [NotNullWhen(true)] out string? result)
+    {
+        result = null;
+
+        // Restricted to equality operators: relational operators (lt/le/gt/ge) rarely make
+        // semantic sense on enums (order depends on underlying integer assignment), and the
+        // symmetric orientation below would silently invert the predicate without flipping
+        // the operator. Keeping this to eq/ne avoids both pitfalls; relational enum
+        // expressions fall through to the generic path unchanged.
+        if (binary.NodeType is not ExpressionType.Equal and not ExpressionType.NotEqual)
+        {
+            return false;
+        }
+
+        var op = binary.NodeType == ExpressionType.Equal ? "eq" : "ne";
+
+        // Left must be Convert(enumMember, Int32) or similar underlying integer type.
+        // Right must be ConstantExpression holding the constant-folded integer value.
+        if (TryGetEnumMemberPath(binary.Left, out var enumType, out var memberPath)
+            && TryGetIntegerConstant(binary.Right, out var integerValue)
+            && TryFormatQualifiedEnumLiteral(enumType!, integerValue, out var rightLiteral))
+        {
+            result = $"{memberPath} {op} {rightLiteral}";
+            return true;
+        }
+
+        // Symmetric case: EnumLiteral <op> x.EnumProp (rare but legal with eq/ne, e.g.
+        // `Status.Posted == x.Status`). Emitting literal-on-left preserves semantics for
+        // equality operators because `A eq B` ≡ `B eq A`.
+        if (TryGetEnumMemberPath(binary.Right, out enumType, out memberPath)
+            && TryGetIntegerConstant(binary.Left, out integerValue)
+            && TryFormatQualifiedEnumLiteral(enumType!, integerValue, out var leftLiteral))
+        {
+            result = $"{leftLiteral} {op} {memberPath}";
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Formats an integer value as the D365 F&amp;O qualified-type enum literal when the integer
+    /// corresponds to a defined enum member. Returns <c>false</c> for undefined values (e.g.
+    /// flag-combo values that aren't a single named member); callers can fall through to the
+    /// generic path so D365 returns its standard "incompatible types" error rather than a
+    /// malformed literal that references a non-existent enum name.
+    /// </summary>
+    private static bool TryFormatQualifiedEnumLiteral(Type enumType, long integerValue, [NotNullWhen(true)] out string? literal)
+    {
+        literal = null;
+
+        var enumValue = Enum.ToObject(enumType, integerValue);
+        if (!Enum.IsDefined(enumType, enumValue))
+        {
+            return false;
+        }
+
+        var memberName = Enum.GetName(enumType, enumValue);
+        if (string.IsNullOrEmpty(memberName))
+        {
+            return false;
+        }
+
+        literal = $"Microsoft.Dynamics.DataEntities.{enumType.Name}'{memberName}'";
+        return true;
+    }
+
+    /// <summary>
+    /// Unwraps a <c>Convert(enumMember, UnderlyingIntegerType)</c> expression and returns the
+    /// enum <see cref="Type"/> plus the OData member path of the underlying property. Returns
+    /// <c>false</c> when the expression is not an enum-to-integer convert.
+    /// </summary>
+    private static bool TryGetEnumMemberPath(Expression expression, out Type? enumType, out string? memberPath)
+    {
+        enumType = null;
+        memberPath = null;
+
+        if (expression is UnaryExpression { NodeType: ExpressionType.Convert } convert
+            && convert.Operand is MemberExpression member
+            && member.Type.IsEnum)
+        {
+            enumType = member.Type;
+            memberPath = GetMemberPath(member);
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Extracts a non-null integer value from a <see cref="ConstantExpression"/> regardless of
+    /// the underlying integer type (byte/sbyte/short/ushort/int/uint/long/ulong). Returns
+    /// <c>false</c> if the expression is not a constant or the value is not a convertible integer.
+    /// </summary>
+    private static bool TryGetIntegerConstant(Expression expression, out long integerValue)
+    {
+        integerValue = 0;
+
+        if (expression is ConstantExpression constant && constant.Value is not null)
+        {
+            try
+            {
+                integerValue = Convert.ToInt64(constant.Value, CultureInfo.InvariantCulture);
+                return true;
+            }
+            catch (InvalidCastException)
+            {
+                return false;
+            }
+            catch (FormatException)
+            {
+                return false;
+            }
+            catch (OverflowException)
+            {
+                return false;
+            }
+        }
+
+        return false;
     }
 
     private static string ParseMethodCallExpression(MethodCallExpression methodCall)
@@ -432,11 +578,28 @@ internal static class IntegratoRODataExpressionTranslator
     // literals are valid regardless of the host process's CurrentCulture (e.g. a German locale
     // would otherwise emit "1,23" for a decimal, which is not a valid OData numeric literal).
     //
-    // The Enum arm is intentionally absent: C# `==` comparisons on enum properties get
-    // compiled with Convert(enum, int) on both sides, and ParseBinaryExpression strips Convert
-    // before reaching FormatValue. The emitted form is the underlying integer (e.g.
-    // `Status eq 1`), which D365 F&O OData accepts. Locked in by
-    // ToFilterString_EnumComparison_EmitsUnderlyingIntegerValue.
+    // Enum handling has two code paths depending on how the C# compiler compiles the
+    // comparison expression:
+    //
+    // 1. Constant-literal comparison (e.g. `x.Status == Status.Posted`): the compiler
+    //    constant-folds the literal side to `ConstantExpression(1, Int32)` directly — there is
+    //    no Convert wrapper on the literal to strip. The left side `x.Status` is wrapped in
+    //    Convert(enum, int) which ParseBinaryExpression strips to the MemberExpression. The
+    //    right side arrives at FormatValue as a plain int, so the int arm emits the underlying
+    //    integer form (`Status eq 1`). D365 F&O OData accepts this.
+    //
+    // 2. Captured-variable comparison (e.g. `x.Status == capturedVar`): the compiler emits a
+    //    MemberExpression on the closure field WITHOUT a Convert wrapper. EvaluateExpression
+    //    returns the Enum instance directly. Without the Enum arm below, the value would fall
+    //    through to IFormattable and emit the bare enum name as an unquoted identifier — D365
+    //    rejects that with "Could not find a property named 'EnumMemberName'". The Enum arm
+    //    emits the OData v4 qualified-type form that D365 F&O requires:
+    //    `Microsoft.Dynamics.DataEntities.EnumType'MemberName'`.
+    //    Ref: https://shootax.blogspot.com/2020/06/d365fo-odata-how-to-filter-on-enum.html
+    //
+    // Both forms are valid in D365 F&O OData — the integer form is a numeric literal, the
+    // qualified-type form is the canonical OData v4 enum literal.
+    //
     // Exposed as internal so ODataClientAdapter can reuse the same OData v4 literal formatter
     // for composite-key $filter construction (see ODataClientAdapter.FindByKeyAsync). Keeps the
     // filter/select/expand path and the composite-key bypass in lockstep on every primitive type.
@@ -445,6 +608,7 @@ internal static class IntegratoRODataExpressionTranslator
         null => "null",
         string s => $"'{s.Replace("'", "''")}'",
         bool b => b ? "true" : "false",
+        Enum e => $"Microsoft.Dynamics.DataEntities.{e.GetType().Name}'{e}'",
         byte by => by.ToString(CultureInfo.InvariantCulture),
         sbyte sb => sb.ToString(CultureInfo.InvariantCulture),
         short sh => sh.ToString(CultureInfo.InvariantCulture),
