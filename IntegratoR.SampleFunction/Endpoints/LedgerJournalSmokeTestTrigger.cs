@@ -54,7 +54,7 @@ public sealed class LedgerJournalSmokeTestTrigger
             return await WriteResponse(req, HttpStatusCode.BadRequest, new LedgerJournalSmokeTestResponse(
                 Success: false,
                 CreatedJournalBatchNumber: null,
-                Steps: [new LedgerJournalSmokeTestStep("ParseRequest", false, "SmokeTest.InvalidJson", ErrorType.Validation.ToString(), ex.Message)]),
+                Steps: [new SmokeTestStep("ParseRequest", false, "SmokeTest.InvalidJson", ErrorType.Validation.ToString(), ex.Message)]),
                 cancellationToken).ConfigureAwait(false);
         }
 
@@ -63,11 +63,11 @@ public sealed class LedgerJournalSmokeTestTrigger
             return await WriteResponse(req, HttpStatusCode.BadRequest, new LedgerJournalSmokeTestResponse(
                 Success: false,
                 CreatedJournalBatchNumber: null,
-                Steps: [new LedgerJournalSmokeTestStep("ParseRequest", false, "SmokeTest.MissingFields", ErrorType.Validation.ToString(), "Company and JournalName are required.")]),
+                Steps: [new SmokeTestStep("ParseRequest", false, "SmokeTest.MissingFields", ErrorType.Validation.ToString(), "Company and JournalName are required.")]),
                 cancellationToken).ConfigureAwait(false);
         }
 
-        var steps = new List<LedgerJournalSmokeTestStep>();
+        var steps = new List<SmokeTestStep>();
         string? journalBatchNumber = null;
         decimal? debitLineNumber = null;
         decimal? creditLineNumber = null;
@@ -243,7 +243,7 @@ public sealed class LedgerJournalSmokeTestTrigger
     }
 
     private async Task BestEffortCleanup(
-        List<LedgerJournalSmokeTestStep> steps,
+        List<SmokeTestStep> steps,
         string company,
         string? journalBatchNumber,
         CancellationToken cancellationToken)
@@ -274,7 +274,7 @@ public sealed class LedgerJournalSmokeTestTrigger
         }
         else
         {
-            steps.Add(new LedgerJournalSmokeTestStep(
+            steps.Add(new SmokeTestStep(
                 "Cleanup.FilterLines",
                 false,
                 linesResult.GetError()?.Code,
@@ -299,21 +299,21 @@ public sealed class LedgerJournalSmokeTestTrigger
             onSuccess: _ => "deleted"));
     }
 
-    private static LedgerJournalSmokeTestStep BuildStep<T>(
+    private static SmokeTestStep BuildStep<T>(
         string name,
         Result<T> result,
         Func<T, string>? onSuccess = null)
     {
         if (result.IsSuccess)
         {
-            return new LedgerJournalSmokeTestStep(
+            return new SmokeTestStep(
                 name,
                 Success: true,
                 Details: onSuccess?.Invoke(result.Value));
         }
 
         var error = result.GetError();
-        return new LedgerJournalSmokeTestStep(
+        return new SmokeTestStep(
             name,
             Success: false,
             ErrorCode: error?.Code,

@@ -12,4 +12,4 @@ public sealed record FinancialDimensionSmokeTestResponse(
     bool Success,
     string? Delimiter,
     IReadOnlyList<string>? Segments,
-    IReadOnlyList<LedgerJournalSmokeTestStep> Steps);
+    IReadOnlyList<SmokeTestStep> Steps);

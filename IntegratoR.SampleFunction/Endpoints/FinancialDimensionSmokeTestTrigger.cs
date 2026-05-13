@@ -62,7 +62,7 @@ public sealed class FinancialDimensionSmokeTestTrigger
                 Success: false,
                 Delimiter: null,
                 Segments: null,
-                Steps: [new LedgerJournalSmokeTestStep("ParseRequest", false, "SmokeTest.InvalidJson", ErrorType.Validation.ToString(), ex.Message)]),
+                Steps: [new SmokeTestStep("ParseRequest", false, "SmokeTest.InvalidJson", ErrorType.Validation.ToString(), ex.Message)]),
                 cancellationToken).ConfigureAwait(false);
         }
 
@@ -72,11 +72,11 @@ public sealed class FinancialDimensionSmokeTestTrigger
                 Success: false,
                 Delimiter: null,
                 Segments: null,
-                Steps: [new LedgerJournalSmokeTestStep("ParseRequest", false, "SmokeTest.MissingFields", ErrorType.Validation.ToString(), "DimensionFormatName is required.")]),
+                Steps: [new SmokeTestStep("ParseRequest", false, "SmokeTest.MissingFields", ErrorType.Validation.ToString(), "DimensionFormatName is required.")]),
                 cancellationToken).ConfigureAwait(false);
         }
 
-        var steps = new List<LedgerJournalSmokeTestStep>();
+        var steps = new List<SmokeTestStep>();
 
         _logger.LogInformation(
             "FinancialDimension smoke test starting for format '{DimensionFormatName}' of type '{HierarchyType}'.",
@@ -110,21 +110,21 @@ public sealed class FinancialDimensionSmokeTestTrigger
             .ConfigureAwait(false);
     }
 
-    private static LedgerJournalSmokeTestStep BuildStep<T>(
+    private static SmokeTestStep BuildStep<T>(
         string name,
         Result<T> result,
         Func<T, string>? onSuccess = null)
     {
         if (result.IsSuccess)
         {
-            return new LedgerJournalSmokeTestStep(
+            return new SmokeTestStep(
                 name,
                 Success: true,
                 Details: onSuccess?.Invoke(result.Value));
         }
 
         var error = result.GetError();
-        return new LedgerJournalSmokeTestStep(
+        return new SmokeTestStep(
             name,
             Success: false,
             ErrorCode: error?.Code,

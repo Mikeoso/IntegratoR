@@ -9,16 +9,4 @@ namespace IntegratoR.SampleFunction.Domain.DTOs.SmokeTest;
 public sealed record LedgerJournalSmokeTestResponse(
     bool Success,
     string? CreatedJournalBatchNumber,
-    IReadOnlyList<LedgerJournalSmokeTestStep> Steps);
-
-/// <summary>
-/// Per-step outcome. On failure <see cref="ErrorCode"/> and <see cref="ErrorMessage"/>
-/// carry the <c>IntegrationError</c> details so the caller can diagnose without reading logs.
-/// </summary>
-public sealed record LedgerJournalSmokeTestStep(
-    string Name,
-    bool Success,
-    string? ErrorCode = null,
-    string? ErrorType = null,
-    string? ErrorMessage = null,
-    string? Details = null);
+    IReadOnlyList<SmokeTestStep> Steps);
