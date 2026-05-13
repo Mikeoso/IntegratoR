@@ -3,6 +3,7 @@ using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.Abstractions.Interfaces.Services;
 using IntegratoR.OData.FO.Common.Extensions;
 using IntegratoR.OData.FO.Domain.Entities.Dimensions;
+using IntegratoR.OData.FO.Domain.Enums.Dimensions;
 using IntegratoR.OData.FO.Domain.Enums.General;
 using IntegratoR.OData.FO.Domain.Models.FinancialDimensions;
 using IntegratoR.OData.Interfaces.Services;
@@ -38,10 +39,10 @@ public class GetDimensionOrdersQueryHandler : IRequestHandler<GetDimensionOrders
 
         if (dimensionFormats.IsFailed)
         {
-            return Result.Fail<DimensionFormat>(new IntegrationError(
-                $"DimensionParameters.QueryFailed",
-                $"No Data returned by the query",
-                ErrorType.Failure));
+            // Propagate the underlying errors verbatim so the consumer sees the real cause
+            // (e.g. entity set not found, authentication failure, APIM rejection) instead of
+            // a generic "No Data returned by the query" that hides the diagnostics.
+            return Result.Fail<DimensionFormat>(dimensionFormats.Errors);
         }
         var financialDimensionFormat = dimensionFormats.Value?.FirstOrDefault();
 
@@ -49,14 +50,28 @@ public class GetDimensionOrdersQueryHandler : IRequestHandler<GetDimensionOrders
 
         if (dimensionParameters.IsFailed)
         {
-            return Result.Fail<DimensionFormat>(new IntegrationError(
-                $"DimensionParameters.QueryFailed",
-                $"No Data returned by the query",
-                ErrorType.Failure));
+            // Same rationale as above: surface the real underlying error from the
+            // DimensionParameters service instead of rewriting it.
+            return Result.Fail<DimensionFormat>(dimensionParameters.Errors);
         }
 
-        var dimensionDelimiter = dimensionParameters.Value?.FirstOrDefault()?.DimensionSegmentDelimiter;
-        var dimensionOrder = dimensionFormats.Value?.FirstOrDefault()?.FinancialDimensionFormat?.Split(dimensionDelimiter.GetCharValue()).ToList();
+        // Guard against an empty DimensionParameters response. D365 stores this as a
+        // singleton-row entity so this is unexpected in practice, but if FindAll returns an
+        // empty collection (e.g. the entity set exists but the row was never seeded) the
+        // delimiter would be null and DimensionSegmentDelimiterExtensions.GetCharValue throws
+        // ArgumentOutOfRangeException on the default arm. Failing explicitly with NotFound
+        // gives the caller an actionable diagnostic instead of an obscure exception.
+        var dimensionParametersRecord = dimensionParameters.Value?.FirstOrDefault();
+        if (dimensionParametersRecord is null)
+        {
+            return Result.Fail<DimensionFormat>(new IntegrationError(
+                "DimensionParameters.NotFound",
+                "DimensionParameters returned no records — the singleton parameter row is missing in this environment.",
+                ErrorType.NotFound));
+        }
+
+        DimensionSegmentDelimiter? dimensionDelimiter = dimensionParametersRecord.DimensionSegmentDelimiter;
+        var dimensionOrder = financialDimensionFormat?.FinancialDimensionFormat?.Split(dimensionDelimiter.GetCharValue()).ToList();
 
         var dimensionFormat = new DimensionFormat
         {

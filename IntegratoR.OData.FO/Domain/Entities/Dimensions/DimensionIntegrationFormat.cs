@@ -12,7 +12,7 @@ namespace IntegratoR.OData.FO.Domain.Entities.Dimensions;
 /// This entity is typically a custom or helper entity used to define how segmented dimension strings 
 /// (e.g., "618160-001-023") should be constructed or deconstructed, mapping them to the correct dimension format in D365 F&O.
 /// </summary>
-[Table("DimensionIntegrationFormat")]
+[Table("DimensionIntegrationFormats")]
 public class DimensionIntegrationFormat : BaseEntity<string>
 {
     /// <summary>

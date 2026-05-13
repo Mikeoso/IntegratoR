@@ -57,6 +57,8 @@ public sealed class IntegratoRODataExpressionTranslatorTests
         public string DataAreaId { get; set; } = string.Empty;
 
         public decimal Amount { get; set; }
+
+        public Status Status { get; set; }
     }
 
     private sealed class JournalEntityWithLines
@@ -254,20 +256,78 @@ public sealed class IntegratoRODataExpressionTranslatorTests
     }
 
     /// <summary>
-    /// Enum comparisons via <c>==</c> get compiled by C# with an implicit Convert-to-underlying-type
-    /// on both sides. The translator (matching PanoramicData) strips the Convert and emits the
-    /// integer value. D365 F&O OData accepts integer enum values in $filter, so this is correct.
-    /// The named-string form (<c>'Posted'</c>) is not currently supported by the translator —
-    /// callers should rely on the integer form shown here.
+    /// Enum comparisons against a <b>constant literal</b> are constant-folded by C# to an
+    /// underlying integer <see cref="ConstantExpression"/>, and <see cref="BinaryExpression.Left"/>
+    /// is wrapped in <c>Convert(enumMember, Int32)</c>. <c>ParseBinaryExpression</c> detects this
+    /// shape and emits the D365-compatible qualified-type literal. The previous integer form
+    /// (<c>Status eq 1</c>) was rejected by D365 F&amp;O OData with
+    /// "incompatible types ... 'Microsoft.Dynamics.DataEntities.EnumType' and 'Edm.Int32'",
+    /// confirmed by the 2026-04-16 dimension smoke test.
     /// </summary>
     [Fact]
-    public void ToFilterString_EnumComparison_EmitsUnderlyingIntegerValue()
+    public void ToFilterString_EnumComparison_ConstantLiteral_EmitsQualifiedTypeLiteral()
     {
         Expression<Func<JournalEntity, bool>> filter = x => x.Status == Status.Posted;
 
         var result = IntegratoRODataExpressionTranslator.ToFilterString(filter);
 
-        result.Should().Be("Status eq 1");
+        result.Should().Be("Status eq Microsoft.Dynamics.DataEntities.Status'Posted'");
+    }
+
+    /// <summary>
+    /// Regression for the 2026-04-15 dimension smoke test: when the enum comparison is against
+    /// a <b>captured local variable</b> (not a constant literal), the C# compiler emits a
+    /// MemberExpression on the closure field WITHOUT a Convert wrapper. The value reaches
+    /// FormatValue as an <see cref="Enum"/> instance and must be emitted in the OData v4
+    /// qualified-type form <c>Microsoft.Dynamics.DataEntities.EnumType'MemberName'</c>.
+    /// Prior to the fix the bare enum name was emitted as an unquoted identifier, causing D365
+    /// to reject the filter with "Could not find a property named 'Posted'".
+    /// </summary>
+    [Fact]
+    public void ToFilterString_EnumComparison_CapturedVariable_EmitsQualifiedTypeLiteral()
+    {
+        var capturedStatus = Status.Posted;
+        Expression<Func<JournalEntity, bool>> filter = x => x.Status == capturedStatus;
+
+        var result = IntegratoRODataExpressionTranslator.ToFilterString(filter);
+
+        result.Should().Be("Status eq Microsoft.Dynamics.DataEntities.Status'Posted'");
+    }
+
+    /// <summary>
+    /// Inequality comparison shape (<c>!=</c>) must emit the same qualified-type literal as
+    /// equality — the operator is the only thing that changes. Pins that the enum-constant
+    /// detection path in <c>ParseBinaryExpression</c> is not inadvertently restricted to
+    /// <c>ExpressionType.Equal</c>.
+    /// </summary>
+    [Fact]
+    public void ToFilterString_EnumInequality_ConstantLiteral_EmitsQualifiedTypeLiteral()
+    {
+        Expression<Func<JournalEntity, bool>> filter = x => x.Status != Status.Posted;
+
+        var result = IntegratoRODataExpressionTranslator.ToFilterString(filter);
+
+        result.Should().Be("Status ne Microsoft.Dynamics.DataEntities.Status'Posted'");
+    }
+
+    /// <summary>
+    /// Multi-predicate shape mirrors the real-world failure surface from
+    /// <c>GetDimensionOrdersQueryHandler</c>: a captured-variable enum AND a constant-literal
+    /// enum combined with <c>&amp;&amp;</c>. Both predicates must emit the qualified-type form;
+    /// before the ParseBinaryExpression fix the second predicate emitted <c>IsActive eq 1</c>
+    /// which D365 rejected.
+    /// </summary>
+    [Fact]
+    public void ToFilterString_MixedEnumPredicates_BothEmitQualifiedTypeLiteral()
+    {
+        var capturedStatus = Status.Posted;
+        Expression<Func<JournalEntity, bool>> filter = x => x.Status == capturedStatus && x.Status == Status.Draft;
+
+        var result = IntegratoRODataExpressionTranslator.ToFilterString(filter);
+
+        result.Should().Be(
+            "Status eq Microsoft.Dynamics.DataEntities.Status'Posted' and "
+            + "Status eq Microsoft.Dynamics.DataEntities.Status'Draft'");
     }
 
     [Fact]
@@ -425,6 +485,46 @@ public sealed class IntegratoRODataExpressionTranslatorTests
         var result = IntegratoRODataExpressionTranslator.ToFilterString(filter);
 
         result.Should().Be("Lines/any(l: (l/dataAreaId eq null or l/dataAreaId eq ''))");
+    }
+
+    /// <summary>
+    /// Regression for the enum-constant interception missing on the lambda path. Before this
+    /// fix, <c>l => l.Status == Status.Posted</c> inside an Any/All body was parsed by
+    /// ParseLambdaBinaryExpression which stripped the Convert(enum, int) wrapper on the
+    /// member side and emitted the integer form (<c>l/Status eq 1</c>) — D365 rejects this
+    /// with the same "incompatible types ... 'Edm.Int32'" error as the top-level case.
+    /// </summary>
+    [Fact]
+    public void ToFilterString_AnyLambdaWithEnumConstantLiteral_EmitsQualifiedTypeForm()
+    {
+        Expression<Func<JournalEntityWithLines, bool>> filter =
+            x => x.Lines.Any(l => l.Status == Status.Posted);
+
+        var result = IntegratoRODataExpressionTranslator.ToFilterString(filter);
+
+        result.Should().Be("Lines/any(l: l/Status eq Microsoft.Dynamics.DataEntities.Status'Posted')");
+    }
+
+    [Fact]
+    public void ToFilterString_AllLambdaWithEnumConstantLiteralInequality_EmitsQualifiedTypeForm()
+    {
+        Expression<Func<JournalEntityWithLines, bool>> filter =
+            x => x.Lines.All(l => l.Status != Status.Draft);
+
+        var result = IntegratoRODataExpressionTranslator.ToFilterString(filter);
+
+        result.Should().Be("Lines/all(l: l/Status ne Microsoft.Dynamics.DataEntities.Status'Draft')");
+    }
+
+    [Fact]
+    public void ToFilterString_AnyLambdaWithEnumLiteralCombinedPredicate_EmitsQualifiedTypeForm()
+    {
+        Expression<Func<JournalEntityWithLines, bool>> filter =
+            x => x.Lines.Any(l => l.Status == Status.Posted && l.Amount > 100);
+
+        var result = IntegratoRODataExpressionTranslator.ToFilterString(filter);
+
+        result.Should().Be("Lines/any(l: l/Status eq Microsoft.Dynamics.DataEntities.Status'Posted' and l/Amount gt 100)");
     }
 
     // -----------------------------------------------------------------------------------------

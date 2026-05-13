@@ -45,7 +45,7 @@ public class GetDimensionOrdersQueryHandlerTests
         // Arrange
         var dimParams = new DimensionParameters
         {
-            Key = "Default",
+            Key = 0,
             DimensionSegmentDelimiter = DimensionSegmentDelimiter.Hyphen
         };
         _dimParamsService.FindAll(Arg.Any<CancellationToken>())
@@ -141,7 +141,7 @@ public class GetDimensionOrdersQueryHandlerTests
         // Arrange
         var dimParams = new DimensionParameters
         {
-            Key = "Default",
+            Key = 0,
             DimensionSegmentDelimiter = DimensionSegmentDelimiter.Hyphen
         };
         _dimParamsService.FindAll(Arg.Any<CancellationToken>())
@@ -163,6 +163,43 @@ public class GetDimensionOrdersQueryHandlerTests
     }
 
     /// <summary>
+    /// Regression for the empty-DimensionParameters guard. DimensionParameters is a
+    /// singleton-row entity in D365 so this is unexpected in practice, but if FindAll succeeds
+    /// with an empty collection the previous code would call GetCharValue() on a null delimiter
+    /// and throw ArgumentOutOfRangeException. The guard returns Result.Fail with a NotFound
+    /// IntegrationError so callers get an actionable diagnostic instead of an obscure throw.
+    /// </summary>
+    [Fact]
+    public async Task Handle_NoDimensionParameters_ReturnsNotFoundFailure()
+    {
+        // Arrange
+        var dimFormat = new DimensionIntegrationFormat
+        {
+            DimensionFormatName = "DefaultFormat",
+            DimensionFormatType = DimensionHierarchyType.DataEntityDefaultDimensionFormat,
+            FinancialDimensionFormat = "MainAccount-BU-Dept",
+            IsActive = NoYes.Yes
+        };
+        _dimFormatService.FindAsync(Arg.Any<Expression<Func<DimensionIntegrationFormat, bool>>>(), Arg.Any<CancellationToken>())
+            .Returns(Result.Ok<IEnumerable<DimensionIntegrationFormat>>(new[] { dimFormat }));
+
+        _dimParamsService.FindAll(Arg.Any<CancellationToken>())
+            .Returns(Result.Ok<IEnumerable<DimensionParameters>>(Enumerable.Empty<DimensionParameters>()));
+
+        var query = new GetDimensionOrdersQuery(
+            "DefaultFormat",
+            DimensionHierarchyType.DataEntityDefaultDimensionFormat);
+
+        // Act
+        var result = await _sut.Handle(query, CancellationToken.None);
+
+        // Assert
+        result.Should().BeFailed();
+        result.Should().HaveErrorCode("DimensionParameters.NotFound");
+        result.Should().HaveErrorType(ErrorType.NotFound);
+    }
+
+    /// <summary>
     /// Verifies that Handle correctly parses a FinancialDimensionFormat string into individual segments.
     /// </summary>
     [Fact]
@@ -171,7 +208,7 @@ public class GetDimensionOrdersQueryHandlerTests
         // Arrange
         var dimParams = new DimensionParameters
         {
-            Key = "Default",
+            Key = 0,
             DimensionSegmentDelimiter = DimensionSegmentDelimiter.Hyphen
         };
         _dimParamsService.FindAll(Arg.Any<CancellationToken>())
