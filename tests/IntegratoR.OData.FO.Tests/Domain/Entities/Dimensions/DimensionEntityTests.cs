@@ -41,7 +41,7 @@ public class DimensionEntityTests
         // Arrange
         var entity = new DimensionParameters
         {
-            Key = "Default"
+            Key = 0
         };
 
         // Act
@@ -49,6 +49,6 @@ public class DimensionEntityTests
 
         // Assert
         key.Should().HaveCount(1);
-        key[0].Should().Be("Default");
+        key[0].Should().Be(0);
     }
 }

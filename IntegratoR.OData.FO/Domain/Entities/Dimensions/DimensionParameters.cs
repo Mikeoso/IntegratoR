@@ -12,15 +12,24 @@ namespace IntegratoR.OData.FO.Domain.Entities.Dimensions;
 /// ensuring consistent processing across different functions.
 /// </summary>
 [Table("DimensionParameters")]
-public class DimensionParameters : BaseEntity<string>
+public class DimensionParameters : BaseEntity<int>
 {
     /// <summary>
     /// The primary key for the parameter record, used to uniquely identify this set of dimension settings.
-    /// For example, this could be a predefined value like "Default".
+    /// In D365 F&amp;O this is an integer (likely the underlying value of an X++ enum used as a
+    /// singleton key) — verified live against the JFI sandbox 2026-04-27, which returned
+    /// <c>"Key": 0</c> as a JSON number. The original CLR declaration as <c>string</c> was wrong
+    /// and caused <c>JsonException</c> on every <c>FindAll</c> call against this entity.
     /// </summary>
+    /// <remarks>
+    /// TODO: this is almost certainly an X++ enum on the D365 side (only one row exists with
+    /// <c>Key=0</c>, the classic singleton-parameter-table pattern). Map to a dedicated CLR enum
+    /// once the X++ type name is confirmed; that would give type-safe operands in <c>$filter</c>
+    /// and prevent silent breakage if D365 adds a second key value.
+    /// </remarks>
     [Key]
     [JsonPropertyName("Key")]
-    public required string Key { get; set; }
+    public required int Key { get; set; }
 
     /// <summary>
     /// Specifies the character used to separate segments within a financial dimension string.
