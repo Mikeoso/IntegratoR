@@ -21,12 +21,6 @@ public class DimensionParameters : BaseEntity<int>
     /// <c>"Key": 0</c> as a JSON number. The original CLR declaration as <c>string</c> was wrong
     /// and caused <c>JsonException</c> on every <c>FindAll</c> call against this entity.
     /// </summary>
-    /// <remarks>
-    /// TODO: this is almost certainly an X++ enum on the D365 side (only one row exists with
-    /// <c>Key=0</c>, the classic singleton-parameter-table pattern). Map to a dedicated CLR enum
-    /// once the X++ type name is confirmed; that would give type-safe operands in <c>$filter</c>
-    /// and prevent silent breakage if D365 adds a second key value.
-    /// </remarks>
     [Key]
     [JsonPropertyName("Key")]
     public required int Key { get; set; }

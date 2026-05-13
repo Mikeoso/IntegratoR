@@ -57,6 +57,8 @@ public sealed class IntegratoRODataExpressionTranslatorTests
         public string DataAreaId { get; set; } = string.Empty;
 
         public decimal Amount { get; set; }
+
+        public Status Status { get; set; }
     }
 
     private sealed class JournalEntityWithLines
@@ -483,6 +485,46 @@ public sealed class IntegratoRODataExpressionTranslatorTests
         var result = IntegratoRODataExpressionTranslator.ToFilterString(filter);
 
         result.Should().Be("Lines/any(l: (l/dataAreaId eq null or l/dataAreaId eq ''))");
+    }
+
+    /// <summary>
+    /// Regression for the enum-constant interception missing on the lambda path. Before this
+    /// fix, <c>l => l.Status == Status.Posted</c> inside an Any/All body was parsed by
+    /// ParseLambdaBinaryExpression which stripped the Convert(enum, int) wrapper on the
+    /// member side and emitted the integer form (<c>l/Status eq 1</c>) — D365 rejects this
+    /// with the same "incompatible types ... 'Edm.Int32'" error as the top-level case.
+    /// </summary>
+    [Fact]
+    public void ToFilterString_AnyLambdaWithEnumConstantLiteral_EmitsQualifiedTypeForm()
+    {
+        Expression<Func<JournalEntityWithLines, bool>> filter =
+            x => x.Lines.Any(l => l.Status == Status.Posted);
+
+        var result = IntegratoRODataExpressionTranslator.ToFilterString(filter);
+
+        result.Should().Be("Lines/any(l: l/Status eq Microsoft.Dynamics.DataEntities.Status'Posted')");
+    }
+
+    [Fact]
+    public void ToFilterString_AllLambdaWithEnumConstantLiteralInequality_EmitsQualifiedTypeForm()
+    {
+        Expression<Func<JournalEntityWithLines, bool>> filter =
+            x => x.Lines.All(l => l.Status != Status.Draft);
+
+        var result = IntegratoRODataExpressionTranslator.ToFilterString(filter);
+
+        result.Should().Be("Lines/all(l: l/Status ne Microsoft.Dynamics.DataEntities.Status'Draft')");
+    }
+
+    [Fact]
+    public void ToFilterString_AnyLambdaWithEnumLiteralCombinedPredicate_EmitsQualifiedTypeForm()
+    {
+        Expression<Func<JournalEntityWithLines, bool>> filter =
+            x => x.Lines.Any(l => l.Status == Status.Posted && l.Amount > 100);
+
+        var result = IntegratoRODataExpressionTranslator.ToFilterString(filter);
+
+        result.Should().Be("Lines/any(l: l/Status eq Microsoft.Dynamics.DataEntities.Status'Posted' and l/Amount gt 100)");
     }
 
     // -----------------------------------------------------------------------------------------
