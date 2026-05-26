@@ -30,7 +30,7 @@
   </ItemGroup>
 
   <ItemGroup Label="OData">
-    <PackageVersion Include="PanoramicData.OData.Client" Version="10.0.55" />
+    <PackageVersion Include="PanoramicData.OData.Client" Version="10.0.84" />
   </ItemGroup>
 
   <ItemGroup Label="Resilience">
