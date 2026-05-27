@@ -8,6 +8,10 @@
 *.userosscache
 *.sln.docstates
 
+# Claude Code statusline (local config, not project content)
+.ccstatusline/
+**/.ccstatusline/
+
 # Build results
 [Dd]ebug/
 [Dd]ebugPublic/
