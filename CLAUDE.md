@@ -33,6 +33,8 @@ wiki/                       → GitHub wiki documentation source
 - **No `var` for non-obvious types** — prefer explicit types when the type is not apparent.
 - **No sync-over-async** — no `.Result`, `.Wait()`, `Task.Run` in library code.
 
+Full language, style, and testing conventions (with examples) live in the `csharp-coding-standards` skill.
+
 ## Default Workflow
 
 1. **Interview** — for non-trivial tasks, ask focused questions with options before starting.
@@ -52,6 +54,28 @@ dotnet test tests/IntegratoR.OData.Tests        # Run one project's tests
 dotnet format                                   # Format code
 dotnet format --verify-no-changes               # Check formatting (CI)
 ```
+
+## Skills & Agents
+
+Route work before starting (this replaces the former `.claude/rules/skill-routing.md`):
+
+| When | Use |
+|------|-----|
+| Non-trivial feature, restructuring, or design touching architecture | Plan mode + interview — focused questions with options, get approval before implementing |
+| Writing, reviewing, or refactoring C# (handlers, services, entities, commands/queries, tests) | `csharp-coding-standards` skill |
+| Changing the public/published API surface of a library (signatures, visibility, serialised output, `[Obsolete]`) | `csharp-api-design` skill |
+| Write / add / plan / review tests | `test-planning` skill (auto-triggers) → briefs the `test-writer` agent. Skip trivial structural tests (DI registration, config binding, POCO properties) |
+| Review code changes — correctness, quality, architecture, test coverage | `code-reviewer` agent |
+| Review auth, secrets, or HTTP-header changes | `security-reviewer` agent |
+| Third-party library API/usage (Polly, MediatR, FluentValidation, FluentResults, PanoramicData.OData.Client, xUnit, NSubstitute) | `context7-docs` skill |
+| Microsoft Learn docs — .NET / Azure concepts, limits, config | `microsoft-docs` skill |
+| Microsoft SDK signatures or code samples | `microsoft-code-reference` skill |
+| Generate or update the IntegratoR wiki | `/docs` (alias `/documentation`) command |
+| Draft a PR description (summary, risks, rollback, reviewer focus) for the branch | `/dotnet-pr` command |
+| Audit package hygiene — deprecated / outdated dependencies before a bump | `/nuget-hygiene` command |
+| Consolidate session learnings into memory | `/dream` skill |
+
+Bug fixes, single-file changes, and renames need no routing — just do them.
 
 ## Output Format
 
