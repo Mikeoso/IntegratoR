@@ -42,6 +42,9 @@ IntegratoR is a .NET 10 framework for D365 Finance & Operations integration via 
 - Entities inherit `BaseEntity<TKey>` and implement `GetCompositeKey()`; `[ODataField]` flags for server-generated/immutable fields.
 - Pipeline behaviour order: Logging → Validation → Caching → Handler.
 
+**Public API compatibility (library projects only — not the SampleFunction host)**
+- Flag any change to a published public surface: a removed/renamed/visibility-narrowed member, a changed signature, a new parameter on an already-shipped method, or changed serialised/wire output. Confirm it is intentional and additive; a real break needs an explicit plan and a `+semver:` marker. See the `csharp-api-design` skill and `api-compatibility.md`.
+
 **Tests**
 - Behaviour-changing code has real tests (logic, transforms, error handling) — not structural bloat.
 - Result assertions use `BeSuccessful()` / `BeFailed()` (never `BeSuccess()` / `BeFailure()`).
