@@ -71,6 +71,8 @@ Route work before starting (this replaces the former `.claude/rules/skill-routin
 | Microsoft Learn docs — .NET / Azure concepts, limits, config | `microsoft-docs` skill |
 | Microsoft SDK signatures or code samples | `microsoft-code-reference` skill |
 | Generate or update the IntegratoR wiki | `/docs` (alias `/documentation`) command |
+| Draft a PR description (summary, risks, rollback, reviewer focus) for the branch | `/dotnet-pr` command |
+| Audit package hygiene — deprecated / outdated dependencies before a bump | `/nuget-hygiene` command |
 | Consolidate session learnings into memory | `/dream` skill |
 
 Bug fixes, single-file changes, and renames need no routing — just do them.
