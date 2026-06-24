@@ -172,9 +172,70 @@ The qualified-type form is generated automatically by the filter translator (sin
 
 `IntegratoR.OData.FO.Domain.Entities.Dimensions` also ships `DimensionIntegrationFormat` and `DimensionParameters` — these power the [Work with Dimensions](Work-with-Dimensions) recipes.
 
+## Extend a Built-in Entity
+
+The shipped `LedgerJournalHeader` and `LedgerJournalLine` entities are designed to be subclassed. Extend one when you need to:
+
+- **add a field** D365 exposes on the entity set that the built-in class does not declare, or
+- **override an `[ODataField]` flag** that is wrong for your use case — for example a field marked `IgnoreOnCreate = true` that your integration must actually send.
+
+```csharp
+using System.Text.Json.Serialization;
+using IntegratoR.OData.Common.Annotations;
+using IntegratoR.OData.FO.Domain.Entities.LedgerJournal;
+using IntegratoR.OData.FO.Domain.Enums.LedgerJournals;
+
+namespace MyProject.Domain.Entities;
+
+// No [Table] needed — it is inherited from LedgerJournalLine.
+public class MyLedgerJournalLine : LedgerJournalLine
+{
+    // 1. Add a field the built-in entity does not declare.
+    [JsonPropertyName("CustomReference")]
+    public string? CustomReference { get; set; }
+
+    // 2. Override an attribute that is wrong for your use case.
+    //    Re-declare the attribute — overriding the property alone is not enough.
+    [ODataField(IgnoreOnCreate = false)]
+    [JsonPropertyName("AccountType")]
+    public override LedgerJournalACType AccountType { get; set; }
+}
+```
+
+Three rules make this work:
+
+1. **`[Table]` is inherited.** A subclass targeting the same D365 entity set needs no `[Table]` — the resolver reads it from `typeof(TEntity)` with attribute inheritance, so the base mapping applies. Re-declare `[Table("…")]` only to point the subclass at a *different* entity set. (Inherited `[Key]` attributes and `GetCompositeKey()` carry over the same way — override `GetCompositeKey()` only if the key shape changes.)
+2. **Re-declare the attribute, not just the property.** `ODataFieldAttribute` is `Inherited = true`, so overriding a property *without* re-applying `[ODataField]` keeps the base flag. Re-declaring with the corrected value wins because the attribute is `AllowMultiple = false` and the payload builder reflects on the **runtime type** of the instance.
+3. **The property must be `virtual`.** Every `LedgerJournalLine` and `LedgerJournalHeader` field is virtual except the server-generated `LineNumber` / `JournalBatchNumber` keys — which you never override anyway. `new`-shadowing a non-virtual property is unsafe: reflection then sees both the base and the shadowed property and emits a duplicate wire field.
+
+### Register the Extended Entity with MediatR
+
+Subclassing alone does **not** make `mediator.Send(new CreateCommand<MyLedgerJournalLine>(...))` work. MediatR closes the framework's generic handlers only against entity types in the same scan that sets `RegisterGenericHandlers = true`, and `AddConsumerHandlers(...)` does not do this. Add a combined scan in the composition root, after `AddIntegratoR`:
+
+```csharp
+services.AddMediatR(cfg =>
+{
+    cfg.RegisterGenericHandlers = true;
+
+    // open generic handlers — Application layer
+    cfg.RegisterServicesFromAssembly(
+        typeof(IntegratoR.Application.Features.Common.Commands.CreateCommandHandler<>).Assembly);
+
+    // F&O open handlers (CreateLedgerJournalHeaderHandler<TEntity>, …)
+    cfg.RegisterServicesFromAssembly(
+        typeof(IntegratoR.OData.FO.Domain.Entities.LedgerJournal.LedgerJournalHeader).Assembly);
+
+    // the assembly holding your extended entities
+    cfg.RegisterServicesFromAssembly(typeof(MyLedgerJournalLine).Assembly);
+});
+```
+
+The service layer (`IService<MyLedgerJournalLine>`) needs no extra wiring — it is registered as an open generic and closes against any type. See [Known Limitations](Known-Limitations#consumer-entities-need-manual-generic-handler-registration) and [Troubleshoot Common Issues](Troubleshoot-Common-Issues#extending-the-framework).
+
 ## See Also
 
 - [Send Commands](Send-Commands) — use the entity in Create / Update / Delete operations
 - [Run Queries](Run-Queries) — GetByKey uses the composite key, GetByFilter uses the LINQ-to-OData translator
 - [Configure OData](Configure-OData) — the connection settings the entity is read against
 - [Work with Dimensions](Work-with-Dimensions) — `DimensionIntegrationFormat` and `DimensionParameters` entities
+- [Troubleshoot Common Issues](Troubleshoot-Common-Issues#extending-the-framework) — errors when extending or registering custom entities
