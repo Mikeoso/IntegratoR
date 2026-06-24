@@ -1,9 +1,6 @@
 # Common Rules
 
-## Error Handling
-
-- All responses use `FluentResults.Result<T>` — never throw exceptions for business flow control.
-- Reserve exceptions for truly exceptional situations (network failures, null refs, etc.).
+Workflow and working-discipline rules. C# language, style, error-handling, and code-quality conventions live in the `csharp-coding-standards` skill; the `Result<T>` never-throw invariant is a CLAUDE.md Hard Rule.
 
 ## Git Workflow
 
@@ -19,13 +16,6 @@
 
 - `dotnet format` is enforced via a PostToolUse hook that runs automatically on Write/Edit.
 - Do not add manual formatting rules — the hook and `.editorconfig` handle this.
-
-## Code Quality
-
-- Do not add comments, docstrings, or type annotations to code you did not change.
-- Do not create abstractions for one-time operations.
-- Do not add error handling for scenarios that cannot happen.
-- Only validate at system boundaries (user input, external APIs).
 
 ## Verification
 

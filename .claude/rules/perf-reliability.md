@@ -1,11 +1,6 @@
 # Performance and Reliability
 
-## Async Patterns
-
-- `ConfigureAwait(false)` in ALL library code (everything except SampleFunction host).
-- Propagate `CancellationToken` through all async method chains — no exceptions.
-- No sync-over-async: no `.Result`, `.Wait()`, `.GetAwaiter().GetResult()`.
-- No `Task.Run` in library code — let the caller decide threading.
+> Async *language* style (`ConfigureAwait(false)`, no sync-over-async, no `Task.Run`) is a coding standard — see the `csharp-coding-standards` skill and the CLAUDE.md Hard Rules. This file owns runtime reliability: HTTP, resilience, caching, logging.
 
 ## Outbound HTTP
 

@@ -33,6 +33,8 @@ wiki/                       → GitHub wiki documentation source
 - **No `var` for non-obvious types** — prefer explicit types when the type is not apparent.
 - **No sync-over-async** — no `.Result`, `.Wait()`, `Task.Run` in library code.
 
+Full language, style, and testing conventions (with examples) live in the `csharp-coding-standards` skill.
+
 ## Default Workflow
 
 1. **Interview** — for non-trivial tasks, ask focused questions with options before starting.
@@ -60,6 +62,8 @@ Route work before starting (this replaces the former `.claude/rules/skill-routin
 | When | Use |
 |------|-----|
 | Non-trivial feature, restructuring, or design touching architecture | Plan mode + interview — focused questions with options, get approval before implementing |
+| Writing, reviewing, or refactoring C# (handlers, services, entities, commands/queries, tests) | `csharp-coding-standards` skill |
+| Changing the public/published API surface of a library (signatures, visibility, serialised output, `[Obsolete]`) | `csharp-api-design` skill |
 | Write / add / plan / review tests | `test-planning` skill (auto-triggers) → briefs the `test-writer` agent. Skip trivial structural tests (DI registration, config binding, POCO properties) |
 | Review code changes — correctness, quality, architecture, test coverage | `code-reviewer` agent |
 | Review auth, secrets, or HTTP-header changes | `security-reviewer` agent |
