@@ -45,6 +45,28 @@
             "timeout": 15
           }
         ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "pwsh -NoProfile -File .claude/scripts/vuln-check.ps1",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "idle_prompt",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "pwsh -NoProfile -File .claude/scripts/notify-done.ps1",
+            "timeout": 5
+          }
+        ]
       }
     ],
     "Stop": [
