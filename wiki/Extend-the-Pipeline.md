@@ -78,7 +78,19 @@ public sealed class PostLedgerJournalCommandHandler
 
         // Compose the OData bound action call, deserialise the receipt,
         // and return Result<T>. Exceptions are caught and wrapped as IntegrationError.
-        return Result.Ok(new PostedJournalReceipt("V-0042", DateTime.UtcNow));
+        Result<PostedJournalReceipt> actionResult = await CallBoundActionAsync(request, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (actionResult.IsFailed)
+        {
+            // The bound action rejected the request — surface a typed failure, never throw.
+            return Result.Fail(new IntegrationError(
+                "OData.RequestFailed",
+                "The bound action returned HTTP 400.",
+                ErrorType.Failure));
+        }
+
+        return actionResult;
     }
 }
 ```
@@ -102,7 +114,7 @@ Result<PostedJournalReceipt> result = await mediator.Send(
 
 ## Add a Custom Pipeline Behaviour
 
-The three built-in behaviours (`LoggingBehaviour`, `ValidationBehaviour`, `CachingBehaviour`) are registered in that order inside `AddApplicationServices`. Custom behaviours register alongside them via standard MediatR DI:
+The three built-in behaviours are registered inside `AddApplicationServices` in the canonical order **Logging → Validation → Caching → Handler**. Custom behaviours register alongside them via standard MediatR DI:
 
 ```csharp
 using FluentResults;
@@ -113,7 +125,7 @@ public sealed class IdempotencyBehaviour<TRequest, TResponse>
     where TRequest : IRequest<TResponse>
     where TResponse : IResultBase
 {
-    private readonly IIdempotencyStore _store;
+    private readonly IIdempotencyStore _store;  // consumer-defined type — not shipped by the framework
 
     public IdempotencyBehaviour(IIdempotencyStore store)
     {
@@ -195,4 +207,3 @@ The same pattern works for `IODataBatchService<T>` (bulk operations) and `IOData
 - [Run Queries](Run-Queries) — when a custom query reads better than a long LINQ expression
 - [Add Validation](Add-Validation) — validators for custom commands and queries
 - [Cache Query Results](Cache-Query-Results) — opt custom queries into the cache layer
-- [Test with TestKit](Test-with-TestKit) — assertion patterns for custom handlers

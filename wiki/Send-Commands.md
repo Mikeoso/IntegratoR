@@ -95,12 +95,7 @@ For high-volume work the consumer can parallelise by splitting the collection an
 
 ## Pipeline Flow for Commands
 
-Every command passes through the MediatR pipeline in the registration order:
-
-1. **`LoggingBehaviour`** — logs request type, duration, and `IContext`-derived structured properties (entity type, composite key, etc.).
-2. **`ValidationBehaviour`** — runs registered FluentValidation validators; returns `Result.Fail(IntegrationError(... type: Validation))` and short-circuits the pipeline on the first failure.
-3. **`CachingBehaviour`** — short-circuits to cache hit when the request implements `ICacheableQuery<T>`. Commands are never `ICacheableQuery`, so this is a pass-through.
-4. **Handler** — the closed-generic `CreateCommandHandler<TEntity>` / `UpdateCommandHandler<TEntity>` / `DeleteCommandHandler<TEntity>` calls `ODataService<TEntity>` to execute the HTTP operation.
+Every command passes through the MediatR pipeline (Logging → Validation → Caching → Handler) before reaching `ODataService<TEntity>` — see [Extend the Pipeline](Extend-the-Pipeline) for the full behaviour chain.
 
 The Polly retry and circuit breaker live below this pipeline at the `HttpClient` layer — wrapped in the `DelegatingHandler` chain inside `AddODataClient`. Retries are transparent to the MediatR pipeline.
 
@@ -166,7 +161,7 @@ public record ArchiveJournalCommand(string DataAreaId, string JournalBatchNumber
 
 For most consumers the generic `CreateCommand<LedgerJournalHeader>` is enough — pick the entity-specific variant only when the entity-specific log context is genuinely useful.
 
-## Error Handling
+## When Things Go Wrong
 
 ```csharp
 Result<LedgerJournalHeader> result = await mediator.Send(command, cancellationToken)
@@ -190,8 +185,6 @@ See [Handle Errors](Handle-Errors) for the full error model, `Match` pattern mat
 ## See Also
 
 - [Define Entities](Define-Entities) — `[ODataField]`, `[JsonPropertyName]`, composite keys
-- [Run Queries](Run-Queries) — fetch records before updating or deleting
 - [Handle Errors](Handle-Errors) — process the `Result<T>` returned by every command
 - [Add Validation](Add-Validation) — pre-flight checks via FluentValidation in the pipeline
-- [Extend the Pipeline](Extend-the-Pipeline) — custom MediatR behaviours
-- [Known Limitations](Known-Limitations) — composite-key Update/Delete workaround status
+- [Extend the Pipeline](Extend-the-Pipeline) — custom MediatR behaviours and the full pipeline order

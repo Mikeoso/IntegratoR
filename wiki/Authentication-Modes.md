@@ -127,6 +127,5 @@ Per-request mode switching is not supported — the handler is wired once at HTT
 
 - [Configure OData](Configure-OData) — full settings reference
 - [Set Up Azure Functions Host](Set-Up-Azure-Functions-Host) — Key Vault integration for secret storage
-- [Configure Resilience](Configure-Resilience) — note that auth failures are not retried
 - [Integrate with RELion](Integrate-with-RELion) — parallel auth flow for the RELion module
 - [Troubleshoot Common Issues](Troubleshoot-Common-Issues) — common auth-error symptoms and resolutions

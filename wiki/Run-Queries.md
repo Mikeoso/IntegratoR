@@ -79,18 +79,29 @@ For data that changes infrequently (configuration metadata, dimension formats, r
 ```csharp
 using FluentResults;
 using IntegratoR.Abstractions.Interfaces.Queries;
+using IntegratoR.OData.FO.Domain.Enums.Dimensions;
+using IntegratoR.OData.FO.Domain.Models.FinancialDimensions;
 
-public record GetDimensionOrdersQuery(
-    string dimensionFormat,
-    DimensionHierarchyType hierarchyType)
-    : IQuery<Result<DimensionFormat>>, ICacheableQuery<Result<DimensionFormat>>
+public record GetDimensionOrdersQuery(string dimensionFormat, DimensionHierarchyType hierarchyType)
+    : ICacheableQuery<Result<DimensionFormat>>
 {
-    public string CacheKey =>
-        $"GetDimensionOrdersQuery-{dimensionFormat}-{hierarchyType}";
+    public string CacheKey => $"{nameof(GetDimensionOrdersQuery)}-{dimensionFormat}-{hierarchyType}";
 
     public TimeSpan? CacheDuration => TimeSpan.FromMinutes(15);
+
+    public string GenerateCacheKey() => CacheKey;
+
+    public object[] GetCacheKeyValues() => [nameof(GetDimensionOrdersQuery), dimensionFormat, hierarchyType];
+
+    public IReadOnlyDictionary<string, object> GetLoggingContext() => new Dictionary<string, object>
+    {
+        { "DimensionFormat", dimensionFormat },
+        { "HierarchyType", hierarchyType.ToString() }
+    };
 }
 ```
+
+`ICacheableQuery<T>` already extends `IQuery<T>`, so you implement only `ICacheableQuery` — and because `IQuery` derives from `IContext`, a cacheable query must supply all five members shown above.
 
 The `CachingBehaviour` in the MediatR pipeline:
 
@@ -101,12 +112,7 @@ Set `CacheDuration` to `null` on a per-instance basis to bypass caching even whe
 
 ## Pipeline Flow for Queries
 
-Identical to commands, with one branch:
-
-1. **`LoggingBehaviour`** — request type, duration, structured context.
-2. **`ValidationBehaviour`** — registered validators run for the query type.
-3. **`CachingBehaviour`** — returns cache hit when the query implements `ICacheableQuery`.
-4. **Handler** — calls `ODataService<TEntity>.FindByKeyAsync` / `FindAsync` / `FindAll` depending on the query type.
+Queries run through the same `Logging → Validation → Caching → Handler` pipeline as commands, with the `CachingBehaviour` returning a cache hit when the query implements `ICacheableQuery` — see [Extend the Pipeline](Extend-the-Pipeline) for the canonical ordering. The handler calls `ODataService<TEntity>.FindByKeyAsync` / `FindAsync` / `FindAll` depending on the query type.
 
 ## Custom Queries
 
@@ -163,4 +169,3 @@ A `GetByKeyQuery` for a non-existent key returns `Result.Fail` with `ErrorType.N
 - [Cache Query Results](Cache-Query-Results) — `ICacheableQuery`, in-memory vs distributed cache
 - [Handle Errors](Handle-Errors) — `Result<T>` and `IntegrationError`
 - [Send Commands](Send-Commands) — modify the records this query returned
-- [Work with Dimensions](Work-with-Dimensions) — `GetDimensionOrdersQuery` end-to-end example

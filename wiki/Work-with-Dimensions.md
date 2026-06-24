@@ -2,6 +2,8 @@
 
 D365 F&O financial dimensions are encoded on the wire as delimited strings: `"618160-001-023-..."`. The position of each value is dictated by the per-environment **dimension format**, which the consumer reads from D365 via `GetDimensionOrdersQuery` and uses to drive the `FinancialDimensionBuilder` and `FinancialDimensionReader`.
 
+> **Prerequisites:** A configured OData client (`AddODataClientFOProxy`) and a dimension format seeded in D365's Dimension integration setup (`DimensionIntegrationFormat`).
+
 ## Read the Dimension Format from D365
 
 ```csharp
@@ -128,6 +130,8 @@ LedgerJournalLine line = new()
     // ... set the display value on the appropriate field
 };
 ```
+
+> **Warning — `DefaultDimensionDisplayValue` is `[ODataField(IgnoreOnCreate = true)]`.** The natural target field on `LedgerJournalLine` is marked `IgnoreOnCreate = true`, so it is **stripped from the create payload** — any value you set on it is silently dropped and never persists. This is the D365 quirk to watch: a create appears to succeed while the dimensions vanish. Set dimensions through the journal-creation path D365 actually honours rather than relying on this field at create time.
 
 The live shape of this flow is captured by the bundled smoke-test trigger — see [Run Smoke Tests](Run-Smoke-Tests) for the HTTP call that exercises `GetDimensionOrdersQuery` end-to-end and shows the live response from a real D365 sandbox.
 

@@ -154,6 +154,5 @@ The fastest way to confirm that the settings are correct is to run the bundled s
 
 - [Authentication Modes](Authentication-Modes) — OAuth vs API Key walkthrough
 - [Configure Resilience](Configure-Resilience) — what gets retried, backoff formula, circuit breaker mechanics
-- [Set Up Azure Functions Host](Set-Up-Azure-Functions-Host) — Key Vault for secret rotation
 - [Run Smoke Tests](Run-Smoke-Tests) — verify the configuration end-to-end
 - [Troubleshoot Common Issues](Troubleshoot-Common-Issues) — common configuration errors and resolutions

@@ -2,31 +2,6 @@
 
 A .NET 10 framework for building enterprise integrations with **Microsoft Dynamics 365 Finance & Operations** on Azure Functions. The framework handles authentication, serialisation, resilience, batching, validation, and error handling so the consumer focuses on business logic.
 
-```csharp
-// Inject IMediator, then:
-LedgerJournalHeader header = new()
-{
-    DataAreaId = "USMF",
-    JournalName = "GenJrn",
-    Description = "Monthly accruals"
-};
-
-Result<LedgerJournalHeader> result = await mediator.Send(
-    new CreateCommand<LedgerJournalHeader>(header),
-    cancellationToken).ConfigureAwait(false);
-```
-
-The same `mediator.Send(...)` call also runs validation, captures structured logs, retries transient HTTP failures with exponential backoff, short-circuits when the circuit breaker is open, and never throws an exception for business-level errors — every operation returns a `Result<T>` from FluentResults.
-
-## Why IntegratoR
-
-- **One composition call** — `services.AddIntegratoR(configuration)` wires the entire stack: MediatR pipeline behaviours, OData client, OAuth/APIM authentication, Polly resilience policies, and built-in D365 F&O handlers.
-- **CQRS by default** — generic `CreateCommand<T>`, `UpdateCommand<T>`, `DeleteCommand<T>`, `GetByKeyQuery<T>`, `GetByFilterQuery<T>` work with any entity; custom commands only when the generic shape is insufficient.
-- **D365 F&O composite-key aware** — entities inherit from `BaseEntity<TKey>` and implement `GetCompositeKey()`. The framework handles the composite-key URL construction for OData reads.
-- **Type-safe filter translation** — LINQ expressions like `h => h.DataAreaId == "USMF"` translate to `$filter=dataAreaId eq 'USMF'`. The translator honours `[JsonPropertyName]` so PascalCase CLR properties map cleanly to camelCase D365 wire fields.
-- **Result pattern throughout** — `Result<T>` and `IntegrationError` with `ErrorType` categorisation (Failure, Validation, NotFound, Conflict). Pattern-match with `result.Match(onSuccess, onFailure)` or check `result.IsSuccess` and `result.GetError()` directly.
-- **Production-ready resilience** — Polly retry with exponential backoff and jitter on 408, 429, 5xx, plus a circuit breaker that protects the downstream when it is unhealthy.
-
 ## Documentation Map
 
 ### Get Started
@@ -63,21 +38,6 @@ The same `mediator.Send(...)` call also runs validation, captures structured log
 | [Known Limitations](Known-Limitations) | Composite-key write paths, other parked items (transparent) |
 | [Troubleshoot Common Issues](Troubleshoot-Common-Issues) | Real errors from sandbox runs and how to resolve them |
 | [Release Notes and Versioning](Release-Notes-and-Versioning) | Semantic versioning, pre-release vs stable, migration tips |
-
-## Installation
-
-```bash
-dotnet add package IntegratoR.Hosting
-```
-
-`IntegratoR.Hosting` pulls in `IntegratoR.Application`, `IntegratoR.OData`, `IntegratoR.OData.FO`, and `IntegratoR.Abstractions` as transitive dependencies. The optional `IntegratoR.RELion` package is installed separately. See [Getting Started](Getting-Started) for the full walkthrough.
-
-## Repository Conventions
-
-- **British spelling** is used intentionally (`Behaviour`, `serialise`) throughout the codebase.
-- **`Result<T>`** is the only return shape for operations that can fail — exceptions are reserved for genuinely exceptional infrastructure failures.
-- **`ConfigureAwait(false)`** is applied in every async call in library code.
-- **Central Package Management** is used — package versions live in `Directory.Packages.props`, never in individual `.csproj` files.
 
 ## See Also
 

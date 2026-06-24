@@ -99,6 +99,8 @@ return Result.Fail<LedgerJournalHeader>(new IntegrationError(
 Wrap an existing exception to preserve the stack:
 
 ```csharp
+using PanoramicData.OData.Client.Exceptions;
+
 catch (ODataClientException ex)
 {
     return Result.Fail<LedgerJournalHeader>(new IntegrationError(
@@ -176,5 +178,4 @@ _logger.LogWarning(
 - [Send Commands](Send-Commands) — command return shapes
 - [Run Queries](Run-Queries) — query return shapes (`GetByKeyQuery` returns `NotFound` on miss)
 - [Add Validation](Add-Validation) — how `Validation.Error` is produced
-- [Configure Resilience](Configure-Resilience) — when retries swallow vs surface errors
 - [Troubleshoot Common Issues](Troubleshoot-Common-Issues) — common error codes and their resolutions

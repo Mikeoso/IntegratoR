@@ -15,7 +15,7 @@ This page lists known constraints in the framework and the planned resolutions. 
 
 **Why:** PanoramicData.OData.Client 10.0.55 has no API overload that accepts a composite key for write operations. The library's internal `ODataEntityType.Key` tracks the multiple key fields per entity, but `UpdateAsync` and `DeleteAsync` expose only `Key(object)` / `Key<TKey>(TKey)`. The library would need an upstream PR adding `Key(IDictionary<string, object>)` overloads.
 
-**Workaround status:** Read paths (`GetByKeyQuery<T>`) already work — they bypass the limitation by constructing a `$filter` predicate. The write-path workaround is a planned raw `HttpClient` bypass in `ODataClientAdapter` that builds the composite-key URL manually for `UpdateAsync` / `DeleteAsync`. The design is fully scoped — see the framework's internal `odata-composite-key-limitation` document. Implementation is queued behind smoke-test and dimension-related work that ships first.
+**Workaround status:** Read paths (`GetByKeyQuery<T>`) already work — they bypass the limitation by constructing a `$filter` predicate. The write-path workaround is a planned raw `HttpClient` bypass in `ODataClientAdapter` that builds the composite-key URL manually for `UpdateAsync` / `DeleteAsync`. The design is fully scoped and tracked internally by maintainers. Implementation is queued behind smoke-test and dimension-related work that ships first.
 
 **Mitigation today:** treat write-path failures as recoverable in the consumer's code. The framework's `Warning` log for suppressed-404 delete is the diagnostic signal. For one-off cleanup of orphan rows created by the LedgerJournal smoke test, use the D365 UI.
 
@@ -82,12 +82,11 @@ This page lists known constraints in the framework and the planned resolutions. 
 
 ## Where to Track Progress
 
-The framework's open-todos backlog (internal memory file `open-todos.md` referenced by maintainers) consolidates these items and tracks which has an active design and which is still scoped. Items shipping in a given release are noted in [Release Notes and Versioning](Release-Notes-and-Versioning) with the relevant PR link.
+The framework's backlog, tracked internally by maintainers, consolidates these items and tracks which has an active design and which is still scoped. Items shipping in a given release are noted in [Release Notes and Versioning](Release-Notes-and-Versioning) with the relevant PR link.
 
 ## See Also
 
 - [Send Commands](Send-Commands) — composite-key Update/Delete limitation referenced from the command pages
-- [Configure Resilience](Configure-Resilience) — Polly retry behaviour
 - [Run Smoke Tests](Run-Smoke-Tests) — the smoke tests that surface the composite-key write issue
 - [Release Notes and Versioning](Release-Notes-and-Versioning) — when fixes ship
 - [Troubleshoot Common Issues](Troubleshoot-Common-Issues) — the operator-side view of the same incidents

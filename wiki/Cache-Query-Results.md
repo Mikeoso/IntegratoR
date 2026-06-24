@@ -2,6 +2,8 @@
 
 Caching is implemented as a MediatR pipeline behaviour. A query opts into caching by implementing `ICacheableQuery<TResponse>`. The `CachingBehaviour` intercepts the request, checks the configured `ICacheService`, and either returns the cached `Result<T>` or runs the handler and stores its successful response.
 
+> **Prerequisites:** a configured OData client and a distributed cache (`IDistributedCache`) registered through `AddIntegratoR` — see [Set Up Azure Functions Host](Set-Up-Azure-Functions-Host) for both. Without a registered `IDistributedCache`, the `CachingBehaviour` has no backing store and every request falls through to the handler.
+
 ## Make a Query Cacheable
 
 ```csharp
@@ -10,36 +12,40 @@ using IntegratoR.Abstractions.Interfaces.Queries;
 using IntegratoR.OData.FO.Domain.Enums.Dimensions;
 using IntegratoR.OData.FO.Domain.Models.FinancialDimensions;
 
-public record GetDimensionOrdersQuery(
-    string dimensionFormat,
-    DimensionHierarchyType hierarchyType)
-    : IQuery<Result<DimensionFormat>>, ICacheableQuery<Result<DimensionFormat>>
+public record GetDimensionOrdersQuery(string dimensionFormat, DimensionHierarchyType hierarchyType)
+    : ICacheableQuery<Result<DimensionFormat>>
 {
-    public string CacheKey =>
-        $"GetDimensionOrdersQuery-{dimensionFormat}-{hierarchyType}";
+    public string CacheKey => $"{nameof(GetDimensionOrdersQuery)}-{dimensionFormat}-{hierarchyType}";
 
     public TimeSpan? CacheDuration => TimeSpan.FromMinutes(15);
 
-    public object[] GetCacheKeyValues() => [dimensionFormat, hierarchyType];
-
     public string GenerateCacheKey() => CacheKey;
+
+    public object[] GetCacheKeyValues() => [nameof(GetDimensionOrdersQuery), dimensionFormat, hierarchyType];
+
+    public IReadOnlyDictionary<string, object> GetLoggingContext() => new Dictionary<string, object>
+    {
+        { "DimensionFormat", dimensionFormat },
+        { "HierarchyType", hierarchyType.ToString() }
+    };
 }
 ```
 
-The interface requires four members:
+`ICacheableQuery<T>` already extends `IQuery<T>`, so you implement only `ICacheableQuery` — do not also list `IQuery<...>` in the declaration. Because `IQuery` derives from `IContext`, a cacheable query must implement five members:
 
 | Member | Purpose |
 |---|---|
 | `string CacheKey { get; }` | Unique key under which the response is stored. Typically delegates to `GenerateCacheKey()`. |
 | `TimeSpan? CacheDuration { get; }` | How long the response is cached. `null` bypasses caching for this specific instance. |
-| `object[] GetCacheKeyValues()` | Values that uniquely identify this query instance. Used as input for `GenerateCacheKey()`. |
 | `string GenerateCacheKey()` | Builds the cache key from `GetCacheKeyValues()`. |
+| `object[] GetCacheKeyValues()` | Values that uniquely identify this query instance. Used as input for `GenerateCacheKey()`. |
+| `IReadOnlyDictionary<string, object> GetLoggingContext()` | Structured context fields surfaced by `LoggingBehaviour` (required by `IContext`, the base of every `IQuery`). |
 
 A common implementation pattern: concatenate the query type name with a stable serialised form of the key values. The framework does not enforce a specific format — only that two queries with different parameters yield two different `CacheKey` strings.
 
 ## Pipeline Flow
 
-The `CachingBehaviour<TRequest, TResponse>` runs after `LoggingBehaviour` and `ValidationBehaviour`. On each request:
+The `CachingBehaviour<TRequest, TResponse>` runs after logging and validation in the pipeline — see [Extend the Pipeline](Extend-the-Pipeline) for the canonical ordering. On each request:
 
 1. If the request is **not** `ICacheableQuery<TResponse>`, pass straight through to the next behaviour.
 2. Resolve `CacheKey`. Call `_cacheService.GetAsync<TResponse>(cacheKey)`.
@@ -123,7 +129,7 @@ The `IntegratoR.TestKit` ships `FakeCacheService` for in-memory verification:
 
 ```csharp
 var cache = new FakeCacheService();
-// ... wire it as IService<ICacheService>, run the handler ...
+// ... wire it as ICacheService, run the handler ...
 cache.Contains("GetDimensionOrdersQuery-Sachkontodimensionen-DataEntityLedgerDimensionFormat").Should().BeTrue();
 cache.Count.Should().Be(1);
 ```

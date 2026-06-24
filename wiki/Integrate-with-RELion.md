@@ -2,6 +2,8 @@
 
 `IntegratoR.RELion` is an optional package that wires up an HTTP client and MediatR handlers for the RELion property-management API. The module follows the same `Result<T>` + CQRS conventions as the rest of the framework but lives in its own composition root — consumers needing only D365 integration never load it.
 
+> **Prerequisites:** The `IntegratoR.RELion` package referenced by the host project and a `RelionSettings` section configured (`Url` plus auth credentials for the chosen `AuthMode`).
+
 ## Install and Register
 
 ```bash
@@ -69,11 +71,22 @@ The module ships with at least one ready-made query that demonstrates the patter
 using IntegratoR.RELion.Features.Queries.Ledger.GetLedgerAccountMapping;
 
 Result<RelionLedgerAccountMapping> result = await mediator.Send(
-    new GetRelionLedgerAccountMappingQuery(/* parameters */),
+    new GetRelionLedgerAccountMappingQuery(EntryNo: 42),
     cancellationToken).ConfigureAwait(false);
 ```
 
 The handler delegates to `IRelionService`, which composes the HTTP request and deserialises the response into the strongly-typed domain model (`RelionLedgerAccountMapping`).
+
+Handle the failure path with the standard `Result` switch:
+
+```csharp
+if (result.IsFailed)
+{
+    IntegrationError? error = result.GetError();
+    // error.Code == "RELion.RequestFailed" when the RELion call did not succeed
+    return Result.Fail<RelionLedgerAccountMapping>(result.Errors);
+}
+```
 
 ## Custom Queries Against RELion
 

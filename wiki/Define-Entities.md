@@ -44,6 +44,8 @@ Three contracts make this entity work end-to-end:
 2. **`BaseEntity<TKey>`** declares the abstract `GetCompositeKey()` that handlers use for composite-key URL construction and reflection-based structured logging via `GetLoggingContext()`.
 3. **`[Key]` plus `GetCompositeKey()`** define which properties form the primary key and the order in which the framework passes them to OData reads.
 
+A hand-written entity's properties need **not** be `virtual` — the `virtual` requirement applies only when the entity will be subclassed and its properties overridden (see [Extend a Built-in Entity](#extend-a-built-in-entity) below).
+
 ## BaseEntity\<TKey\>
 
 `BaseEntity<TKey>` is an abstract base class in `IntegratoR.Abstractions.Domain.Entities`. The single type parameter is the primary-key data type — most D365 entities use `string` (the wire type for `DataAreaId`), but `int`, `long`, and `Guid` are equally valid:
@@ -236,6 +238,5 @@ The service layer (`IService<MyLedgerJournalLine>`) needs no extra wiring — it
 
 - [Send Commands](Send-Commands) — use the entity in Create / Update / Delete operations
 - [Run Queries](Run-Queries) — GetByKey uses the composite key, GetByFilter uses the LINQ-to-OData translator
-- [Configure OData](Configure-OData) — the connection settings the entity is read against
 - [Work with Dimensions](Work-with-Dimensions) — `DimensionIntegrationFormat` and `DimensionParameters` entities
 - [Troubleshoot Common Issues](Troubleshoot-Common-Issues#extending-the-framework) — errors when extending or registering custom entities

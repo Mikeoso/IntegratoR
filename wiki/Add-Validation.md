@@ -53,12 +53,7 @@ Internally `AddConsumerHandlers` registers each assembly via `services.AddValida
 
 ## How Validation Fits Into the Pipeline
 
-The `ValidationBehaviour<TRequest, TResponse>` sits between `LoggingBehaviour` and `CachingBehaviour`. On each request:
-
-1. Resolves all `IValidator<TRequest>` registrations.
-2. Runs every validator against the request.
-3. If **any** validator produces failures, the pipeline short-circuits — the handler never runs. The behaviour returns `Result.Fail(IntegrationError("Validation.Error", <first failure message>, ErrorType.Validation))`.
-4. If validation passes (or no validators are registered), the request flows to the next behaviour.
+`ValidationBehaviour` runs in the canonical chain (Logging → Validation → Caching → Handler), short-circuiting with `Result.Fail(IntegrationError("Validation.Error", <first failure message>, ErrorType.Validation))` so the handler never runs on invalid input — see [Extend the Pipeline](Extend-the-Pipeline) for the full chain.
 
 > The behaviour returns only the **first** validation failure. Multiple `RuleFor` violations on the same request reach the consumer as a single error. This is intentional — most HTTP clients only surface one error at a time. Validators that need to surface multiple failures should compose the messages into a single rule (`When` / `Must` / custom validator).
 
@@ -138,7 +133,6 @@ Open-generic validators close transparently as long as the closed generic of the
 ## See Also
 
 - [Send Commands](Send-Commands) — commands that flow through the validation pipeline
-- [Run Queries](Run-Queries) — queries are validated identically
 - [Handle Errors](Handle-Errors) — `ErrorType.Validation` and the `Validation.Error` code
 - [Extend the Pipeline](Extend-the-Pipeline) — adding custom behaviours alongside `ValidationBehaviour`
 - [Test with TestKit](Test-with-TestKit) — assert on validation results

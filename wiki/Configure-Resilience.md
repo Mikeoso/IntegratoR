@@ -1,5 +1,7 @@
 # Configure Resilience
 
+> **Prerequisites:** a configured OData client registered via `AddIntegratoR(configuration)` (see [Configure OData](Configure-OData)).
+
 The OData client is wrapped in a two-stage Polly pipeline — a retry policy and a circuit breaker. Both are configured through `ODataSettings.Resilience` and can be tuned independently per environment.
 
 ```json
@@ -43,7 +45,13 @@ Each retry waits `2^attempt` seconds plus a random jitter of up to 25 % of the b
 
 The jitter spreads out simultaneous retries from multiple workers so a recovering D365 environment is not hit by a thundering herd. The total worst-case wait for `RetryCount: 3` is roughly 17.5 seconds.
 
-Each retry emits a `Warning` log entry to the `IntegratoR.OData.HttpRetry` logger with the attempt number, delay, and outcome reason. Watch this logger to spot environments that retry frequently — chronic retries are a signal to investigate upstream rather than to increase `RetryCount`.
+Each retry emits a `Warning` log entry to the `IntegratoR.OData.HttpRetry` logger with the attempt number, delay, and outcome reason:
+
+```text
+warn: IntegratoR.OData.HttpRetry[0] HTTP retry attempt 1 after 2000ms. Reason: ServiceUnavailable
+```
+
+Watch this logger to spot environments that retry frequently — chronic retries are a signal to investigate upstream rather than to increase `RetryCount`.
 
 ## What Counts as a Transient Failure for the Circuit Breaker
 
@@ -67,17 +75,20 @@ The recommended tuning differs by environment:
 A programmatic override per environment:
 
 ```csharp
-services.AddIntegratoR(configuration, integrator =>
+.ConfigureServices((context, services) =>
 {
-    integrator.ConfigureOData(settings =>
+    services.AddIntegratoR(context.Configuration, integrator =>
     {
-        if (context.HostingEnvironment.IsDevelopment())
+        integrator.ConfigureOData(settings =>
         {
-            settings.Resilience.RetryCount = 1;
-            settings.Resilience.UseCircuitBreaker = false;
-        }
+            if (context.HostingEnvironment.IsDevelopment())
+            {
+                settings.Resilience.RetryCount = 1;
+                settings.Resilience.UseCircuitBreaker = false;
+            }
+        });
     });
-});
+})
 ```
 
 ## Disabling Either Stage

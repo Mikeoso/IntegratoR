@@ -76,7 +76,7 @@ The fake returns the configured response for every request. Tests that need diff
 
 ## Test Entities
 
-The TestKit ships three pre-built entities for scenarios where introducing a real D365 entity into a test would be noisy:
+The TestKit ships four pre-built entities for scenarios where introducing a real D365 entity into a test would be noisy:
 
 | Entity | Composite key | Purpose |
 |---|---|---|

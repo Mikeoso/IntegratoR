@@ -139,7 +139,7 @@ The trigger runs seven steps in order:
 
 The response is the same per-step JSON shape as the financial-dimensions trigger.
 
-> Step 7 (cleanup delete) currently has a known limitation — composite-key Update/Delete writes go through a code path with a parked PanoramicData issue. The cleanup step reports success in the response but logs a `Warning` line on the host saying the delete may not have happened. The created journal stays in the D365 sandbox until manually removed via the UI. See [Known Limitations](Known-Limitations#composite-key-writes) for the parked workaround.
+> Step 7 (cleanup delete) currently has a known limitation — composite-key Update/Delete writes go through a code path with a parked PanoramicData issue. The cleanup step reports success in the response but logs a `Warning` line on the host saying the delete may not have happened. The created journal stays in the D365 sandbox until manually removed via the UI. See [Known Limitations](Known-Limitations#composite-key-write-path) for the parked workaround.
 
 ## Diagnosing a Failed Smoke Test
 
@@ -164,7 +164,7 @@ Both triggers can be wired into a CI smoke pipeline that exercises a sandbox aft
 3. Run the ledger-journal smoke test (writes a journal, accept the orphan record)
 4. Block promotion to production if either step's `Success` is `false`
 
-The triggers exit non-zero in their JSON `Success` field, not the HTTP status code (the HTTP response is always 200 unless the request body is malformed). CI scripts should `jq -e '.Success'` against the response body, not rely on HTTP status alone.
+The triggers signal failure via the JSON `Success` field, not the HTTP status code — the HTTP response is always 200 (unless the request body is malformed). CI scripts should check `.Success` against the response body (e.g. `jq -e '.Success'`), not rely on HTTP status alone.
 
 ## See Also
 
@@ -172,4 +172,3 @@ The triggers exit non-zero in their JSON `Success` field, not the HTTP status co
 - [Known Limitations](Known-Limitations) — composite-key write parking
 - [Work with Dimensions](Work-with-Dimensions) — what the dimension smoke test exercises
 - [Send Commands](Send-Commands) — what the journal smoke test exercises
-- [Configure OData](Configure-OData) — settings that the smoke tests validate end-to-end

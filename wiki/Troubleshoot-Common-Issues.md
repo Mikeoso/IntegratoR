@@ -110,7 +110,7 @@ Pre-v1.3.5 the LINQ-to-OData translator did not intercept enum-constant comparis
 
 D365 rejected the line create because `CurrencyCode` was missing from the payload.
 
-**Resolution:** fixed in PR #92 (v1.3.3). The `CurrencyCode` attribute on `LedgerJournalLine` had `[ODataField(IgnoreOnCreate = true)]` removed — the value the consumer supplies now reaches the wire. Verify the consumer's code sets `CurrencyCode` on every line.
+**Resolution:** fixed in PR #92 (v1.3.4). The `CurrencyCode` attribute on `LedgerJournalLine` had `[ODataField(IgnoreOnCreate = true)]` removed — the value the consumer supplies now reaches the wire. Verify the consumer's code sets `CurrencyCode` on every line.
 
 ### Step 6 (UpdateHeader) fails with `LedgerJournalHeader.NotFound: Resource not found: LedgerJournalHeaders(System.Collections.Generic.Dictionary…)`
 
@@ -183,6 +183,5 @@ For any error not covered above:
 
 - [Run Smoke Tests](Run-Smoke-Tests) — the fastest diagnostic tool
 - [Known Limitations](Known-Limitations) — limitations that look like bugs but have known status
-- [Configure Resilience](Configure-Resilience) — Polly retry diagnostics
 - [Authentication Modes](Authentication-Modes) — auth-failure deep dive
 - [Handle Errors](Handle-Errors) — the `IntegrationError` shape that carries these diagnostics
