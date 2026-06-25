@@ -3,42 +3,234 @@ name: Claude Code Review
 on:
   pull_request:
     types: [opened, synchronize, ready_for_review, reopened]
-    # Optional: Only run on specific file changes
-    # paths:
-    #   - "src/**/*.ts"
-    #   - "src/**/*.tsx"
-    #   - "src/**/*.js"
-    #   - "src/**/*.jsx"
+
+# Concurrency: cancel an in-flight review when a new commit is pushed to the
+# same PR, so we never pay for a review of stale code.
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   claude-review:
-    # Optional: Filter by PR author
-    # if: |
-    #   github.event.pull_request.user.login == 'external-contributor' ||
-    #   github.event.pull_request.user.login == 'new-developer' ||
-    #   github.event.pull_request.author_association == 'FIRST_TIME_CONTRIBUTOR'
-
+    # Skip drafts and bot-authored PRs (e.g. dependabot) to keep cost sane.
+    # Also skip fork PRs: GitHub withholds secrets.CLAUDE_CODE_OAUTH_TOKEN and
+    # downgrades GITHUB_TOKEN to read-only on forks, so the job could not post
+    # anyway — better to skip cleanly than fail/no-op silently.
+    if: >-
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.user.type != 'Bot' &&
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     permissions:
-      contents: read
-      pull-requests: read
-      issues: read
-      id-token: write
+      contents: read          # read repo files + .claude/ rules and agents
+      pull-requests: write     # REQUIRED: create the PR review + inline comments
+      issues: write            # recommended for full GitHub comment integration
+      id-token: write          # OIDC for the action
+      actions: read            # read build.yml results without re-running CI
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          # Full history so the action can diff the PR head against the base
+          # branch (origin/<base>...HEAD) and reason about API surface over time.
+          # fetch-depth: 0 already provides origin/<base> and the merge-base —
+          # no extra git fetch is needed.
+          fetch-depth: 0
 
-      - name: Run Claude Code Review
+      # Decide which review stages run, based on the PR's changed paths and
+      # labels. Output flags are consumed by the prompt below.
+      - name: Detect review scope
+        id: scope
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          base="origin/${{ github.event.pull_request.base.ref }}"
+          files="$(git diff --name-only "$base"...HEAD || git diff --name-only HEAD~1...HEAD || true)"
+          echo "Changed files:"; echo "$files"
+
+          security="false"
+          api="false"
+          if echo "$files" | grep -Eiq '(auth|oauth|credential|secret|header|token|security|Authentication|Authenticator)'; then
+            security="true"
+          fi
+          # Published surface = library projects (everything except the host).
+          if echo "$files" | grep -Eq '^IntegratoR\.[A-Za-z.]+/.*\.cs$' \
+             && ! echo "$files" | grep -Eq '^IntegratoR\.SampleFunction/'; then
+            api="true"
+          fi
+
+          # Opt-in deep review via an EXACT-match PR label; default effort high.
+          # 'high' is local extended thinking (no usage-credit surcharge beyond
+          # the plan's OAuth token). Reserve heavier review for risky PRs only.
+          effort="high"
+          if echo '${{ toJSON(github.event.pull_request.labels.*.name) }}' \
+             | jq -e 'any(.[]; . == "deep-review")' >/dev/null; then
+            effort="max"
+          fi
+
+          {
+            echo "security=$security"
+            echo "api=$api"
+            echo "effort=$effort"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Run IntegratoR Claude Code Review
         id: claude-review
         uses: anthropics/claude-code-action@v1
+        # Fail-open: never let a tooling/transport failure of the reviewer fail
+        # the check. The merge gate is decided solely by the marker step below,
+        # which reads what was actually posted. A broken reviewer surfaces as a
+        # missing review, NOT a false merge-block.
+        continue-on-error: true
+        env:
+          # Guarantee the allow-listed gh commands in the prompt have an
+          # authenticated token, matching the scope step above.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
-          plugins: 'code-review@claude-code-plugins'
-          prompt: '/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }}'
-          # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
-          # or https://code.claude.com/docs/en/cli-reference for available options
+          # Let the reviewer read build.yml's pass/fail instead of re-running CI.
+          additional_permissions: |
+            actions: read
+          # The prompt drives the review directly against the repo's own review
+          # rubric and posts feedback itself. We deliberately do NOT depend on
+          # the external code-review plugin: the installed plugin command takes
+          # no --comment/effort flag and posts on its own fixed terms, so wiring
+          # our scope/effort/inline design through it is unreliable. gh + the
+          # inline-comment MCP tool are the proven posting paths.
+          claude_args: >-
+            --allowed-tools "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr review:*),Bash(gh pr comment:*),mcp__github_inline_comment__create_inline_comment"
+          prompt: |
+            You are the IntegratoR code reviewer for pull request
+            #${{ github.event.pull_request.number }} in ${{ github.repository }}
+            (.NET 10, D365 F&O OData on Azure Functions; Clean Architecture, CQRS
+            via MediatR, FluentResults, FluentValidation).
 
+            Scope flags computed by the workflow:
+            - security review needed: ${{ steps.scope.outputs.security }}
+            - api-compatibility review needed: ${{ steps.scope.outputs.api }}
+            - thinking effort: ${{ steps.scope.outputs.effort }} (apply this much
+              analysis depth; do NOT call any external /code-review command)
+
+            You MUST post your feedback to the PR. A run that ends without
+            posting anything is a FAILURE — see Stage 5.
+
+            DO NOT re-run mechanical CI checks. build.yml already runs
+            dotnet build (Release), dotnet test, `dotnet format --verify-no-changes`,
+            and a vulnerable-package scan on every PR. You may read its result via
+            the `actions: read` permission, but DO NOT recompute it. NOTE:
+            build.yml marks its test step `continue-on-error: true`, so a green
+            build does NOT prove tests passed — check the test step result
+            specifically, not just overall job status. Focus ONLY on
+            judgement-based review that CI cannot do.
+
+            ## Stage 0 — Ground yourself in IntegratoR's standards
+            Read these repo files before judging anything:
+            - `.claude/agents/code-reviewer.md`  (the authoritative correctness +
+              hard-rule + architecture + test-adequacy rubric and its
+              Blocker/Major/Minor/Nit + verdict output format — apply it verbatim)
+            - `.claude/skills/csharp-coding-standards/SKILL.md` (the C# conventions)
+            - `.claude/rules/architecture.md`, `.claude/rules/perf-reliability.md`,
+              `.claude/rules/common.md`
+            Then read the PR diff (`gh pr diff ${{ github.event.pull_request.number }}`)
+            and the changed files + their tests in full.
+
+            ## Stage 1 — Correctness + hard-rule + architecture + test review (ALWAYS)
+            Review the diff against the rubric. Explicitly hunt for violations of
+            the hard rules — these are deterministic, low-false-positive checks:
+            FluentResults `Result<T>` (never `throw` for business flow),
+            `ConfigureAwait(false)` in library code, `CancellationToken`
+            propagation, British `Behaviour`, Central Package Management
+            (no `Version=` in csproj), no `var` for non-obvious types, no
+            sync-over-async, Clean Architecture inward-only dependencies,
+            CQRS records, `BaseEntity<TKey>`/`GetCompositeKey()`, pipeline order
+            Logging→Validation→Caching→Handler, and that `Result<T>` stays in
+            lockstep across both serialisers (`ResultJsonShape`).
+            Judge test adequacy: behaviour-changing code must have real tests
+            (not structural bloat); Result assertions must use `BeSuccessful()` /
+            `BeFailed()` (never `BeSuccess()` / `BeFailure()`).
+            For each concrete, high-confidence finding ON A CHANGED LINE, post an
+            inline comment via `mcp__github_inline_comment__create_inline_comment`
+            with `confirmed: true`. Do not invent findings; do not comment on
+            lines the PR did not touch.
+
+            ## Stage 2 — Security review (ONLY if security flag == 'true')
+            If ${{ steps.scope.outputs.security }} is 'true', also read
+            `.claude/agents/security-reviewer.md` and `.claude/rules/security.md`,
+            then review the auth/secret/header/error-response/logging surface:
+            no secrets in code or committed config; `AuthenticationMode` set
+            explicitly; token-acquisition failures return 401 and short-circuit;
+            `ReasonPhrase`/response bodies leak no internal detail; `Authorization`
+            set via typed `AuthenticationHeaderValue("Bearer", token)` (no string
+            concat); no credentials/tokens/subscription keys in logs. Even if the
+            flag is 'false', still flag any obvious secret/token leakage you
+            notice incidentally. If there is no real security surface, say so
+            plainly — do NOT invent findings.
+
+            ## Stage 3 — Public API compatibility (ONLY if api flag == 'true')
+            If ${{ steps.scope.outputs.api }} is 'true', read
+            `.claude/rules/api-compatibility.md` and flag any non-additive change
+            to a published `IntegratoR.*` library surface (removed/renamed/
+            visibility-narrowed member, changed signature, new required parameter,
+            an optional parameter added to an already-shipped method, or changed
+            serialised/wire output). A real break needs an explicit plan and a
+            `+semver: major` marker. The SampleFunction host is NOT published —
+            do not flag it.
+
+            ## Stage 4 — Synthesise ONE structured PR review (single summary)
+            Post exactly ONE top-level summary as a formal GitHub review:
+
+            `gh pr review ${{ github.event.pull_request.number }} --comment --body "<summary>"`
+
+            This is the ONLY top-level summary — do not also post a `gh pr comment`.
+            The summary MUST contain, in order:
+            1. A one-paragraph overview of what the PR does and overall risk.
+            2. Findings grouped by severity: **Blocker** · **Major** · **Minor** ·
+               **Nit**, each as `path:line — issue — concrete fix`. Reference the
+               inline comments already posted rather than repeating them verbatim.
+            3. Which stages ran (security / api-compatibility were conditional)
+               and a note that mechanical CI checks live in build.yml.
+            4. A final one-line verdict: `approve`, `approve-with-changes`, or
+               `needs-work`.
+            5. The VERY LAST line of the summary body MUST be exactly one of these
+               machine-readable markers — the workflow reads it to decide whether
+               to block the merge, so get it right:
+                 - `<!-- integrator-review: blocker -->`  if there is ONE OR MORE
+                   Blocker-severity finding you are HIGHLY CONFIDENT is a real,
+                   merge-stopping defect (a hard-rule violation, a correctness bug,
+                   a security hole, or an unflagged breaking change to the
+                   published API surface).
+                 - `<!-- integrator-review: ok -->`       otherwise (clean, or only
+                   Major / Minor / Nit findings).
+               Reserve `blocker` for genuine merge-stoppers. Major / Minor / Nit do
+               NOT block. When in doubt, emit `ok` and raise the concern as Major.
+
+            ## Stage 5 — Posting self-check (MANDATORY)
+            Stage 4 is unconditional and MUST succeed: even on a clean PR you post
+            a one-line `approve` summary ending with the `ok` marker. If you posted
+            neither an inline comment nor the Stage 4 summary, that is a silent
+            failure — post at minimum the Stage 4 summary (with its marker) before
+            exiting.
+
+            Gating: the workflow blocks the merge ONLY when your summary's marker is
+            `blocker`. Major / Minor / Nit findings are advisory and never block.
+            Be deliberate and conservative with the `blocker` marker.
+
+      # Merge gate. Reads the review that was actually posted and fails the check
+      # ONLY when the latest review carries the `blocker` marker. Fail-open: if no
+      # review/marker is found (reviewer errored or could not post), this does NOT
+      # block — preferring a missing review over a false merge-block.
+      - name: Enforce review gate (block on Blocker)
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          pr="${{ github.event.pull_request.number }}"
+          body="$(gh pr view "$pr" --json reviews --jq '[.reviews[]] | last | .body' 2>/dev/null || true)"
+          if printf '%s' "$body" | grep -q 'integrator-review: blocker'; then
+            echo "::error::IntegratoR code review flagged a Blocker-severity issue. Resolve it (or admin-override) before merging — see the PR review."
+            exit 1
+          fi
+          echo "No Blocker marker on the latest review (clean, advisory-only findings, or no review was posted) — not blocking."
