@@ -5,6 +5,7 @@ using FluentValidation;
 using IntegratoR.Abstractions.Common.CQRS.Commands;
 using IntegratoR.Abstractions.Common.CQRS.Queries;
 using IntegratoR.Abstractions.Common.Results;
+using IntegratoR.Abstractions.Domain.Entities;
 using IntegratoR.Abstractions.Interfaces.Authentication;
 using IntegratoR.Abstractions.Interfaces.Services;
 using IntegratoR.OData.Domain.Settings;
@@ -414,6 +415,158 @@ public class ServiceCollectionExtensionsTests
             await service.Received(1).FindAsync(Arg.Any<Expression<Func<LedgerJournalHeader, bool>>?>(), Arg.Any<CancellationToken>());
         }
     }
+
+    // Regression tests — consumer entity handler resolution
+    // These tests fail before the fix with:
+    //   "No service for type 'IRequestHandler<CreateCommand<ConsumerExtendedEntity>, Result<ConsumerExtendedEntity>>'"
+    // The fix is the combined-assembly MediatR scan in step 3b of AddIntegratoR that folds
+    // builder.ConsumerAssemblies into the RegisterGenericHandlers pass.
+    private static (ServiceProvider Provider, IService<ConsumerExtendedEntity> Service) BuildProviderWithSubstitutedConsumerService()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        IConfiguration configuration = CreateMinimalConfiguration();
+        services.AddIntegratoR(configuration, integrator =>
+            integrator.AddConsumerHandlers(typeof(ConsumerExtendedEntity).Assembly));
+        IService<ConsumerExtendedEntity> substitute = Substitute.For<IService<ConsumerExtendedEntity>>();
+        services.AddScoped(_ => substitute);
+        return (services.BuildServiceProvider(), substitute);
+    }
+
+    private static ConsumerExtendedEntity CreateConsumerEntity() => new()
+    {
+        Id = "C1",
+        Name = "consumer"
+    };
+
+    [Fact]
+    public async Task AddIntegratoR_ResolvesGenericCreateCommandHandler_ForConsumerEntity()
+    {
+        // Arrange
+        (ServiceProvider provider, IService<ConsumerExtendedEntity> service) = BuildProviderWithSubstitutedConsumerService();
+        await using (provider)
+        {
+            ConsumerExtendedEntity entity = CreateConsumerEntity();
+            service.AddAsync(entity, Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult(Result.Ok(entity)));
+
+            using IServiceScope scope = provider.CreateScope();
+            IMediator mediator = scope.ServiceProvider.GetRequiredService<IMediator>();
+
+            // Act
+            Result<ConsumerExtendedEntity> result =
+                await mediator.Send(new CreateCommand<ConsumerExtendedEntity>(entity), TestContext.Current.CancellationToken);
+
+            // Assert
+            result.Should().BeSuccessful();
+            result.Value.Should().BeSameAs(entity);
+            await service.Received(1).AddAsync(entity, Arg.Any<CancellationToken>());
+        }
+    }
+
+    [Fact]
+    public async Task AddIntegratoR_ResolvesGenericUpdateCommandHandler_ForConsumerEntity()
+    {
+        // Arrange
+        (ServiceProvider provider, IService<ConsumerExtendedEntity> service) = BuildProviderWithSubstitutedConsumerService();
+        await using (provider)
+        {
+            ConsumerExtendedEntity entity = CreateConsumerEntity();
+            service.UpdateAsync(entity, Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult(Result.Ok(entity)));
+
+            using IServiceScope scope = provider.CreateScope();
+            IMediator mediator = scope.ServiceProvider.GetRequiredService<IMediator>();
+
+            // Act
+            Result<ConsumerExtendedEntity> result =
+                await mediator.Send(new UpdateCommand<ConsumerExtendedEntity>(entity), TestContext.Current.CancellationToken);
+
+            // Assert
+            result.Should().BeSuccessful();
+            result.Value.Should().BeSameAs(entity);
+            await service.Received(1).UpdateAsync(entity, Arg.Any<CancellationToken>());
+        }
+    }
+
+    [Fact]
+    public async Task AddIntegratoR_ResolvesGenericDeleteCommandHandler_ForConsumerEntity()
+    {
+        // Arrange
+        (ServiceProvider provider, IService<ConsumerExtendedEntity> service) = BuildProviderWithSubstitutedConsumerService();
+        await using (provider)
+        {
+            ConsumerExtendedEntity entity = CreateConsumerEntity();
+            service.DeleteAsync(entity, Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult(Result.Ok()));
+
+            using IServiceScope scope = provider.CreateScope();
+            IMediator mediator = scope.ServiceProvider.GetRequiredService<IMediator>();
+
+            // Act
+            Result<ConsumerExtendedEntity> result =
+                await mediator.Send(new DeleteCommand<ConsumerExtendedEntity>(entity), TestContext.Current.CancellationToken);
+
+            // Assert
+            result.Should().BeSuccessful();
+            result.Value.Should().BeSameAs(entity);
+            await service.Received(1).DeleteAsync(entity, Arg.Any<CancellationToken>());
+        }
+    }
+
+    [Fact]
+    public async Task AddIntegratoR_ResolvesGenericGetByKeyQueryHandler_ForConsumerEntity()
+    {
+        // Arrange
+        (ServiceProvider provider, IService<ConsumerExtendedEntity> service) = BuildProviderWithSubstitutedConsumerService();
+        await using (provider)
+        {
+            ConsumerExtendedEntity entity = CreateConsumerEntity();
+            object[] key = ["C1"];
+            service.GetByKeyAsync(key, Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult(Result.Ok(entity)));
+
+            using IServiceScope scope = provider.CreateScope();
+            IMediator mediator = scope.ServiceProvider.GetRequiredService<IMediator>();
+
+            // Act
+            Result<ConsumerExtendedEntity> result =
+                await mediator.Send(new GetByKeyQuery<ConsumerExtendedEntity>(key), TestContext.Current.CancellationToken);
+
+            // Assert
+            result.Should().BeSuccessful();
+            result.Value.Should().BeSameAs(entity);
+            await service.Received(1).GetByKeyAsync(key, Arg.Any<CancellationToken>());
+        }
+    }
+
+    [Fact]
+    public async Task AddIntegratoR_ResolvesGenericGetByFilterQueryHandler_ForConsumerEntity()
+    {
+        // Arrange
+        (ServiceProvider provider, IService<ConsumerExtendedEntity> service) = BuildProviderWithSubstitutedConsumerService();
+        await using (provider)
+        {
+            ConsumerExtendedEntity entity = CreateConsumerEntity();
+            IEnumerable<ConsumerExtendedEntity> entities = [entity];
+            service.FindAsync(Arg.Any<Expression<Func<ConsumerExtendedEntity, bool>>?>(), Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult(Result.Ok(entities)));
+
+            using IServiceScope scope = provider.CreateScope();
+            IMediator mediator = scope.ServiceProvider.GetRequiredService<IMediator>();
+
+            Expression<Func<ConsumerExtendedEntity, bool>> filter = e => e.Id == "C1";
+
+            // Act
+            Result<IEnumerable<ConsumerExtendedEntity>> result =
+                await mediator.Send(new GetByFilterQuery<ConsumerExtendedEntity>(filter), TestContext.Current.CancellationToken);
+
+            // Assert
+            result.Should().BeSuccessful();
+            result.Value.Should().ContainSingle().Which.Should().BeSameAs(entity);
+            await service.Received(1).FindAsync(Arg.Any<Expression<Func<ConsumerExtendedEntity, bool>>?>(), Arg.Any<CancellationToken>());
+        }
+    }
 }
 
 /// <summary>
@@ -433,4 +586,16 @@ public class DummyModelValidator : AbstractValidator<DummyModel>
     {
         RuleFor(x => x.Name).NotEmpty();
     }
+}
+
+/// <summary>
+/// Represents a consumer-defined entity living outside the framework assemblies.
+/// Used to verify that <c>AddIntegratoR</c> closes the framework's generic CRUD/query
+/// MediatR handlers over entity types supplied via <c>builder.AddConsumerHandlers(assembly)</c>.
+/// </summary>
+public class ConsumerExtendedEntity : BaseEntity<string>
+{
+    public required string Id { get; set; }
+    public string? Name { get; set; }
+    public override object[] GetCompositeKey() => [Id];
 }
