@@ -117,11 +117,11 @@ The `AddIntegratoR(configuration, configure)` call performs six steps in this or
 1. `AddApplicationServices()` — pipeline behaviours, MediatR, cache service, OAuth authenticator
 2. `AddODataClient(configuration)` — HTTP client, Polly policies, OData client, `IService<T>` registration
 3. `AddODataClientFOProxy(configuration)` — F&O handlers, F&O entity bindings
-4. Cross-assembly MediatR closing — second `AddMediatR` call that scans both Application and F&O assemblies so generic CRUD handlers close against F&O entity types
+4. Cross-assembly MediatR closing — second `AddMediatR` call that scans the Application, F&O, **and** consumer assemblies together so generic CRUD handlers close against F&O **and** consumer entity types
 5. Durable Functions data converter — registers `JsonDataConverter` with the STJ Result converters on `DurableTaskWorkerOptions`
-6. Consumer assembly registration — for each assembly passed to `AddConsumerHandlers`, calls `AddMediatR(...)` and `AddValidatorsFromAssembly(...)`
+6. Consumer validator registration — for each assembly passed to `AddConsumerHandlers`, calls `AddValidatorsFromAssembly(...)` (its MediatR handlers are already registered by the combined scan in step 4)
 
-Step 4 exists because MediatR v12's `RegisterGenericHandlers = true` flag only closes open-generic handlers against types in the **same** scanned assembly. The generic CRUD handlers live in `IntegratoR.Application`, F&O entities live in `IntegratoR.OData.FO` — the layer-local `AddMediatR` calls in steps 1–3 never see them together, so no closed `IRequestHandler<CreateCommand<LedgerJournalHeader>, ...>` registration would be emitted without step 4.
+Step 4 exists because MediatR v12's `RegisterGenericHandlers = true` flag only closes open-generic handlers against types in the **same** scanned assembly. The generic CRUD handlers live in `IntegratoR.Application`, F&O entities live in `IntegratoR.OData.FO` — the layer-local `AddMediatR` calls in steps 1–3 never see them together, so no closed `IRequestHandler<CreateCommand<LedgerJournalHeader>, ...>` registration would be emitted without step 4. The same scan folds in every assembly passed to `AddConsumerHandlers(...)`, so a consumer's extended or custom entities get closed generic handlers exactly like the framework's own.
 
 ## Dependency Direction
 

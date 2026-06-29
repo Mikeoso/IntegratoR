@@ -14,7 +14,10 @@ public sealed class IntegratoRBuilder
     internal Action<FOSettings>? FOPostConfigure { get; private set; }
 
     /// <summary>
-    /// Registers MediatR handlers and FluentValidation validators from the specified consumer assemblies.
+    /// Registers the specified consumer assemblies' FluentValidation validators and folds them into
+    /// <c>AddIntegratoR</c>'s combined <c>RegisterGenericHandlers</c> MediatR scan, so the framework's
+    /// generic CRUD/query handlers close over the entity types declared in those assemblies — including
+    /// subclasses of framework entities.
     /// </summary>
     public IntegratoRBuilder AddConsumerHandlers(params Assembly[] assemblies)
     {

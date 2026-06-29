@@ -49,7 +49,7 @@ integrator.AddConsumerHandlers(
     typeof(SomeExternalValidator).Assembly);
 ```
 
-Internally `AddConsumerHandlers` registers each assembly via `services.AddValidatorsFromAssembly(...)` and `services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(...))`.
+Internally, `AddIntegratoR` registers every assembly passed to `AddConsumerHandlers` via `services.AddValidatorsFromAssembly(...)` for its validators, and folds it into the combined `RegisterGenericHandlers = true` MediatR scan so its handlers — including the closed generic CRUD/query handlers for its entities — register in the same pass as the framework's own.
 
 ## How Validation Fits Into the Pipeline
 

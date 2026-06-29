@@ -61,9 +61,10 @@ public static class IntegratoRServiceCollectionExtensions
         // 3b. Cross-assembly generic handler closing.
         // MediatR v12 only closes open generics against types in the SAME scanned assembly,
         // so the layer-local AddMediatR calls in AddApplicationServices() and AddODataClientFOProxy()
-        // never see the open CreateCommandHandler<T> and the F&O entity types together. This call
-        // scans both assemblies in one pass so the closed IRequestHandler<CreateCommand<T>, ...>
-        // registrations are emitted for every F&O entity.
+        // never see the open CreateCommandHandler<T> and the entity types together. This single
+        // combined scan emits the closed IRequestHandler<CreateCommand<T>, ...> registrations for
+        // every F&O entity AND every consumer-supplied entity (a subclass of an F&O entity or a new
+        // BaseEntity<TKey>), so mediator.Send(new CreateCommand<ConsumerEntity>(...)) resolves.
         services.AddMediatR(cfg =>
         {
             cfg.RegisterGenericHandlers = true;
@@ -71,6 +72,14 @@ public static class IntegratoRServiceCollectionExtensions
                 typeof(IntegratoR.Application.Features.Common.Commands.CreateCommandHandler<>).Assembly);
             cfg.RegisterServicesFromAssembly(
                 typeof(IntegratoR.OData.FO.Domain.Entities.LedgerJournal.LedgerJournalHeader).Assembly);
+
+            // Fold consumer assemblies into the SAME RegisterGenericHandlers pass so the framework's
+            // generic CRUD/query handlers are also closed over consumer entity types. Without this,
+            // a consumer's extended/custom entity would have no IRequestHandler<CreateCommand<T>, ...>.
+            foreach (Assembly assembly in builder.ConsumerAssemblies)
+            {
+                cfg.RegisterServicesFromAssembly(assembly);
+            }
         });
 
         // 4. Durable Functions Result<T> support — register the System.Text.Json Result
@@ -96,10 +105,12 @@ public static class IntegratoRServiceCollectionExtensions
             services.PostConfigure(builder.FOPostConfigure);
         }
 
-        // 6. Register consumer assemblies for MediatR + FluentValidation
+        // 6. Register consumer FluentValidation validators. Consumer MediatR handlers — including
+        //    the closed generic CRUD/query handlers for consumer entities — are already registered
+        //    by the combined RegisterGenericHandlers scan in step 3b, so they must NOT be scanned
+        //    again here (a second AddMediatR pass would emit duplicate handler registrations).
         foreach (Assembly assembly in builder.ConsumerAssemblies)
         {
-            services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(assembly));
             services.AddValidatorsFromAssembly(assembly);
         }
 

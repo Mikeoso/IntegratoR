@@ -70,16 +70,6 @@ This page lists known constraints in the framework and the planned resolutions. 
 
 **Workaround status:** add coverage on demand. The translator is intentionally narrow — favouring predictable D365-compatible output over comprehensive LINQ coverage.
 
-## Consumer Entities Need Manual Generic-Handler Registration
-
-**What:** `IntegratoRBuilder.AddConsumerHandlers(...)` registers a consumer assembly's explicitly-written handlers and validators, but it does **not** close the framework's open generic CQRS handlers (`CreateCommand<T>`, `UpdateCommand<T>`, `GetByKeyQuery<T>`, the F&O `CreateLedgerJournalHeaderCommand<TEntity>` family, …) against entity types declared in the consumer assembly — including subclasses of framework entities.
-
-**Symptoms:** `mediator.Send(new CreateCommand<MyEntity>(...))` throws `InvalidOperationException: No service for type 'MediatR.IRequestHandler`2[...]' has been registered`. The service layer (`IService<MyEntity>`) resolves fine — it is an open-generic DI registration; only the MediatR handler closing is missing.
-
-**Why:** MediatR v12 closes an open generic handler only against entity types found in the same assembly scan that sets `RegisterGenericHandlers = true`. `AddIntegratoR` performs a combined Application + F&O scan for the framework's own entities, but the consumer-assembly scan in `AddConsumerHandlers` uses a plain `RegisterServicesFromAssembly` without that flag and without re-including the handler assemblies.
-
-**Workaround status:** documented workaround — add a combined `AddMediatR` scan in the composition root (see [Troubleshoot Common Issues](Troubleshoot-Common-Issues#extending-the-framework)). The planned fix folds consumer assemblies into the combined `RegisterGenericHandlers = true` scan inside `AddConsumerHandlers` so extended entities get closed handlers for free. On the backlog.
-
 ## Where to Track Progress
 
 The framework's backlog, tracked internally by maintainers, consolidates these items and tracks which has an active design and which is still scoped. Items shipping in a given release are noted in [Release Notes and Versioning](Release-Notes-and-Versioning) with the relevant PR link.
