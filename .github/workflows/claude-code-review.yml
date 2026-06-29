@@ -30,7 +30,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           # Full history so the action can diff the PR head against the base
           # branch (origin/<base>...HEAD) and reason about API surface over time.
