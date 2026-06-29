@@ -18,6 +18,9 @@ Versions are computed automatically by [GitVersion](https://gitversion.net/) in 
 - Dependabot configuration for automated dependency updates
 - Branch protection rules on `main`
 
+### Removed
+- `IntegratoR.RELion` integration module (RELion property-management REST API client, auth handler, domain entities, and ledger query). Out of scope for the framework's Microsoft-business-application OData focus; the module was never published to NuGet.
+
 ## [0.1.0] - 2025
 
 ### Added

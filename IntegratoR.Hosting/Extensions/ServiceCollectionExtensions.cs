@@ -28,7 +28,6 @@ public static class IntegratoRServiceCollectionExtensions
 
     /// <summary>
     /// Registers core IntegratoR framework services (Application, OData, F&amp;O) with default settings.
-    /// Optional modules such as RELion must be registered separately.
     /// </summary>
     public static IServiceCollection AddIntegratoR(
         this IServiceCollection services,
@@ -39,7 +38,6 @@ public static class IntegratoRServiceCollectionExtensions
 
     /// <summary>
     /// Registers core IntegratoR framework services (Application, OData, F&amp;O) with builder-based configuration.
-    /// Optional modules such as RELion must be registered separately.
     /// </summary>
     public static IServiceCollection AddIntegratoR(
         this IServiceCollection services,

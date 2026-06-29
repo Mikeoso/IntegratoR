@@ -46,8 +46,6 @@ flowchart BT
     style Hosting fill:#f9f4e8
 ```
 
-The optional `IntegratoR.RELion` package sits parallel to `IntegratoR.OData` — it references `IntegratoR.Abstractions` directly and is wired via a separate `AddRelionClient(configuration)` call.
-
 ## Project Map
 
 | Project | Role | DI entry point |
@@ -56,7 +54,6 @@ The optional `IntegratoR.RELion` package sits parallel to `IntegratoR.OData` —
 | `IntegratoR.Application` | MediatR pipeline behaviours, generic command/query handlers, `OAuthAuthenticator`, `DistributedCacheService`, the cross-serialiser `Result<T>` wiring | `services.AddApplicationServices()` |
 | `IntegratoR.OData` | Generic OData client wrapping PanoramicData.OData.Client, `ODataService<T>`, authentication delegating handler, Polly retry + circuit breaker, `ODataFieldAttribute`, `IntegratoRODataExpressionTranslator` | `services.AddODataClient(configuration)` |
 | `IntegratoR.OData.FO` | D365 F&O entities (`LedgerJournalHeader/Line`, `DimensionIntegrationFormat`, `DimensionParameters`), feature-specific commands and handlers, `FOSettings`, dimension builder/reader | `services.AddODataClientFOProxy(configuration)` |
-| `IntegratoR.RELion` | Optional — RELion API integration: authentication handler, service, entities, query handlers | `services.AddRelionClient(configuration)` |
 | `IntegratoR.Hosting` | `IntegratoRBuilder`, the single `AddIntegratoR(configuration)` composition root that wires Application + OData + OData.FO + cross-assembly MediatR closing + Durable Functions Result converter | `services.AddIntegratoR(configuration)` |
 | `IntegratoR.SampleFunction` | The consumer-side sample — Azure Functions isolated-worker host that wires `AddIntegratoR`, configures Key Vault and Application Insights, and exposes two smoke-test HTTP triggers | Not a library — sample app |
 | `IntegratoR.TestKit` | Shared test infrastructure: custom `Result<T>` assertions for FluentAssertions, fakes (`FakeCacheService`, `FakeHttpMessageHandler`), test entity builders | Reference from test projects only |
@@ -106,7 +103,7 @@ The codebase uses both **System.Text.Json** and **Newtonsoft.Json**, intentional
 | Serialiser | Used by | Auto-wired by `AddIntegratoR`? |
 |---|---|---|
 | System.Text.Json | OData responses, `DistributedCacheService` (cache round-trip), Durable Functions data converter | Yes — `AddIntegratoR` wires `DurableTaskWorkerOptions.DataConverter`; `DistributedCacheService` registers in its own static options |
-| Newtonsoft.Json | RELion API client, HTTP request/response bodies in Azure Functions worker | No — consumers must wire `JsonConvert.DefaultSettings` in `Program.cs` |
+| Newtonsoft.Json | HTTP request/response bodies in Azure Functions worker | No — consumers must wire `JsonConvert.DefaultSettings` in `Program.cs` |
 
 Both serialisers share a `Result<T>` projection helper (`ResultJsonShape`) so wire formats stay aligned. See [Set Up Azure Functions Host](Set-Up-Azure-Functions-Host) for the Newtonsoft wiring snippet.
 

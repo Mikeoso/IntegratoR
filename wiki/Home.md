@@ -24,7 +24,6 @@ A .NET 10 framework for building enterprise integrations with **Microsoft Dynami
 | [Cache Query Results](Cache-Query-Results) | `ICacheableQuery<T>`, in-memory vs distributed cache |
 | [Work with Dimensions](Work-with-Dimensions) | `FinancialDimensionBuilder` / `Reader`, `GetDimensionOrdersQuery` |
 | [Run Smoke Tests](Run-Smoke-Tests) | Built-in HTTP triggers for live end-to-end verification against a sandbox |
-| [Integrate with RELion](Integrate-with-RELion) | Optional RELion API module |
 | [Extend the Pipeline](Extend-the-Pipeline) | Custom commands, custom MediatR behaviours, custom validators |
 | [Test with TestKit](Test-with-TestKit) | Result assertions, fakes (`FakeCacheService`, `FakeHttpMessageHandler`), entity builders |
 

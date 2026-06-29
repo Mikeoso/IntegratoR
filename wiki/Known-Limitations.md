@@ -19,17 +19,9 @@ This page lists known constraints in the framework and the planned resolutions. 
 
 **Mitigation today:** treat write-path failures as recoverable in the consumer's code. The framework's `Warning` log for suppressed-404 delete is the diagnostic signal. For one-off cleanup of orphan rows created by the LedgerJournal smoke test, use the D365 UI.
 
-## RELion Settings Not Yet Restructured
-
-**What:** `RelionSettings` still uses a flat structure (`ClientId`, `ClientSecret`, `TenantId`, `Resource` at the root) instead of the nested `Authentication.OAuth.*` shape introduced for `ODataSettings` in PR #76 (v1.2.0).
-
-**Symptoms:** none — both work correctly. The inconsistency is a developer-experience issue, not a functional one.
-
-**Workaround status:** the restructure is on the backlog. It is a breaking change for any consumer that already binds `RelionSettings` from configuration, so it will land with a clear major-version bump and a migration guide entry in [Release Notes and Versioning](Release-Notes-and-Versioning).
-
 ## `IValidateOptions<T>` Not Implemented
 
-**What:** Settings classes (`ODataSettings`, `FOSettings`, `RelionSettings`) bind from `IConfiguration` but no `IValidateOptions<T>` is registered. Misconfiguration surfaces as either:
+**What:** Settings classes (`ODataSettings`, `FOSettings`) bind from `IConfiguration` but no `IValidateOptions<T>` is registered. Misconfiguration surfaces as either:
 
 - A clear `ArgumentException` at first OData client resolution (when `ODataSettings.Url` is empty — the framework guards this case specifically).
 - A cryptic runtime error when a missing field is dereferenced inside a handler.

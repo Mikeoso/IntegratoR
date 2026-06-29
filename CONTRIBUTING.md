@@ -55,13 +55,12 @@ This project follows **Clean Architecture** with dependencies pointing inward:
 SampleFunction (host) -> Application -> Abstractions (core)
                       -> OData -> Abstractions
                       -> OData.FO -> OData -> Abstractions
-                      -> RELion -> Abstractions
 ```
 
 - **Abstractions** contains domain interfaces, entities, and CQRS contracts
 - **Application** contains use cases and pipeline behaviours
 - **OData** contains the generic OData client and resilience infrastructure
-- **OData.FO** and **RELion** contain system-specific entity models and handlers
+- **OData.FO** contains the D365 F&O entity models and handlers
 - **SampleFunction** is the composition root (Azure Functions host)
 
 ## Pull Requests
