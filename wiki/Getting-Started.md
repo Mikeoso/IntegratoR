@@ -17,7 +17,7 @@ A single NuGet reference brings in the full framework:
 dotnet add package IntegratoR.Hosting
 ```
 
-`IntegratoR.Hosting` is the composition root. It pulls in `IntegratoR.Application`, `IntegratoR.OData`, `IntegratoR.OData.FO`, and `IntegratoR.Abstractions` as transitive dependencies, along with MediatR, FluentResults, FluentValidation, and Polly. The optional `IntegratoR.RELion` package is installed separately when the integration also needs to talk to RELion — see [Integrate with RELion](Integrate-with-RELion).
+`IntegratoR.Hosting` is the composition root. It pulls in `IntegratoR.Application`, `IntegratoR.OData`, `IntegratoR.OData.FO`, and `IntegratoR.Abstractions` as transitive dependencies, along with MediatR, FluentResults, FluentValidation, and Polly.
 
 ## 2. Add Configuration
 

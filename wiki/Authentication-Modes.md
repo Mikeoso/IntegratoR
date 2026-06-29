@@ -119,13 +119,8 @@ services.AddIntegratoR(configuration, integrator =>
 
 Per-request mode switching is not supported — the handler is wired once at HTTP client construction time.
 
-## RELion Authentication
-
-`IntegratoR.RELion` uses its own delegating handler (`RelionAuthenticationHandler`) and supports the same two conceptual modes (`OAuth` and `ApiKey` via `RelionAuthMode`). The RELion settings still use a flat shape and have their own credential properties — see [Integrate with RELion](Integrate-with-RELion). The implementation pattern is identical to the OData side; the configuration surface is just not yet harmonised.
-
 ## See Also
 
 - [Configure OData](Configure-OData) — full settings reference
 - [Set Up Azure Functions Host](Set-Up-Azure-Functions-Host) — Key Vault integration for secret storage
-- [Integrate with RELion](Integrate-with-RELion) — parallel auth flow for the RELion module
 - [Troubleshoot Common Issues](Troubleshoot-Common-Issues) — common auth-error symptoms and resolutions

@@ -9,7 +9,7 @@ You are a security reviewer for the IntegratoR framework. You review the **diff*
 
 ## Project Context
 
-IntegratoR talks to D365 F&O (OData, via APIM or direct OAuth) and the RELion API. Auth runs in `DelegatingHandler` implementations (`ODataAuthenticationHandler`, `RelionAuthenticationHandler`) on every HTTP request. OAuth tokens are acquired by `OAuthAuthenticator` via MSAL and cached with proactive refresh.
+IntegratoR talks to D365 F&O (OData, via APIM or direct OAuth). Auth runs in a `DelegatingHandler` implementation (`ODataAuthenticationHandler`) on every HTTP request. OAuth tokens are acquired by `OAuthAuthenticator` via MSAL and cached with proactive refresh.
 
 ## Before Reviewing
 

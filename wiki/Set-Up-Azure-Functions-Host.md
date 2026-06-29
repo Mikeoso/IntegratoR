@@ -98,7 +98,7 @@ host.Run();
 
 ### Step 1 — Newtonsoft `Result<T>` Converters
 
-`AddIntegratoR` auto-wires the System.Text.Json `Result<T>` converters for the OData layer and the Durable Functions data converter. **Newtonsoft.Json**, used by HTTP trigger request and response bodies (when consumers serialise via `JsonConvert.SerializeObject`) and by the RELion client, needs the converters wired manually via `JsonConvert.DefaultSettings`.
+`AddIntegratoR` auto-wires the System.Text.Json `Result<T>` converters for the OData layer and the Durable Functions data converter. **Newtonsoft.Json**, used by HTTP trigger request and response bodies (when consumers serialise via `JsonConvert.SerializeObject`), needs the converters wired manually via `JsonConvert.DefaultSettings`.
 
 Wire this **before** the `HostBuilder` so any code path that fires during DI construction (some constructors deserialise pre-staged JSON) sees the converters. Setting `DefaultSettings` is process-wide and idempotent — a single statement at the top of `Program.cs` is enough.
 
@@ -161,8 +161,6 @@ services.AddIntegratoR(context.Configuration, integrator =>
     });
 });
 ```
-
-If the integration also calls RELion, register the RELion client separately — see [Integrate with RELion](Integrate-with-RELion).
 
 ## Project File
 

@@ -144,7 +144,6 @@ tests/
 ├── IntegratoR.Application.Tests/
 ├── IntegratoR.OData.Tests/
 ├── IntegratoR.OData.FO.Tests/
-├── IntegratoR.RELion.Tests/
 ├── IntegratoR.Hosting.Tests/
 ├── IntegratoR.TestKit/         (the shared TestKit library)
 └── IntegratoR.TestKit.Tests/   (tests for the TestKit itself)

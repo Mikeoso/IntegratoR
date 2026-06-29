@@ -13,7 +13,7 @@
 - `AuthenticationMode` must be explicitly set — don't rely on enum default.
 - OAuth flow: `OAuthAuthenticator` acquires Bearer tokens via MSAL, caches with proactive refresh.
 - ApiKey flow: subscription key added to HTTP header by `ODataAuthenticationHandler`.
-- Auth handlers (`ODataAuthenticationHandler`, `RelionAuthenticationHandler`) are `DelegatingHandler` implementations — they run on every HTTP request.
+- The auth handler (`ODataAuthenticationHandler`) is a `DelegatingHandler` implementation — it runs on every HTTP request.
 
 ## Error Responses
 

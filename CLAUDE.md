@@ -13,7 +13,6 @@ IntegratoR.Abstractions/  → domain interfaces, base entities, CQRS contracts, 
 IntegratoR.Application/   → MediatR pipeline behaviours, generic handlers, OAuthAuthenticator, cache
 IntegratoR.OData/          → generic OData client, auth handler, Polly policies, ODataFieldAttribute
 IntegratoR.OData.FO/       → D365 F&O entities, dimension queries, feature-specific handlers
-IntegratoR.RELion/          → RELion API integration (auth, service, entities, queries)
 IntegratoR.Hosting/         → IntegratoRBuilder, composition root helpers
 IntegratoR.SampleFunction/ → Azure Functions host (composition root)
 tests/IntegratoR.TestKit/  → shared test infrastructure (fakes, Result assertions, builders)

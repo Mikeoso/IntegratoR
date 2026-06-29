@@ -7,7 +7,6 @@ SampleFunction (host/composition root)
   -> Application    -> Abstractions (core)
   -> OData          -> Abstractions
   -> OData.FO       -> OData -> Abstractions
-  -> RELion         -> Abstractions
 ```
 
 ## Layers
@@ -18,7 +17,6 @@ SampleFunction (host/composition root)
 | **Application** | MediatR pipeline behaviours, generic command/query handlers, `OAuthAuthenticator`, cache services | `services.AddApplicationServices()` |
 | **OData** | Generic OData client, `ODataService<T>`, auth handler, Polly policies, `ODataFieldAttribute` | `services.AddODataClient(configuration)` |
 | **OData.FO** | D365 F&O entities, dimension queries, feature-specific commands/handlers | `services.AddODataClientFOProxy(configuration)` |
-| **RELion** | RELion API integration (auth handler, service, entities, query handlers) | `services.AddRelionClient(configuration)` |
 | **Hosting** | `IntegratoRBuilder`, composition root helpers | `services.AddIntegratoR(configuration)` |
 | **TestKit** | Shared test infrastructure: custom `Result` assertions, test entity builders, fakes | Test helper — no DI |
 
@@ -39,7 +37,7 @@ The codebase uses **two JSON serialisers** and `Result<T>` needs custom converte
 | Serialiser | Used by | Result converters | Wiring |
 |---|---|---|---|
 | **System.Text.Json** | Durable Functions isolated worker SDK (`JsonDataConverter`), `DistributedCacheService` | `IntegratoR.Abstractions/Common/Results/SystemText/ResultJsonConverter.cs` (factory + typed + non-generic) | **Auto** — `AddIntegratoR()` wires `DurableTaskWorkerOptions.DataConverter`; `DistributedCacheService` registers them in its own static `JsonSerializerOptions`. Consumers do nothing. |
-| **Newtonsoft.Json** | RELion API client (`[JsonProperty]`, `JsonConvert.DeserializeObject`), HTTP trigger payloads, journal file parsing | `IntegratoR.Abstractions/Common/Results/ResultJsonConverter.cs` (3 classes: non-generic, generic factory, typed) | **Manual** — `JsonConvert.DefaultSettings = ...` block in `SampleFunction/Program.cs`. Process-global mutable state; do NOT auto-wire from `AddIntegratoR`. |
+| **Newtonsoft.Json** | HTTP trigger payloads (`JsonConvert.SerializeObject`/`DeserializeObject`), journal file parsing | `IntegratoR.Abstractions/Common/Results/ResultJsonConverter.cs` (3 classes: non-generic, generic factory, typed) | **Manual** — `JsonConvert.DefaultSettings = ...` block in `SampleFunction/Program.cs`. Process-global mutable state; do NOT auto-wire from `AddIntegratoR`. |
 
 **Shared shape helper:** `IntegratoR.Abstractions/Common/Results/ResultJsonShape.cs` — internal class (with `InternalsVisibleTo IntegratoR.Abstractions.Tests`) holding property-name constants and the `IError ↔ (code, message, type)` projection/hydration. Both converter families call `Project` and `Hydrate` here.
 

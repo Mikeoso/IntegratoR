@@ -14,7 +14,6 @@
 - [Cache Query Results](Cache-Query-Results)
 - [Work with Dimensions](Work-with-Dimensions)
 - [Run Smoke Tests](Run-Smoke-Tests)
-- [Integrate with RELion](Integrate-with-RELion)
 - [Extend the Pipeline](Extend-the-Pipeline)
 - [Test with TestKit](Test-with-TestKit)
 
