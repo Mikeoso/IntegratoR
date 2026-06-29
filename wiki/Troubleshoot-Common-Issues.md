@@ -124,31 +124,18 @@ Same composite-key write-path limitation surfaced via the suppressed-404 observa
 
 ### `InvalidOperationException: No service for type 'MediatR.IRequestHandler`2[...]' has been registered`
 
-`mediator.Send(...)` was called with a command or query closed over a **custom or extended entity** (for example a subclass of `LedgerJournalLine`), but no closed handler was registered for it.
+`mediator.Send(...)` was called with a command or query closed over a **custom or extended entity** (for example a subclass of `LedgerJournalLine`) whose assembly was never handed to `AddConsumerHandlers(...)`.
 
-**Why:** MediatR v12 only closes the framework's open generic handlers (`CreateCommandHandler<T>`, the F&O `CreateLedgerJournalHeaderHandler<TEntity>` family, …) against entity types found in the **same assembly scan** that sets `RegisterGenericHandlers = true`. `AddIntegratoR` does this for the framework's own F&O entities, but `AddConsumerHandlers(...)` scans the consumer assembly with a plain registration — it does **not** close the generic handlers against consumer entity types. See [Known Limitations](Known-Limitations#consumer-entities-need-manual-generic-handler-registration).
+**Why:** the framework closes its generic CQRS handlers over an entity type only when that type's assembly is part of the combined `RegisterGenericHandlers = true` scan. `AddIntegratoR` scans the Application + F&O assemblies **plus every assembly you pass to `AddConsumerHandlers(...)`**. If your entity lives in an assembly you never registered, no closed handler is emitted for it.
 
-**Resolution:** in the composition root, after `AddIntegratoR`, add a combined scan that includes the handler assemblies **and** the consumer assembly together:
+**Resolution:** register the assembly that holds your extended entity — nothing more:
 
 ```csharp
-services.AddMediatR(cfg =>
-{
-    cfg.RegisterGenericHandlers = true;
-
-    // open generic handlers — Application layer
-    cfg.RegisterServicesFromAssembly(
-        typeof(IntegratoR.Application.Features.Common.Commands.CreateCommandHandler<>).Assembly);
-
-    // F&O open handlers (CreateLedgerJournalHeaderHandler<TEntity>, …)
-    cfg.RegisterServicesFromAssembly(
-        typeof(IntegratoR.OData.FO.Domain.Entities.LedgerJournal.LedgerJournalHeader).Assembly);
-
-    // the assembly holding your extended entities
-    cfg.RegisterServicesFromAssembly(typeof(MyLedgerJournalLine).Assembly);
-});
+services.AddIntegratoR(configuration, integrator =>
+    integrator.AddConsumerHandlers(typeof(MyLedgerJournalLine).Assembly));
 ```
 
-The service layer (`IService<MyEntity>`) is **not** the problem here — it is registered as an open generic and resolves against any type. Only the MediatR handler closing is missing.
+`AddConsumerHandlers` folds the assembly into the combined generic-handler scan, so `mediator.Send(new CreateCommand<MyLedgerJournalLine>(...))` — and `Update` / `Delete` / `GetByKey` / `GetByFilter` — resolves automatically (and the assembly's FluentValidation validators are registered too). The service layer (`IService<MyEntity>`) was never the problem — it is an open-generic registration that resolves against any type.
 
 ### A field I need on create or update is dropped from the payload (wrong `IgnoreOnCreate` / `IgnoreOnUpdate`)
 

@@ -212,27 +212,14 @@ Three rules make this work:
 
 ### Register the Extended Entity with MediatR
 
-Subclassing alone does **not** make `mediator.Send(new CreateCommand<MyLedgerJournalLine>(...))` work. MediatR closes the framework's generic handlers only against entity types in the same scan that sets `RegisterGenericHandlers = true`, and `AddConsumerHandlers(...)` does not do this. Add a combined scan in the composition root, after `AddIntegratoR`:
+Subclassing alone does **not** make `mediator.Send(new CreateCommand<MyLedgerJournalLine>(...))` work — the framework's generic handlers must be closed over your entity type. Hand the assembly that holds your extended entities to `AddConsumerHandlers(...)`; `AddIntegratoR` folds it into the same `RegisterGenericHandlers = true` scan it uses for the framework's own entities:
 
 ```csharp
-services.AddMediatR(cfg =>
-{
-    cfg.RegisterGenericHandlers = true;
-
-    // open generic handlers — Application layer
-    cfg.RegisterServicesFromAssembly(
-        typeof(IntegratoR.Application.Features.Common.Commands.CreateCommandHandler<>).Assembly);
-
-    // F&O open handlers (CreateLedgerJournalHeaderHandler<TEntity>, …)
-    cfg.RegisterServicesFromAssembly(
-        typeof(IntegratoR.OData.FO.Domain.Entities.LedgerJournal.LedgerJournalHeader).Assembly);
-
-    // the assembly holding your extended entities
-    cfg.RegisterServicesFromAssembly(typeof(MyLedgerJournalLine).Assembly);
-});
+services.AddIntegratoR(configuration, integrator =>
+    integrator.AddConsumerHandlers(typeof(MyLedgerJournalLine).Assembly));
 ```
 
-The service layer (`IService<MyLedgerJournalLine>`) needs no extra wiring — it is registered as an open generic and closes against any type. See [Known Limitations](Known-Limitations#consumer-entities-need-manual-generic-handler-registration) and [Troubleshoot Common Issues](Troubleshoot-Common-Issues#extending-the-framework).
+That single call closes the full generic surface — `CreateCommand<T>`, `UpdateCommand<T>`, `DeleteCommand<T>`, `GetByKeyQuery<T>`, `GetByFilterQuery<T>` — over `MyLedgerJournalLine`, and also registers its FluentValidation validators. The service layer (`IService<MyLedgerJournalLine>`) needs no extra wiring — it is an open-generic registration that closes against any type. See [Troubleshoot Common Issues](Troubleshoot-Common-Issues#extending-the-framework).
 
 ## See Also
 
