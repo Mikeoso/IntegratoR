@@ -24,9 +24,12 @@ namespace IntegratoR.SampleFunction.Endpoints;
 /// </summary>
 /// <remarks>
 /// POST a <see cref="LedgerJournalSmokeTestRequest"/> body. The trigger returns a
-/// <see cref="LedgerJournalSmokeTestResponse"/> with per-step outcomes. If any step fails
-/// the trigger halts forward progress but still best-effort runs the cleanup steps so the
-/// sandbox isn't left with orphan records.
+/// <see cref="LedgerJournalSmokeTestResponse"/> with per-step outcomes. On the happy path
+/// the ordered Update/Delete/verify steps perform the authoritative cleanup (lines then
+/// header, with a re-read confirming the header is gone). If an early step fails the trigger
+/// halts forward progress but still best-effort runs the cleanup steps so the sandbox isn't
+/// left with orphan records. The Update/Delete steps depend on the composite-key WRITE
+/// bypass in <c>ODataClientAdapter</c> (PR-B); without it they fail against D365.
 /// </remarks>
 public sealed class LedgerJournalSmokeTestTrigger
 {
@@ -41,7 +44,7 @@ public sealed class LedgerJournalSmokeTestTrigger
 
     [Function("LedgerJournalSmokeTest_HTTPTrigger")]
     public async Task<HttpResponseData> Run(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "smoke/ledger-journal")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Function, "post", Route = "smoke/ledger-journal")] HttpRequestData req,
         CancellationToken cancellationToken)
     {
         LedgerJournalSmokeTestRequest? input;
@@ -51,10 +54,11 @@ public sealed class LedgerJournalSmokeTestTrigger
         }
         catch (JsonException ex)
         {
+            _logger.LogWarning(ex, "Smoke request body was not valid JSON.");
             return await WriteResponse(req, HttpStatusCode.BadRequest, new LedgerJournalSmokeTestResponse(
                 Success: false,
                 CreatedJournalBatchNumber: null,
-                Steps: [new SmokeTestStep("ParseRequest", false, "SmokeTest.InvalidJson", ErrorType.Validation.ToString(), ex.Message)]),
+                Steps: [new SmokeTestStep("ParseRequest", false, "SmokeTest.InvalidJson", ErrorType.Validation.ToString(), "Request body is not valid JSON.")]),
                 cancellationToken).ConfigureAwait(false);
         }
 
@@ -213,11 +217,16 @@ public sealed class LedgerJournalSmokeTestTrigger
         // ---------------------------------------------------------------------------------
         // 6. Update header description — exercises the update-payload builder through
         //    CreatePayload which uses PropertyNameResolver for wire-name resolution.
+        //    Depends on PR-B's composite-key WRITE bypass: without it the UpdateCommand
+        //    against this composite-key entity routes through PanoramicData's single-key
+        //    path and fails (*.NotFound).
         // ---------------------------------------------------------------------------------
+        string? expectedUpdatedDescription = null;
         if (getByKeyResult.IsSuccess)
         {
             var toUpdate = getByKeyResult.Value;
             toUpdate.Description = $"{toUpdate.Description}-UPDATED";
+            expectedUpdatedDescription = toUpdate.Description;
 
             var updateResult = await _mediator
                 .Send(new UpdateCommand<LedgerJournalHeader>(toUpdate), cancellationToken)
@@ -228,9 +237,177 @@ public sealed class LedgerJournalSmokeTestTrigger
         }
 
         // ---------------------------------------------------------------------------------
-        // Cleanup — delete lines and header best-effort.
+        // 6A. VerifyHeaderUpdated — re-read the header by its D365 composite key
+        //     ([Company, journalBatchNumber]) and assert the Description change persisted.
+        //     Only meaningful when UpdateHeader ran (expectedUpdatedDescription is set).
         // ---------------------------------------------------------------------------------
-        await BestEffortCleanup(steps, input.Company, journalBatchNumber, cancellationToken).ConfigureAwait(false);
+        if (expectedUpdatedDescription is not null)
+        {
+            var rereadHeaderResult = await _mediator
+                .Send(new GetByKeyQuery<LedgerJournalHeader>([input.Company, journalBatchNumber!]), cancellationToken)
+                .ConfigureAwait(false);
+
+            if (rereadHeaderResult.IsSuccess && rereadHeaderResult.Value.Description == expectedUpdatedDescription)
+            {
+                steps.Add(new SmokeTestStep(
+                    "VerifyHeaderUpdated",
+                    Success: true,
+                    Details: $"Description={rereadHeaderResult.Value.Description}"));
+            }
+            else if (rereadHeaderResult.IsSuccess)
+            {
+                steps.Add(new SmokeTestStep(
+                    "VerifyHeaderUpdated",
+                    Success: false,
+                    Details: $"Expected Description='{expectedUpdatedDescription}' but read '{rereadHeaderResult.Value.Description}'."));
+            }
+            else
+            {
+                steps.Add(BuildStep("VerifyHeaderUpdated", rereadHeaderResult,
+                    onSuccess: r => $"Description={r.Description}"));
+            }
+        }
+
+        // ---------------------------------------------------------------------------------
+        // 6B. UpdateLine + VerifyLineUpdated — re-fetch the lines, set TransactionText
+        //     (wire `Text`; has IgnoreOnCreate but NOT IgnoreOnUpdate, so updatable),
+        //     update, then re-read the line by its composite key and assert.
+        // ---------------------------------------------------------------------------------
+        var linesForUpdate = await _mediator
+            .Send(new GetByFilterQuery<LedgerJournalLine>(
+                x => x.DataAreaId == input.Company && x.JournalBatchNumber == journalBatchNumber),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        if (linesForUpdate.IsSuccess && linesForUpdate.Value.Any())
+        {
+            var lineToUpdate = linesForUpdate.Value.First();
+            lineToUpdate.TransactionText = "SMOKE-UPDATED";
+
+            var updateLineResult = await _mediator
+                .Send(new UpdateCommand<LedgerJournalLine>(lineToUpdate), cancellationToken)
+                .ConfigureAwait(false);
+
+            steps.Add(BuildStep("UpdateLine", updateLineResult,
+                onSuccess: r => $"Text={r.TransactionText}"));
+
+            var rereadLineResult = await _mediator
+                .Send(new GetByKeyQuery<LedgerJournalLine>(
+                    [input.Company, journalBatchNumber!, lineToUpdate.LineNumber]),
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            if (rereadLineResult.IsSuccess && rereadLineResult.Value.TransactionText == "SMOKE-UPDATED")
+            {
+                steps.Add(new SmokeTestStep(
+                    "VerifyLineUpdated",
+                    Success: true,
+                    Details: $"Text={rereadLineResult.Value.TransactionText}"));
+            }
+            else if (rereadLineResult.IsSuccess)
+            {
+                steps.Add(new SmokeTestStep(
+                    "VerifyLineUpdated",
+                    Success: false,
+                    Details: $"Expected Text='SMOKE-UPDATED' but read '{rereadLineResult.Value.TransactionText}'."));
+            }
+            else
+            {
+                steps.Add(BuildStep("VerifyLineUpdated", rereadLineResult,
+                    onSuccess: r => $"Text={r.TransactionText}"));
+            }
+        }
+        else if (linesForUpdate.IsFailed)
+        {
+            steps.Add(BuildStep("UpdateLine.FilterLines", linesForUpdate,
+                onSuccess: _ => "filtered"));
+        }
+        else
+        {
+            // Lines were created in step 4, so an empty result is a genuine failure.
+            steps.Add(new SmokeTestStep(
+                "UpdateLine",
+                Success: false,
+                Details: "No lines found to update (expected at least 1)."));
+        }
+
+        // ---------------------------------------------------------------------------------
+        // 6C. Delete lines THEN header. D365 rejects deleting a header that still has child
+        //     lines, so lines must go first. This is now the authoritative cleanup on the
+        //     happy path (BestEffortCleanup is only retained on the early-return failure
+        //     branches above).
+        // ---------------------------------------------------------------------------------
+        var linesForDelete = await _mediator
+            .Send(new GetByFilterQuery<LedgerJournalLine>(
+                x => x.DataAreaId == input.Company && x.JournalBatchNumber == journalBatchNumber),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        if (linesForDelete.IsSuccess)
+        {
+            foreach (var line in linesForDelete.Value)
+            {
+                var deleteLineResult = await _mediator
+                    .Send(new DeleteCommand<LedgerJournalLine>(line), cancellationToken)
+                    .ConfigureAwait(false);
+
+                steps.Add(BuildStep($"DeleteLine[{line.LineNumber}]", deleteLineResult,
+                    onSuccess: _ => "deleted"));
+            }
+        }
+        else
+        {
+            steps.Add(BuildStep("DeleteLines.FilterLines", linesForDelete,
+                onSuccess: _ => "filtered"));
+        }
+
+        var headerToDelete = new LedgerJournalHeader
+        {
+            DataAreaId = input.Company,
+            JournalBatchNumber = journalBatchNumber,
+            JournalName = "placeholder", // required field, not used by DELETE
+            Description = "placeholder"
+        };
+
+        var deleteHeaderResult = await _mediator
+            .Send(new DeleteCommand<LedgerJournalHeader>(headerToDelete), cancellationToken)
+            .ConfigureAwait(false);
+
+        steps.Add(BuildStep("DeleteHeader", deleteHeaderResult,
+            onSuccess: _ => "deleted"));
+
+        // ---------------------------------------------------------------------------------
+        // 6D. VerifyHeaderDeleted — re-read the header; a NotFound result confirms the
+        //     delete succeeded, anything still present is a failure.
+        // ---------------------------------------------------------------------------------
+        var goneResult = await _mediator
+            .Send(new GetByKeyQuery<LedgerJournalHeader>([input.Company, journalBatchNumber!]), cancellationToken)
+            .ConfigureAwait(false);
+
+        IntegrationError? goneError = goneResult.GetError();
+        if (goneResult.IsFailed && goneError?.Type == ErrorType.NotFound)
+        {
+            steps.Add(new SmokeTestStep(
+                "VerifyHeaderDeleted",
+                Success: true,
+                Details: "confirmed gone (NotFound)"));
+        }
+        else if (goneResult.IsSuccess)
+        {
+            steps.Add(new SmokeTestStep(
+                "VerifyHeaderDeleted",
+                Success: false,
+                Details: "entity still exists after delete"));
+        }
+        else
+        {
+            steps.Add(new SmokeTestStep(
+                "VerifyHeaderDeleted",
+                Success: false,
+                ErrorCode: goneError?.Code,
+                ErrorType: goneError?.Type.ToString(),
+                ErrorMessage: "Operation failed; see host logs for details."));
+        }
 
         var success = steps.All(s => s.Success);
         _logger.LogInformation(
@@ -274,12 +451,8 @@ public sealed class LedgerJournalSmokeTestTrigger
         }
         else
         {
-            steps.Add(new SmokeTestStep(
-                "Cleanup.FilterLines",
-                false,
-                linesResult.GetError()?.Code,
-                linesResult.GetError()?.Type.ToString(),
-                linesResult.GetError()?.Message));
+            steps.Add(BuildStep("Cleanup.FilterLines", linesResult,
+                onSuccess: _ => "filtered"));
         }
 
         // Delete the header last so the lines exist under it until cleaned up.
@@ -299,7 +472,7 @@ public sealed class LedgerJournalSmokeTestTrigger
             onSuccess: _ => "deleted"));
     }
 
-    private static SmokeTestStep BuildStep<T>(
+    private SmokeTestStep BuildStep<T>(
         string name,
         Result<T> result,
         Func<T, string>? onSuccess = null)
@@ -312,13 +485,21 @@ public sealed class LedgerJournalSmokeTestTrigger
                 Details: onSuccess?.Invoke(result.Value));
         }
 
-        var error = result.GetError();
+        IntegrationError? error = result.GetError();
+        string code = error?.Code ?? "SmokeTest.Unknown";
+        string type = error?.Type.ToString() ?? ErrorType.Failure.ToString();
+        string serverMessage = error?.Message ?? result.Errors.FirstOrDefault()?.Message ?? "Unknown error";
+
+        _logger.LogWarning(
+            "Smoke step {Step} failed. Code={Code}, Type={Type}, Detail={Detail}",
+            name, code, type, serverMessage);
+
         return new SmokeTestStep(
             name,
             Success: false,
-            ErrorCode: error?.Code,
-            ErrorType: error?.Type.ToString(),
-            ErrorMessage: error?.Message);
+            ErrorCode: code,
+            ErrorType: type,
+            ErrorMessage: "Operation failed; see host logs for details.");
     }
 
     private static async Task<HttpResponseData> WriteResponse(

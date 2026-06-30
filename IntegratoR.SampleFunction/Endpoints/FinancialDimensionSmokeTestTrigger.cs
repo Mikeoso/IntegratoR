@@ -48,7 +48,7 @@ public sealed class FinancialDimensionSmokeTestTrigger
 
     [Function("FinancialDimensionSmokeTest_HTTPTrigger")]
     public async Task<HttpResponseData> Run(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "smoke/financial-dimensions")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Function, "post", Route = "smoke/financial-dimensions")] HttpRequestData req,
         CancellationToken cancellationToken)
     {
         FinancialDimensionSmokeTestRequest? input;
@@ -58,11 +58,12 @@ public sealed class FinancialDimensionSmokeTestTrigger
         }
         catch (System.Text.Json.JsonException ex)
         {
+            _logger.LogWarning(ex, "Smoke request body was not valid JSON.");
             return await WriteResponse(req, HttpStatusCode.BadRequest, new FinancialDimensionSmokeTestResponse(
                 Success: false,
                 Delimiter: null,
                 Segments: null,
-                Steps: [new SmokeTestStep("ParseRequest", false, "SmokeTest.InvalidJson", ErrorType.Validation.ToString(), ex.Message)]),
+                Steps: [new SmokeTestStep("ParseRequest", false, "SmokeTest.InvalidJson", ErrorType.Validation.ToString(), "Request body is not valid JSON.")]),
                 cancellationToken).ConfigureAwait(false);
         }
 
@@ -110,7 +111,7 @@ public sealed class FinancialDimensionSmokeTestTrigger
             .ConfigureAwait(false);
     }
 
-    private static SmokeTestStep BuildStep<T>(
+    private SmokeTestStep BuildStep<T>(
         string name,
         Result<T> result,
         Func<T, string>? onSuccess = null)
@@ -123,13 +124,21 @@ public sealed class FinancialDimensionSmokeTestTrigger
                 Details: onSuccess?.Invoke(result.Value));
         }
 
-        var error = result.GetError();
+        IntegrationError? error = result.GetError();
+        string code = error?.Code ?? "SmokeTest.Unknown";
+        string type = error?.Type.ToString() ?? ErrorType.Failure.ToString();
+        string serverMessage = error?.Message ?? result.Errors.FirstOrDefault()?.Message ?? "Unknown error";
+
+        _logger.LogWarning(
+            "Smoke step {Step} failed. Code={Code}, Type={Type}, Detail={Detail}",
+            name, code, type, serverMessage);
+
         return new SmokeTestStep(
             name,
             Success: false,
-            ErrorCode: error?.Code,
-            ErrorType: error?.Type.ToString(),
-            ErrorMessage: error?.Message);
+            ErrorCode: code,
+            ErrorType: type,
+            ErrorMessage: "Operation failed; see host logs for details.");
     }
 
     private static async Task<HttpResponseData> WriteResponse(
