@@ -8,6 +8,8 @@ Workflow and working-discipline rules. C# language, style, error-handling, and c
 2. Implement changes on the feature branch.
 3. Create a PR targeting `main`.
 4. Push the branch to publish the PR.
+5. **Review gate** — the `claude-review` GitHub Action is the gate, run as two rounds: open PR (round 1) → address findings → push to re-trigger (round 2) → proceed when clean. A green `build` check is **necessary but NOT sufficient**. Local `code-reviewer` / `security-reviewer` agents are a *complement* (fast pre-PR feedback), **not a substitute** for `claude-review`; if substituting is ever unavoidable, say so and get explicit sign-off first.
+6. **Merge** only once `claude-review` is clean. Admin-merge (squash) is used because the solo author can't satisfy `main`'s 1-approving-review rule — it bypasses *that approval rule only*, **never** the `claude-review` or `build` checks. Confirm before each admin-merge (it bypasses branch protection).
 
 - **Branch naming**: `feature/<area>/<desc>`, `fix/<area>/<desc>`, `chore/<desc>`.
 - **Commit style**: Imperative mood, under 72 chars. PRs are squash-merged.
