@@ -12,7 +12,7 @@ using Xunit;
 namespace IntegratoR.OData.FO.Tests.Features.Commands.LedgerJournals.UpdateLedgerJournalHeader;
 
 /// <summary>
-/// Tests for <see cref="UpdateLedgerJournalHeaderHandler{TEntity}"/> and <see cref="UpdateLedgerJournalHandler{TEntity}"/>
+/// Tests for <see cref="UpdateLedgerJournalHeaderHandler{TEntity}"/> and <see cref="UpdateLedgerJournalHeadersHandler{TEntity}"/>
 /// covering success and failure paths for single and batch update operations.
 /// </summary>
 public class UpdateLedgerJournalHeaderHandlerTests
@@ -33,7 +33,7 @@ public class UpdateLedgerJournalHeaderHandlerTests
     {
         // Arrange
         var service = Substitute.For<IService<LedgerJournalHeader>>();
-        var logger = Substitute.For<ILogger<UpdateLedgerJournalHeaderCommand<LedgerJournalHeader>>>();
+        var logger = Substitute.For<ILogger<UpdateLedgerJournalHeaderHandler<LedgerJournalHeader>>>();
         var handler = new UpdateLedgerJournalHeaderHandler<LedgerJournalHeader>(logger, service);
 
         var header = BuildHeader();
@@ -58,7 +58,7 @@ public class UpdateLedgerJournalHeaderHandlerTests
     {
         // Arrange
         var service = Substitute.For<IService<LedgerJournalHeader>>();
-        var logger = Substitute.For<ILogger<UpdateLedgerJournalHeaderCommand<LedgerJournalHeader>>>();
+        var logger = Substitute.For<ILogger<UpdateLedgerJournalHeaderHandler<LedgerJournalHeader>>>();
         var handler = new UpdateLedgerJournalHeaderHandler<LedgerJournalHeader>(logger, service);
 
         var header = BuildHeader();
@@ -78,15 +78,14 @@ public class UpdateLedgerJournalHeaderHandlerTests
 
     /// <summary>
     /// Verifies that the batch handler returns a success result when UpdateBatchAsync succeeds.
-    /// Note: the batch update header handler class is named UpdateLedgerJournalHandler (not UpdateLedgerJournalHeadersHandler).
     /// </summary>
     [Fact]
     public async Task Handle_BatchHeaders_Success_ReturnsOk()
     {
         // Arrange
         var service = Substitute.For<IODataBatchService<LedgerJournalHeader>>();
-        var logger = Substitute.For<ILogger<UpdateLedgerJournalHeadersCommand<LedgerJournalHeader>>>();
-        var handler = new UpdateLedgerJournalHandler<LedgerJournalHeader>(logger, service);
+        var logger = Substitute.For<ILogger<UpdateLedgerJournalHeadersHandler<LedgerJournalHeader>>>();
+        var handler = new UpdateLedgerJournalHeadersHandler<LedgerJournalHeader>(logger, service);
 
         var headers = new[] { BuildHeader(), BuildHeader() };
         service.UpdateBatchAsync(headers, Arg.Any<CancellationToken>())
@@ -109,8 +108,8 @@ public class UpdateLedgerJournalHeaderHandlerTests
     {
         // Arrange
         var service = Substitute.For<IODataBatchService<LedgerJournalHeader>>();
-        var logger = Substitute.For<ILogger<UpdateLedgerJournalHeadersCommand<LedgerJournalHeader>>>();
-        var handler = new UpdateLedgerJournalHandler<LedgerJournalHeader>(logger, service);
+        var logger = Substitute.For<ILogger<UpdateLedgerJournalHeadersHandler<LedgerJournalHeader>>>();
+        var handler = new UpdateLedgerJournalHeadersHandler<LedgerJournalHeader>(logger, service);
 
         var headers = new[] { BuildHeader() };
         var error = new IntegrationError("LedgerJournalHeader.BatchUpdateFailed", "Batch service error", ErrorType.Failure);

@@ -7,12 +7,13 @@ using Microsoft.Extensions.Logging;
 
 namespace IntegratoR.OData.FO.Features.Commands.LedgerJournals.UpdateLedgerJournalHeader;
 
+/// <summary>Updates a single LedgerJournalHeader in D365 F&amp;O, emitting domain-specific structured logs. Retained over the generic UpdateCommandHandler&lt;T&gt; because it adds journal-context logging.</summary>
 public class UpdateLedgerJournalHeaderHandler<TEntity> : IRequestHandler<UpdateLedgerJournalHeaderCommand<TEntity>, Result<TEntity>> where TEntity : LedgerJournalHeader
 {
-    private readonly ILogger<UpdateLedgerJournalHeaderCommand<TEntity>> _logger;
+    private readonly ILogger<UpdateLedgerJournalHeaderHandler<TEntity>> _logger;
     private readonly IService<TEntity> _service;
 
-    public UpdateLedgerJournalHeaderHandler(ILogger<UpdateLedgerJournalHeaderCommand<TEntity>> logger, IService<TEntity> service)
+    public UpdateLedgerJournalHeaderHandler(ILogger<UpdateLedgerJournalHeaderHandler<TEntity>> logger, IService<TEntity> service)
     {
         _logger = logger;
         _service = service;

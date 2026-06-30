@@ -195,6 +195,7 @@ internal static class ApplicationDependencyInjection
         services.AddScoped(typeof(IntegratoR.Abstractions.Interfaces.Services.IService<>), typeof(ODataService<>));
         services.AddScoped(typeof(IODataService<>), typeof(ODataService<>));
         services.AddScoped(typeof(IODataBatchService<>), typeof(ODataService<>));
+        services.AddScoped(typeof(IntegratoR.Abstractions.Interfaces.Services.IBatchService<>), typeof(ODataService<>));
     }
 
     /// <summary>

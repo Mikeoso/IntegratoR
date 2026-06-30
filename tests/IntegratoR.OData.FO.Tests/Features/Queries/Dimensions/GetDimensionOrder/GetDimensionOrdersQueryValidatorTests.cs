@@ -45,7 +45,7 @@ public class GetDimensionOrdersQueryValidatorTests
         var result = _sut.TestValidate(query);
 
         // Assert
-        result.ShouldHaveValidationErrorFor(q => q.dimensionFormat);
+        result.ShouldHaveValidationErrorFor(q => q.DimensionFormat);
     }
 
     /// <summary>
@@ -64,7 +64,7 @@ public class GetDimensionOrdersQueryValidatorTests
         var result = _sut.TestValidate(query);
 
         // Assert
-        result.ShouldHaveValidationErrorFor(q => q.dimensionFormat);
+        result.ShouldHaveValidationErrorFor(q => q.DimensionFormat);
     }
 
     /// <summary>
@@ -82,6 +82,6 @@ public class GetDimensionOrdersQueryValidatorTests
         var result = _sut.TestValidate(query);
 
         // Assert
-        result.ShouldHaveValidationErrorFor(q => q.hierarchyType);
+        result.ShouldHaveValidationErrorFor(q => q.HierarchyType);
     }
 }

@@ -1,6 +1,8 @@
+using System.Collections;
 using FluentAssertions;
 using IntegratoR.Abstractions.Common.CQRS.Commands;
 using IntegratoR.TestKit.Builders;
+using IntegratoR.TestKit.Doubles.Entities;
 using Xunit;
 
 namespace IntegratoR.Abstractions.Tests.Common.CQRS.Commands;
@@ -132,5 +134,60 @@ public sealed class CqrsCommandRecordTests
 
         // Assert
         context.Should().ContainKey("Count").WhoseValue.Should().Be(1);
+    }
+
+    /// <summary>
+    /// Regression for the multiple-enumeration fix. The batch command ctor now takes
+    /// <c>IReadOnlyList&lt;T&gt;</c> and <c>GetLoggingContext()</c> reads the O(1) <c>.Count</c> property
+    /// instead of LINQ <c>Count()</c>, so it must not enumerate the sequence. This is pinned with a
+    /// counting <c>IReadOnlyList&lt;T&gt;</c> wrapper that records every <c>GetEnumerator()</c> call.
+    /// </summary>
+    [Fact]
+    public void CreateBatchCommand_GetLoggingContext_UsesCountProperty_DoesNotEnumerate()
+    {
+        // Arrange
+        var inner = new[]
+        {
+            TestEntityBuilder.Default().WithId("ce-001").Build(),
+            TestEntityBuilder.Default().WithId("ce-002").Build(),
+            TestEntityBuilder.Default().WithId("ce-003").Build()
+        };
+        var counting = new CountingReadOnlyList<TestEntity>(inner);
+        var command = new CreateBatchCommand<TestEntity>(counting);
+
+        // Act — call twice to prove neither call enumerates.
+        var first = command.GetLoggingContext();
+        var second = command.GetLoggingContext();
+
+        // Assert — O(1) Count returned, sequence never enumerated, same materialised instance kept.
+        first.Should().ContainKey("Count").WhoseValue.Should().Be(3);
+        second.Should().ContainKey("Count").WhoseValue.Should().Be(3);
+        counting.GetEnumeratorCallCount.Should().Be(0);
+        command.Entities.Should().BeSameAs(counting);
+    }
+
+    /// <summary>
+    /// An <see cref="IReadOnlyList{T}"/> wrapper that records how many times the sequence is
+    /// enumerated, used to prove <c>GetLoggingContext()</c> reads <c>.Count</c> without enumerating.
+    /// </summary>
+    private sealed class CountingReadOnlyList<T> : IReadOnlyList<T>
+    {
+        private readonly IReadOnlyList<T> _inner;
+
+        public CountingReadOnlyList(IReadOnlyList<T> inner) => _inner = inner;
+
+        public int GetEnumeratorCallCount { get; private set; }
+
+        public T this[int index] => _inner[index];
+
+        public int Count => _inner.Count;
+
+        public IEnumerator<T> GetEnumerator()
+        {
+            GetEnumeratorCallCount++;
+            return _inner.GetEnumerator();
+        }
+
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
 }

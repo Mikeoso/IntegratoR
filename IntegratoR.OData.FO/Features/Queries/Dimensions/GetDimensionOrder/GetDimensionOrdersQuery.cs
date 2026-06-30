@@ -1,13 +1,13 @@
 using FluentResults;
 using IntegratoR.Abstractions.Interfaces.Queries;
 using IntegratoR.OData.FO.Domain.Enums.Dimensions;
-using IntegratoR.OData.FO.Domain.Models.FinancialDimensions;
+using DimensionFormatModel = IntegratoR.OData.FO.Domain.Models.FinancialDimensions.DimensionFormat;
 
 namespace IntegratoR.OData.FO.Features.Queries.Dimensions.GetDimensionOrder;
 
-public record GetDimensionOrdersQuery(string dimensionFormat, DimensionHierarchyType hierarchyType) : ICacheableQuery<Result<DimensionFormat>>
+public record GetDimensionOrdersQuery(string DimensionFormat, DimensionHierarchyType HierarchyType) : ICacheableQuery<Result<DimensionFormatModel>>
 {
-    public string CacheKey => $"{nameof(GetDimensionOrdersQuery)}-{dimensionFormat}-{hierarchyType}";
+    public string CacheKey => $"{nameof(GetDimensionOrdersQuery)}-{DimensionFormat}-{HierarchyType}";
 
     public TimeSpan? CacheDuration => TimeSpan.FromMinutes(15);
 
@@ -18,7 +18,7 @@ public record GetDimensionOrdersQuery(string dimensionFormat, DimensionHierarchy
 
     public object[] GetCacheKeyValues()
     {
-        return new object[] { nameof(GetDimensionOrdersQuery), dimensionFormat, hierarchyType }
+        return new object[] { nameof(GetDimensionOrdersQuery), DimensionFormat, HierarchyType }
         ;
     }
 
@@ -26,8 +26,8 @@ public record GetDimensionOrdersQuery(string dimensionFormat, DimensionHierarchy
     {
         return new Dictionary<string, object>
         {
-            { "DimensionFormat", dimensionFormat },
-            { "HierarchyType", hierarchyType.ToString() }
+            { "DimensionFormat", DimensionFormat },
+            { "HierarchyType", HierarchyType.ToString() }
         };
     }
 }

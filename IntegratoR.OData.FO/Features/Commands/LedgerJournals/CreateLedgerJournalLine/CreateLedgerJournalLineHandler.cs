@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 
 namespace IntegratoR.OData.FO.Features.Commands.LedgerJournals.CreateLedgerJournalLine;
 
+/// <summary>Creates a single LedgerJournalLine in D365 F&amp;O, emitting domain-specific structured logs. Retained over the generic CreateCommandHandler&lt;T&gt; because it adds journal-context logging.</summary>
 public class CreateLedgerJournalLineHandler<TEntity> : IRequestHandler<CreateLedgerJournalLineCommand<TEntity>, Result<TEntity>> where TEntity : LedgerJournalLine
 {
     private readonly ILogger<CreateLedgerJournalLineHandler<TEntity>> _logger;
@@ -20,7 +21,7 @@ public class CreateLedgerJournalLineHandler<TEntity> : IRequestHandler<CreateLed
 
     public async Task<Result<TEntity>> Handle(CreateLedgerJournalLineCommand<TEntity> request, CancellationToken cancellationToken)
     {
-        _logger.LogInformation("Creating a new Ledger Journal Line for Header: {JournalBatchNumber} in Company: {Comany}",
+        _logger.LogInformation("Creating a new Ledger Journal Line for Header: {JournalBatchNumber} in Company: {Company}",
             request.LedgerJournalLine.JournalBatchNumber,
             request.LedgerJournalLine.DataAreaId);
 

@@ -11,7 +11,7 @@ namespace IntegratoR.Abstractions.Common.CQRS.Commands
     /// A generic base command for updating entities in a batch.
     /// </summary>
     /// <typeparam name="TEntity">The type of the entity to create.</typeparam>
-    public record UpdateBatchCommand<TEntity>(IEnumerable<TEntity> Entities) : ICommand<Result>
+    public record UpdateBatchCommand<TEntity>(IReadOnlyList<TEntity> Entities) : ICommand<Result>
         where TEntity : IEntity
     {
         /// <summary>
@@ -22,7 +22,7 @@ namespace IntegratoR.Abstractions.Common.CQRS.Commands
         {
             return new Dictionary<string, object>
             {
-                { "Count", Entities.Count() }
+                { "Count", Entities.Count }
             };
         }
     }

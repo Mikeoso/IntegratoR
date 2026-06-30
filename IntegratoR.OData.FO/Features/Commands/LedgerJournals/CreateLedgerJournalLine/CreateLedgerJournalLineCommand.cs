@@ -1,12 +1,7 @@
-using FluentResults;
-using IntegratoR.Abstractions.Interfaces.Commands;
+using IntegratoR.Abstractions.Common.CQRS.Commands;
 using IntegratoR.OData.FO.Domain.Entities.LedgerJournal;
+
 namespace IntegratoR.OData.FO.Features.Commands.LedgerJournals.CreateLedgerJournalLine;
 
-public record CreateLedgerJournalLineCommand<TEntity>(TEntity LedgerJournalLine) : ICommand<Result<TEntity>> where TEntity : LedgerJournalLine
-{
-    public IReadOnlyDictionary<string, object> GetLoggingContext()
-    {
-        return LedgerJournalLine.GetLoggingContext();
-    }
-}
+public record CreateLedgerJournalLineCommand<TEntity>(TEntity LedgerJournalLine)
+    : CreateCommand<TEntity>(LedgerJournalLine) where TEntity : LedgerJournalLine;
