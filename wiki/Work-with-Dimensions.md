@@ -14,8 +14,8 @@ using IntegratoR.OData.FO.Features.Queries.Dimensions.GetDimensionOrder;
 
 Result<DimensionFormat> result = await mediator.Send(
     new GetDimensionOrdersQuery(
-        dimensionFormat: "Sachkontodimensionen",
-        hierarchyType: DimensionHierarchyType.DataEntityLedgerDimensionFormat),
+        DimensionFormat: "Sachkontodimensionen",
+        HierarchyType: DimensionHierarchyType.DataEntityLedgerDimensionFormat),
     cancellationToken).ConfigureAwait(false);
 
 if (result.IsSuccess)
@@ -26,7 +26,7 @@ if (result.IsSuccess)
 }
 ```
 
-The query signature is `GetDimensionOrdersQuery(string dimensionFormat, DimensionHierarchyType hierarchyType)`. Both parameters are part of the entity's composite filter: `dimensionFormat` matches `DimensionIntegrationFormat.DimensionFormatName`, `hierarchyType` matches `DimensionIntegrationFormat.DimensionFormatType`.
+The query signature is `GetDimensionOrdersQuery(string DimensionFormat, DimensionHierarchyType HierarchyType)`. Both parameters are part of the entity's composite filter: `DimensionFormat` matches `DimensionIntegrationFormat.DimensionFormatName`, `HierarchyType` matches `DimensionIntegrationFormat.DimensionFormatType`.
 
 The handler chains two calls to D365:
 
