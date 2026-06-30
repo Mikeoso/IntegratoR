@@ -46,7 +46,7 @@ public class GetDimensionOrdersQueryHandler : IRequestHandler<GetDimensionOrders
         }
         var financialDimensionFormat = dimensionFormats.Value?.FirstOrDefault();
 
-        var dimensionParameters = await _dimensionParametersService.FindAll(cancellationToken).ConfigureAwait(false);
+        var dimensionParameters = await _dimensionParametersService.FindAllAsync(cancellationToken).ConfigureAwait(false);
 
         if (dimensionParameters.IsFailed)
         {

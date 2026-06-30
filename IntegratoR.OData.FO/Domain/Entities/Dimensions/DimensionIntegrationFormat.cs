@@ -13,7 +13,7 @@ namespace IntegratoR.OData.FO.Domain.Entities.Dimensions;
 /// (e.g., "618160-001-023") should be constructed or deconstructed, mapping them to the correct dimension format in D365 F&O.
 /// </summary>
 [Table("DimensionIntegrationFormats")]
-public class DimensionIntegrationFormat : BaseEntity<string>
+public class DimensionIntegrationFormat : BaseEntity
 {
     /// <summary>
     /// The unique name of the dimension format configuration. This serves as the primary identifier for the record.

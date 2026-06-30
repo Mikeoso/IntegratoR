@@ -12,7 +12,7 @@ namespace IntegratoR.OData.FO.Domain.Entities.Dimensions;
 /// ensuring consistent processing across different functions.
 /// </summary>
 [Table("DimensionParameters")]
-public class DimensionParameters : BaseEntity<int>
+public class DimensionParameters : BaseEntity
 {
     /// <summary>
     /// The primary key for the parameter record, used to uniquely identify this set of dimension settings.

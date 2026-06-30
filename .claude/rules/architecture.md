@@ -25,7 +25,7 @@ SampleFunction (host/composition root)
 - **CQRS via MediatR**: Commands and queries are `record` types implementing `ICommand<TResponse>` or `IQuery<TResponse>`.
 - **Generic commands**: `CreateCommand<TEntity>`, `UpdateCommand<TEntity>`, `DeleteCommand<TEntity>` reusable with any `IEntity`.
 - **Batch commands**: `CreateBatchCommand<TEntity>`, `UpdateBatchCommand<TEntity>`, `DeleteBatchCommand<TEntity>` for bulk operations.
-- **Entity extensibility**: F&O entities inherit from `BaseEntity<TKey>` and must implement `GetCompositeKey()` (D365 uses composite keys like `DataAreaId` + business key).
+- **Entity extensibility**: F&O entities inherit from the non-generic `BaseEntity` and must implement `GetCompositeKey()` (D365 uses composite keys like `DataAreaId` + business key). `BaseEntity<TKey>` is `[Obsolete]` (the `TKey` parameter was never used) and is removed next MAJOR.
 - **`ODataFieldAttribute`**: Controls property serialisation — `IgnoreOnCreate`, `IgnoreOnUpdate` for server-generated or read-only fields.
 - **Pipeline order**: Logging -> Validation -> Caching -> Handler (registration order matters in `AddApplicationServices()`).
 - **Each layer has its own `ApplicationDependencyInjection`** class with extension methods for DI setup.
@@ -48,5 +48,9 @@ The codebase uses **two JSON serialisers** and `Result<T>` needs custom converte
 **Adding a new Newtonsoft code path:** the global `JsonConvert.DefaultSettings` hook covers you automatically.
 
 **Test the wiring, not just the converter:** unit tests on a converter in isolation don't catch wiring bugs. Use real `MemoryDistributedCache` (`DistributedCacheServiceResultRoundTripTests`) and real `JsonDataConverter` (`DurableTaskJsonDataConverterResultTests`) to prove the registered options reach the actual code path. Cross-serialiser compatibility is pinned by `tests/IntegratoR.Abstractions.Tests/Common/Results/CrossSerializerCompatibilityTests.cs`.
+
+## Accepted Trade-offs
+
+- **`IEntity.GetLoggingContext()` couples telemetry to the domain contract.** `IEntity` declares `IReadOnlyDictionary<string, object> GetLoggingContext()` directly, so every domain entity carries a structured-logging concern on its core interface. Extracting it to a dedicated logging interface (e.g. `ILoggable` / the existing `IContext`) is **deferred**: it is a MAJOR-breaking change to a packable interface for low value today. The future-MAJOR migration path is: introduce a separate logging interface, move `GetLoggingContext()` there, have `BaseEntity` implement both, deprecate the `IEntity` member for one MINOR, then remove it in the next MAJOR. Recorded here so it is not re-litigated; no code change is made now.
 
 See `odata-conventions.md` for ODataSettings structure and entity patterns.

@@ -48,7 +48,7 @@ public class GetDimensionOrdersQueryHandlerTests
             Key = 0,
             DimensionSegmentDelimiter = DimensionSegmentDelimiter.Hyphen
         };
-        _dimParamsService.FindAll(Arg.Any<CancellationToken>())
+        _dimParamsService.FindAllAsync(Arg.Any<CancellationToken>())
             .Returns(Result.Ok<IEnumerable<DimensionParameters>>(new[] { dimParams }));
 
         var dimFormat = new DimensionIntegrationFormat
@@ -115,7 +115,7 @@ public class GetDimensionOrdersQueryHandlerTests
             .Returns(Result.Ok<IEnumerable<DimensionIntegrationFormat>>(new[] { dimFormat }));
 
         var error = new IntegrationError("DimensionParameters.QueryFailed", "Service unavailable", ErrorType.Failure);
-        _dimParamsService.FindAll(Arg.Any<CancellationToken>())
+        _dimParamsService.FindAllAsync(Arg.Any<CancellationToken>())
             .Returns(Result.Fail<IEnumerable<DimensionParameters>>(error));
 
         var query = new GetDimensionOrdersQuery(
@@ -144,7 +144,7 @@ public class GetDimensionOrdersQueryHandlerTests
             Key = 0,
             DimensionSegmentDelimiter = DimensionSegmentDelimiter.Hyphen
         };
-        _dimParamsService.FindAll(Arg.Any<CancellationToken>())
+        _dimParamsService.FindAllAsync(Arg.Any<CancellationToken>())
             .Returns(Result.Ok<IEnumerable<DimensionParameters>>(new[] { dimParams }));
 
         _dimFormatService.FindAsync(Arg.Any<Expression<Func<DimensionIntegrationFormat, bool>>>(), Arg.Any<CancellationToken>())
@@ -183,7 +183,7 @@ public class GetDimensionOrdersQueryHandlerTests
         _dimFormatService.FindAsync(Arg.Any<Expression<Func<DimensionIntegrationFormat, bool>>>(), Arg.Any<CancellationToken>())
             .Returns(Result.Ok<IEnumerable<DimensionIntegrationFormat>>(new[] { dimFormat }));
 
-        _dimParamsService.FindAll(Arg.Any<CancellationToken>())
+        _dimParamsService.FindAllAsync(Arg.Any<CancellationToken>())
             .Returns(Result.Ok<IEnumerable<DimensionParameters>>(Enumerable.Empty<DimensionParameters>()));
 
         var query = new GetDimensionOrdersQuery(
@@ -211,7 +211,7 @@ public class GetDimensionOrdersQueryHandlerTests
             Key = 0,
             DimensionSegmentDelimiter = DimensionSegmentDelimiter.Hyphen
         };
-        _dimParamsService.FindAll(Arg.Any<CancellationToken>())
+        _dimParamsService.FindAllAsync(Arg.Any<CancellationToken>())
             .Returns(Result.Ok<IEnumerable<DimensionParameters>>(new[] { dimParams }));
 
         var dimFormat = new DimensionIntegrationFormat

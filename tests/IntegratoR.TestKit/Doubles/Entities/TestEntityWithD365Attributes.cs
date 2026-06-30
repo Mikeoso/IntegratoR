@@ -10,7 +10,7 @@ namespace IntegratoR.TestKit.Doubles.Entities;
 /// <see cref="ODataFieldAttribute.IsRequired"/>) to verify that <c>ODataService</c> enforces
 /// the extended attribute semantics at runtime.
 /// </summary>
-public class TestEntityWithD365Attributes : BaseEntity<string>
+public class TestEntityWithD365Attributes : BaseEntity
 {
     /// <summary>
     /// Gets or sets the data area (company). Required, editable on create but not after.

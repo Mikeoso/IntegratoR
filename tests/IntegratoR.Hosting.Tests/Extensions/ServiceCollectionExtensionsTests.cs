@@ -716,7 +716,7 @@ public class DummyModelValidator : AbstractValidator<DummyModel>
 /// Used to verify that <c>AddIntegratoR</c> closes the framework's generic CRUD/query
 /// MediatR handlers over entity types supplied via <c>builder.AddConsumerHandlers(assembly)</c>.
 /// </summary>
-public class ConsumerExtendedEntity : BaseEntity<string>
+public class ConsumerExtendedEntity : BaseEntity
 {
     public required string Id { get; set; }
     public string? Name { get; set; }

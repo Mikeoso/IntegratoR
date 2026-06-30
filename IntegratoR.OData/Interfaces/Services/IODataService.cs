@@ -16,11 +16,10 @@ using IntegratoR.Abstractions.Interfaces.Services;
 namespace IntegratoR.OData.Interfaces.Services;
 
 /// <summary>
-/// Extends the generic <see cref="IService{TEntity, TKey}"/> with features specific to the OData protocol,
+/// Extends the generic <see cref="IService{TEntity}"/> with features specific to the OData protocol,
 /// such as expanding related entities, selecting specific fields, ordering, and paging.
 /// </summary>
 /// <typeparam name="TEntity">The type of the entity being queried.</typeparam>
-/// <typeparam name="TKey">The type of the entity's primary key.</typeparam>
 public interface IODataService<TEntity> : IService<TEntity> where TEntity : IEntity
 {
     /// <summary>
@@ -73,12 +72,26 @@ public interface IODataService<TEntity> : IService<TEntity> where TEntity : IEnt
     /// <summary>
     /// Asynchronously retrieves all entities of the specified type from the data set.
     /// </summary>
+    /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
     /// <returns>A <see cref="Result{T}"/> containing the complete collection of entities.</returns>
     /// <remarks>
     /// <b>Caution:</b> Use this method judiciously on data entities that may contain a large
     /// number of records, as it can result in significant network payload and impact performance.
     /// Consider using filtering or paging (`QueryAsync`) where possible.
     /// </remarks>
+    Task<Result<IEnumerable<TEntity>>> FindAllAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Asynchronously retrieves all entities of the specified type from the data set.
+    /// </summary>
+    /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
+    /// <returns>A <see cref="Result{T}"/> containing the complete collection of entities.</returns>
+    /// <remarks>
+    /// <b>Caution:</b> Use this method judiciously on data entities that may contain a large
+    /// number of records, as it can result in significant network payload and impact performance.
+    /// Consider using filtering or paging (`QueryAsync`) where possible.
+    /// </remarks>
+    [Obsolete("since v1.4.0; use FindAllAsync; removed next MAJOR")]
     Task<Result<IEnumerable<TEntity>>> FindAll(CancellationToken cancellationToken = default);
 
     /// <summary>

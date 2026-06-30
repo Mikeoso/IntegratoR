@@ -141,7 +141,7 @@ public class EntityGeneratorTests
 
         string output = GenerateSingleEntity(schema, "MyEntities");
 
-        output.Should().Contain("public partial class MyEntity : BaseEntity<string>");
+        output.Should().Contain("public partial class MyEntity : BaseEntity");
     }
 
     [Fact]

@@ -57,7 +57,6 @@ internal static class ApplicationDependencyInjection
 
         // Register supporting services
         services.AddTransient<ODataAuthenticationHandler>();
-        services.AddSingleton<ODataMetadataProvider>();
 
         // Configure HttpClient with Polly policies
         services.AddHttpClient("ODataClient", (serviceProvider, httpClient) =>
@@ -191,7 +190,13 @@ internal static class ApplicationDependencyInjection
                     });
         });
 
-        // Register repository services
+        // Register the data-access service under each interface it satisfies. These four open-generic
+        // registrations intentionally yield independent ODataService<T> instances per scope — resolving
+        // IService<T>, IODataService<T>, IODataBatchService<T> and IBatchService<T> from the same scope
+        // produces three or four separate instances. This is safe and deliberate: ODataService<T> is
+        // stateless (only readonly injected dependencies plus static per-type caches), so the extra
+        // instances are cheap and observationally identical. A shared-instance forwarder would only be
+        // warranted if mutable per-instance state were ever introduced.
         services.AddScoped(typeof(IntegratoR.Abstractions.Interfaces.Services.IService<>), typeof(ODataService<>));
         services.AddScoped(typeof(IODataService<>), typeof(ODataService<>));
         services.AddScoped(typeof(IODataBatchService<>), typeof(ODataService<>));

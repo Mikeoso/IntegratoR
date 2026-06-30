@@ -29,8 +29,8 @@ public interface ICacheableQuery<TResponse> : IQuery<TResponse>
     /// Gets the unique key used to store and retrieve the query's response from the cache.
     /// </summary>
     /// <remarks>
-    /// This is typically implemented as a get-only property that calls <see cref="GenerateCacheKey"/>
-    /// to ensure the key is always derived consistently from the query's parameters.
+    /// The caching pipeline (<c>CachingBehaviour</c>) reads this property directly. Implement it as a
+    /// get-only property that derives the key consistently from the query's parameters.
     /// </remarks>
     string CacheKey { get; }
 
@@ -48,10 +48,9 @@ public interface ICacheableQuery<TResponse> : IQuery<TResponse>
     /// </summary>
     /// <returns>An array of objects that will be used to generate the cache key.</returns>
     /// <remarks>
-    /// This method is crucial for cache correctness. It forces the developer to explicitly select
-    /// the properties of the query that affect its result (e.g., an entity ID, a filter string,
-    /// a company code), ensuring that two different queries produce two different cache keys.
+    /// Not used by the caching pipeline, which reads <see cref="CacheKey"/> directly.
     /// </remarks>
+    [Obsolete("since v1.4.0; CachingBehaviour uses CacheKey directly; removed next MAJOR")]
     object[] GetCacheKeyValues();
 
     /// <summary>
@@ -59,10 +58,8 @@ public interface ICacheableQuery<TResponse> : IQuery<TResponse>
     /// </summary>
     /// <returns>A unique string to be used as the cache key.</returns>
     /// <remarks>
-    /// A recommended implementation is to combine a static prefix (like the query name) with a
-    /// serialized (e.g., JSON) representation of the objects from <see cref="GetCacheKeyValues"/>.
-    /// This creates a key that is both unique and human-readable for debugging purposes.
-    /// Example: "CustomerById:[\"C-123\",\"USMF\"]".
+    /// Not used by the caching pipeline, which reads <see cref="CacheKey"/> directly.
     /// </remarks>
+    [Obsolete("since v1.4.0; CachingBehaviour uses CacheKey directly; removed next MAJOR")]
     string GenerateCacheKey();
 }

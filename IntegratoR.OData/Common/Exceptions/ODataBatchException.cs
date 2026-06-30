@@ -6,6 +6,7 @@ namespace IntegratoR.OData.Common.Exceptions;
 /// Thrown when one or more operations within an OData batch request fail.
 /// Contains per-entity failure details for diagnostic purposes.
 /// </summary>
+[Obsolete("since v1.4.0; never thrown; batch failures surface via Result<T>; removed next MAJOR")]
 public class ODataBatchException : Exception
 {
     /// <summary>

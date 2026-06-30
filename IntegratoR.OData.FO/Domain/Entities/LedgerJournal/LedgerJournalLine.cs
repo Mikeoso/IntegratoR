@@ -14,14 +14,14 @@ namespace IntegratoR.OData.FO.Domain.Entities.LedgerJournal;
 /// It is used to record debit or credit transactions against various account types such as Ledger, Customer, Vendor, etc.
 /// </summary>
 [Table("LedgerJournalLines")]
-public class LedgerJournalLine : BaseEntity<string>
+public class LedgerJournalLine : BaseEntity
 {
     /// <summary>
     /// The unique identifier of the legal entity (company) in which the journal line is created.
     /// Part of the composite primary key.
     /// </summary>
     [Key]
-    [Required]
+    [ODataField(IsRequired = true)]
     [JsonPropertyName("dataAreaId")]
     public required string DataAreaId { get; set; }
 
@@ -30,7 +30,7 @@ public class LedgerJournalLine : BaseEntity<string>
     /// Part of the composite primary key.
     /// </summary>
     [Key]
-    [Required]
+    [ODataField(IsRequired = true)]
     [JsonPropertyName("JournalBatchNumber")]
     public required string JournalBatchNumber { get; set; }
 
@@ -40,7 +40,6 @@ public class LedgerJournalLine : BaseEntity<string>
     /// Part of the composite primary key.
     /// </summary>
     [Key]
-    [Required]
     [JsonPropertyName("LineNumber")]
     [ODataField(IgnoreOnCreate = true)]
     public decimal LineNumber { get; set; }
@@ -48,7 +47,6 @@ public class LedgerJournalLine : BaseEntity<string>
     /// <summary>
     /// The primary account for the transaction, combining the main account and financial dimensions.
     /// </summary>
-    [Required]
     [JsonPropertyName("AccountDisplayValue")]
     [ODataField(IgnoreOnCreate = true)]
     public virtual required string AccountDisplayValue { get; set; }
@@ -63,21 +61,21 @@ public class LedgerJournalLine : BaseEntity<string>
     /// <summary>
     /// The debit amount of the transaction in the transaction currency. Must be zero if CreditAmount has a value.
     /// </summary>
-    [Required]
+    [ODataField(IsRequired = true)]
     [JsonPropertyName("DebitAmount")]
     public virtual decimal DebitAmount { get; set; }
 
     /// <summary>
     /// The credit amount of the transaction in the transaction currency. Must be zero if DebitAmount has a value.
     /// </summary>
-    [Required]
+    [ODataField(IsRequired = true)]
     [JsonPropertyName("CreditAmount")]
     public virtual decimal CreditAmount { get; set; }
 
     /// <summary>
     /// The three-letter ISO code for the currency of the transaction.
     /// </summary>
-    [Required]
+    [ODataField(IsRequired = true)]
     [JsonPropertyName("CurrencyCode")]
     public virtual required string CurrencyCode { get; set; }
 
@@ -105,7 +103,6 @@ public class LedgerJournalLine : BaseEntity<string>
     /// <summary>
     /// The transaction date, which determines the posting date for the financial entry.
     /// </summary>
-    [Required]
     [JsonPropertyName("TransDate")]
     [ODataField(IgnoreOnCreate = true)]
     public virtual required DateTimeOffset TransDate { get; set; }
@@ -142,7 +139,6 @@ public class LedgerJournalLine : BaseEntity<string>
     /// <summary>
     /// The due date for the transaction, primarily used for customer and vendor account types to calculate payment terms.
     /// </summary>
-    [Required]
     [JsonPropertyName("DueDate")]
     [ODataField(IgnoreOnCreate = true)]
     public virtual DateTimeOffset DueDate { get; set; }
@@ -150,7 +146,6 @@ public class LedgerJournalLine : BaseEntity<string>
     /// <summary>
     /// The document date, often representing the date on an external document like a vendor invoice.
     /// </summary>
-    [Required]
     [JsonPropertyName("DocumentDate")]
     [ODataField(IgnoreOnCreate = true)]
     public virtual DateTimeOffset DocumentDate { get; set; }
@@ -193,7 +188,6 @@ public class LedgerJournalLine : BaseEntity<string>
     /// <summary>
     /// The exchange rate between the transaction currency and the accounting currency.
     /// </summary>
-    [Required]
     [JsonPropertyName("ExchRate")]
     [ODataField(IgnoreOnCreate = true)]
     public virtual decimal ExchRate { get; set; }
@@ -236,7 +230,6 @@ public class LedgerJournalLine : BaseEntity<string>
     /// <summary>
     /// The date on which the reversing entry will be posted. This field is mandatory if 'ReverseEntry' is set to Yes.
     /// </summary>
-    [Required]
     [JsonPropertyName("ReverseDate")]
     [ODataField(IgnoreOnCreate = true)]
     public virtual DateTimeOffset ReverseDate { get; set; }

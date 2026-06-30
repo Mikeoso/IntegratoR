@@ -6,12 +6,12 @@ namespace IntegratoR.CodeGen.Services;
 
 /// <summary>
 /// Generates C# entity source files from parsed CSDL models.
-/// Produces partial classes inheriting from <c>BaseEntity&lt;string&gt;</c> with full
+/// Produces partial classes inheriting from <c>BaseEntity</c> with full
 /// OData attribute decoration matching D365 F&amp;O metadata.
 /// </summary>
 public class EntityGenerator
 {
-    private const string DefaultBaseClass = "BaseEntity<string>";
+    private const string DefaultBaseClass = "BaseEntity";
 
     private readonly string _namespace;
     private readonly string _baseClass;

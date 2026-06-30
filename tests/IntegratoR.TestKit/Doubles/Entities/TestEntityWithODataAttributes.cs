@@ -7,7 +7,7 @@ namespace IntegratoR.TestKit.Doubles.Entities;
 /// A test entity decorated with <see cref="ODataFieldAttribute"/> to verify that OData payload
 /// builders correctly exclude server-generated and read-only fields during create and update operations.
 /// </summary>
-public class TestEntityWithODataAttributes : BaseEntity<string>
+public class TestEntityWithODataAttributes : BaseEntity
 {
     /// <summary>
     /// Gets or sets the primary identifier. Ignored on create because it is server-generated.

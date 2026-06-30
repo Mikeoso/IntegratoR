@@ -12,14 +12,18 @@
 //       $filter=DataAreaId eq 'USMF'
 //   which D365 (case-sensitive) rejects, returning empty results.
 //
-// This translator is structurally a near-copy of PanoramicData's
+// This translator began structurally as a near-copy of PanoramicData's
 //   ODataQueryBuilder.ExpressionParsing.cs and ODataQueryBuilder.LambdaParsing.cs
 // with one targeted change: every read of a property/field MemberInfo.Name is routed through
 // ResolveJsonName(...) which consults [JsonPropertyName] before falling back to MemberInfo.Name.
 //
-// Once the upstream PR (https://github.com/panoramicdata/panoramicdata.odata.client) lands,
-// this file can be deleted and the ODataClientAdapter can revert to passing Expressions
-// directly to PanoramicData.
+// OWNERSHIP
+// ---------
+// This is a PERMANENT, OWNED D365 extension of the PanoramicData parser — not a temporary fork
+// awaiting an upstream merge. It has diverged intentionally (D365 enum literal handling, .NET 10
+// expression-tree workarounds, [JsonPropertyName] resolution including $orderby, and the
+// composite-key write path) and is NOT tracked for deletion. The MIT attribution below is
+// retained; treat this file as first-party source maintained in this repository.
 //
 // ATTRIBUTION
 // -----------

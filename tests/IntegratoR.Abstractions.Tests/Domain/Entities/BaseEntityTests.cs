@@ -5,15 +5,15 @@ using Xunit;
 namespace IntegratoR.Abstractions.Tests.Domain.Entities;
 
 /// <summary>
-/// Unit tests for <see cref="BaseEntity{TKey}"/> covering <c>GetLoggingContext()</c>
-/// and <c>GetCompositeKey()</c> behaviours.
+/// Unit tests for <see cref="BaseEntity"/> covering <c>GetLoggingContext()</c>
+/// (including the per-type reflection cache) and <c>GetCompositeKey()</c> behaviours.
 /// </summary>
 public sealed class BaseEntityTests
 {
     /// <summary>
     /// A local test entity with multiple public properties for logging context tests.
     /// </summary>
-    private sealed class AllPropertiesEntity : BaseEntity<string>
+    private sealed class AllPropertiesEntity : BaseEntity
     {
         /// <summary>Gets or sets the identifier.</summary>
         public required string Id { get; set; }
@@ -31,7 +31,7 @@ public sealed class BaseEntityTests
     /// <summary>
     /// A local test entity with a null-valued property to verify null replacement behaviour.
     /// </summary>
-    private sealed class NullPropertyEntity : BaseEntity<string>
+    private sealed class NullPropertyEntity : BaseEntity
     {
         /// <summary>Gets or sets the identifier.</summary>
         public required string Id { get; set; }
@@ -46,7 +46,7 @@ public sealed class BaseEntityTests
     /// <summary>
     /// A local test entity with an indexed property to verify indexer exclusion.
     /// </summary>
-    private sealed class IndexedPropertyEntity : BaseEntity<string>
+    private sealed class IndexedPropertyEntity : BaseEntity
     {
         private readonly Dictionary<int, string> _data = [];
 
@@ -67,7 +67,7 @@ public sealed class BaseEntityTests
     /// <summary>
     /// A local test entity with no public instance properties beyond the base class contract.
     /// </summary>
-    private sealed class NoPublicPropertiesEntity : BaseEntity<string>
+    private sealed class NoPublicPropertiesEntity : BaseEntity
     {
         /// <inheritdoc/>
         public override object[] GetCompositeKey() => ["key"];
@@ -76,7 +76,7 @@ public sealed class BaseEntityTests
     /// <summary>
     /// A local test entity with composite key for verifying <c>GetCompositeKey()</c>.
     /// </summary>
-    private sealed class CompositeKeyEntity : BaseEntity<string>
+    private sealed class CompositeKeyEntity : BaseEntity
     {
         /// <summary>Gets or sets the identifier.</summary>
         public required string Id { get; set; }
@@ -173,5 +173,26 @@ public sealed class BaseEntityTests
         key.Should().HaveCount(2);
         key[0].Should().Be("id-123");
         key[1].Should().Be("pk-456");
+    }
+
+    /// <summary>
+    /// Verifies that the per-type reflection cache yields a stable property set: two calls on the same
+    /// type (across two different instances) return identical key collections matching the type's
+    /// public readable non-indexed property names.
+    /// </summary>
+    [Fact]
+    public void GetLoggingContext_CalledTwice_UsesCachedPropertySet()
+    {
+        // Arrange
+        var first = new AllPropertiesEntity { Id = "a", Name = "First", Value = 1 };
+        var second = new AllPropertiesEntity { Id = "b", Name = "Second", Value = 2 };
+
+        // Act
+        var firstKeys = first.GetLoggingContext().Keys;
+        var secondKeys = second.GetLoggingContext().Keys;
+
+        // Assert — the cached property set is identical across instances of the same type.
+        secondKeys.Should().BeEquivalentTo(firstKeys);
+        firstKeys.Should().BeEquivalentTo(new[] { "Id", "Name", "Value" });
     }
 }

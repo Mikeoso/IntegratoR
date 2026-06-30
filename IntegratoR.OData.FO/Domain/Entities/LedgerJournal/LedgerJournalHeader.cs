@@ -15,7 +15,7 @@ namespace IntegratoR.OData.FO.Domain.Entities.LedgerJournal;
 /// It acts as a container for a batch of journal lines, defining common properties and controlling the overall posting process.
 /// </summary>
 [Table("LedgerJournalHeaders")]
-public class LedgerJournalHeader : BaseEntity<string>
+public class LedgerJournalHeader : BaseEntity
 {
     /// <summary>
     /// The unique identifier of the legal entity (company) in which the journal is created.
@@ -23,6 +23,7 @@ public class LedgerJournalHeader : BaseEntity<string>
     /// </summary>
     [Key]
     [JsonPropertyName("dataAreaId")]
+    [ODataField(IsRequired = true)]
     public required string DataAreaId { get; set; }
 
     /// <summary>
@@ -68,16 +69,14 @@ public class LedgerJournalHeader : BaseEntity<string>
     public virtual NoYes IsPosted { get; set; }
 
     /// <summary>
-    // A read-only, system-calculated field showing the total of all debit amounts from the journal lines.
+    /// A read-only, system-calculated field showing the total of all debit amounts from the journal lines.
     /// </summary>
-    [Required]
     [JsonPropertyName("JournalTotalDebit")]
     public virtual decimal JournalTotalDebit { get; set; }
 
     /// <summary>
     /// A read-only, system-calculated field showing the total of all credit amounts from the journal lines.
     /// </summary>
-    [Required]
     [JsonPropertyName("JournalTotalCredit")]
     public virtual decimal JournalTotalCredit { get; set; }
 

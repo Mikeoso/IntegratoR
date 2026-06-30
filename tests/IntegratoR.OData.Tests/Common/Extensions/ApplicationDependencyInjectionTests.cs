@@ -191,10 +191,11 @@ public class ApplicationDependencyInjectionTests
     }
 
     /// <summary>
-    /// Verifies that ODataMetadataProvider is registered as Singleton.
+    /// Verifies that the obsolete, unused <see cref="ODataMetadataProvider"/> is NOT registered.
+    /// Its DI registration was removed (the type is dead at runtime and removed next MAJOR).
     /// </summary>
     [Fact]
-    public void AddODataClient_RegistersMetadataProviderAsSingleton()
+    public void AddODataClient_DoesNotRegisterObsoleteMetadataProvider()
     {
         // Arrange
         var services = new ServiceCollection();
@@ -203,11 +204,12 @@ public class ApplicationDependencyInjectionTests
         services.AddODataClient(options => options.Url = "https://test.example.com");
 
         // Act
+#pragma warning disable CS0618 // Type or member is obsolete — asserting the type is absent
         var descriptor = services.FirstOrDefault(d => d.ServiceType == typeof(ODataMetadataProvider));
+#pragma warning restore CS0618
 
         // Assert
-        descriptor.Should().NotBeNull();
-        descriptor!.Lifetime.Should().Be(ServiceLifetime.Singleton);
+        descriptor.Should().BeNull();
     }
 
     /// <summary>

@@ -13,6 +13,7 @@ namespace IntegratoR.OData.Common.Services;
 /// - Enables offline development
 /// - Metadata changes are version-controlled
 /// </summary>
+[Obsolete("since v1.4.0; unused — D365 $metadata is not loaded at runtime; removed next MAJOR")]
 public class ODataMetadataProvider
 {
     private readonly ILogger<ODataMetadataProvider> _logger;

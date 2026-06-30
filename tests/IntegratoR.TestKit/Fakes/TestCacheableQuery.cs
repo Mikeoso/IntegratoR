@@ -28,16 +28,20 @@ public sealed class TestCacheableQuery<TResponse> : ICacheableQuery<TResponse>
     }
 
     /// <inheritdoc/>
-    public string CacheKey => GenerateCacheKey();
+    public string CacheKey => _cacheKey;
 
     /// <inheritdoc/>
     public TimeSpan? CacheDuration => _cacheDuration;
 
+    // GetCacheKeyValues/GenerateCacheKey are [Obsolete] on ICacheableQuery but must still be
+    // implemented until the next MAJOR removes the interface members.
+#pragma warning disable CS0618 // Type or member is obsolete
     /// <inheritdoc/>
     public object[] GetCacheKeyValues() => _cacheKeyValues;
 
     /// <inheritdoc/>
     public string GenerateCacheKey() => _cacheKey;
+#pragma warning restore CS0618 // Type or member is obsolete
 
     /// <inheritdoc/>
     public IReadOnlyDictionary<string, object> GetLoggingContext()

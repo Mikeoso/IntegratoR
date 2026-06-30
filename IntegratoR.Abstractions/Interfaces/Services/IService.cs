@@ -5,18 +5,17 @@ using IntegratoR.Abstractions.Interfaces.Entity;
 namespace IntegratoR.Abstractions.Interfaces.Services;
 
 /// <summary>
-/// Defines a generic repository pattern for data access, abstracting CRUD (Create, Read, Update, Delete)
-/// and query operations for a specific entity type.
+/// Defines the generic data-access abstraction for an entity type, exposing CRUD (Create, Read,
+/// Update, Delete) and query operations.
 /// </summary>
-/// <typeparam name="TEntity">The type of the entity, which must implement <see cref="IEntity{TKey}"/>.</typeparam>
-/// <typeparam name="TKey">The type of the entity's primary key.</typeparam>
+/// <typeparam name="TEntity">The type of the entity, which must implement <see cref="IEntity"/>.</typeparam>
 /// <remarks>
-/// While named <c>IService</c>, this interface's role is that of a **Repository**. It isolates the application
-/// and domain layers from the data source's implementation details.
+/// This interface IS the data-access abstraction for an entity type; do not wrap it in an additional
+/// repository layer. It isolates the application and domain layers from the data source's
+/// implementation details.
 ///
-/// A concrete implementation (e.g., <c>ODataService&lt;TEntity, TKey&gt;</c>) would be responsible for
-/// translating these method calls into specific OData HTTP requests against a OData endpoint,
-/// typically using a library.
+/// A concrete implementation (e.g., <c>ODataService&lt;TEntity&gt;</c>) translates these method calls
+/// into specific OData HTTP requests against an OData endpoint.
 /// </remarks>
 public interface IService<TEntity> where TEntity : IEntity
 {

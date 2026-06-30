@@ -96,7 +96,7 @@ public sealed class ODataServiceCompositeKeyTests
     /// ordering test can assert deterministic key-to-value zipping.
     /// </summary>
     [Table("ReverseKeyEntities")]
-    public sealed class ReverseKeyEntity : BaseEntity<string>
+    public sealed class ReverseKeyEntity : BaseEntity
     {
         [Key]
         [JsonPropertyName("first")]
@@ -114,7 +114,7 @@ public sealed class ODataServiceCompositeKeyTests
     /// used to exercise the null-key and count-mismatch Validation failures.
     /// </summary>
     [Table("TwoKeyEntities")]
-    public sealed class TwoKeyEntity : BaseEntity<string>
+    public sealed class TwoKeyEntity : BaseEntity
     {
         [Key]
         [JsonPropertyName("first")]
