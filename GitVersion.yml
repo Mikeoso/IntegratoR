@@ -6,7 +6,11 @@ assembly-file-versioning-scheme: MajorMinorPatch
 
 workflow: GitHubFlow/v1
 mode: ContinuousDelivery
-next-version: 1.1.0
+# Bumped to 2.0.0: the architecture-review fix series (PRs #131-135) shipped breaking
+# public-API changes (FindEntriesAsync orderBy param; batch commands IEnumerable->IReadOnlyList;
+# GetDimensionOrdersQuery param rename) that were mis-tagged +semver:minor. This pins the next
+# stable release to a MAJOR. See CHANGELOG.md "Changed - Breaking".
+next-version: 2.0.0
 
 branches:
   main:
