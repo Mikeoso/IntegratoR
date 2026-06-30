@@ -1,6 +1,9 @@
 using FluentAssertions;
+using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.Application.Common.Authentication;
+using IntegratoR.TestKit.Assertions;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Identity.Client;
 using NSubstitute;
 using Xunit;
 
@@ -9,6 +12,12 @@ namespace IntegratoR.Application.Tests.Common.Authentication;
 /// <summary>
 /// Tests for <see cref="OAuthAuthenticator"/>.
 /// </summary>
+/// <remarks>
+/// The MSAL network path is exercised via the internal test-seam constructor, which substitutes the
+/// confidential-client app factory and the token-acquisition delegate so no live Azure AD is needed.
+/// The static app-cache inside <see cref="OAuthAuthenticator"/> persists across tests, so every test
+/// here uses a UNIQUE clientId (and matching cache key) to avoid cross-test bleed.
+/// </remarks>
 public class OAuthAuthenticatorTests
 {
     private readonly IMemoryCache _memoryCache = Substitute.For<IMemoryCache>();
@@ -27,7 +36,7 @@ public class OAuthAuthenticatorTests
             });
 
         // Act
-        var result = await sut.GetAccessTokenAsync("client-id", "secret", "tenant-id", "https://resource");
+        var result = await sut.GetAccessTokenAsync("client-id", "secret", "tenant-id", "https://resource", CancellationToken.None);
 
         // Assert
         result.IsSuccess.Should().BeTrue();
@@ -52,30 +61,103 @@ public class OAuthAuthenticatorTests
             });
 
         // Act
-        await sut.GetAccessTokenAsync(clientId, "secret", "tenant", resource);
+        await sut.GetAccessTokenAsync(clientId, "secret", "tenant", resource, CancellationToken.None);
 
         // Assert
         _memoryCache.Received(1).TryGetValue(expectedKey, out Arg.Any<object?>());
     }
 
-    [Fact(Skip = "Requires MSAL integration -- live Azure AD not available in unit tests")]
-    public async Task GetAccessTokenAsync_NoCachedToken_AcquiresNewToken()
+    [Fact]
+    public async Task GetAccessTokenAsync_MsalClientException_ReturnsFailWithMsalCode_DoesNotThrow()
     {
-        // This test requires a real MSAL connection and is intentionally skipped in unit tests.
-        await Task.CompletedTask;
+        // Arrange -- the acquirer throws a client-side MSAL error; the cache misses.
+        const string clientId = "msal-client-error-client";
+        var app = Substitute.For<IConfidentialClientApplication>();
+        _memoryCache.TryGetValue(Arg.Any<object>(), out Arg.Any<object?>()).Returns(false);
+
+        var sut = new OAuthAuthenticator(
+            _memoryCache,
+            (_, _, _, _) => app,
+            (_, _, _) => throw new MsalClientException("some_client_error", "bad config"));
+
+        // Act
+        Func<Task> act = async () =>
+        {
+            var result = await sut.GetAccessTokenAsync(clientId, "secret", "tenant", "https://resource", CancellationToken.None);
+
+            // Assert (inside the act delegate so we both prove no-throw AND inspect the result)
+            result.Should().BeFailed();
+            result.Should().HaveErrorCode("Auth.Msal.some_client_error");
+            result.Should().HaveErrorType(ErrorType.Failure);
+        };
+
+        // Assert -- the MSAL exception is mapped to a failed Result, never propagated.
+        await act.Should().NotThrowAsync();
     }
 
-    [Fact(Skip = "Requires MSAL integration to trigger MsalServiceException -- not unit-testable without MSAL mocking")]
-    public async Task GetAccessTokenAsync_MsalServiceException_ReturnsIntegrationError()
+    [Fact]
+    public async Task GetAccessTokenAsync_NoCachedToken_SuccessPath_CachesAndReturnsToken()
     {
-        // This test requires MSAL internals to be mockable.
-        await Task.CompletedTask;
+        // Arrange -- real MemoryCache so the success path actually caches; unique clientId.
+        const string clientId = "success-path-unique-client";
+        const string resource = "https://success-resource";
+        using var realCache = new MemoryCache(new MemoryCacheOptions());
+        var app = Substitute.For<IConfidentialClientApplication>();
+
+        var acquirerCallCount = 0;
+        var sut = new OAuthAuthenticator(
+            realCache,
+            (_, _, _, _) => app,
+            (_, _, _) =>
+            {
+                acquirerCallCount++;
+                return Task.FromResult(new AcquiredToken("new-token", DateTimeOffset.UtcNow.AddHours(1)));
+            });
+
+        // Act -- first call acquires and caches.
+        var first = await sut.GetAccessTokenAsync(clientId, "secret", "tenant", resource, CancellationToken.None);
+
+        // Assert
+        first.Should().BeSuccessful();
+        first.Should().HaveValue("new-token");
+
+        // Act -- second call must be served from the cache without re-invoking the acquirer.
+        var second = await sut.GetAccessTokenAsync(clientId, "secret", "tenant", resource, CancellationToken.None);
+
+        // Assert
+        second.Should().BeSuccessful();
+        second.Should().HaveValue("new-token");
+        acquirerCallCount.Should().Be(1);
     }
 
-    [Fact(Skip = "Requires MSAL integration to trigger MsalException -- not unit-testable without MSAL mocking")]
-    public async Task GetAccessTokenAsync_MsalException_ErrorCodeContainsMsalErrorCode()
+    [Fact]
+    public async Task GetAccessTokenAsync_TwoCacheMisses_ReuseSameConfidentialClientAppInstance()
     {
-        // This test requires MSAL internals to be mockable.
-        await Task.CompletedTask;
+        // Arrange -- token-cache misses both times, so only the static app-cache can prevent a
+        // rebuild. A unique clientId|tenantId|resource keeps the static cache key isolated.
+        const string clientId = "app-cache-reuse-unique-client";
+        const string tenantId = "app-cache-reuse-tenant";
+        const string resource = "https://app-cache-reuse-resource";
+
+        _memoryCache.TryGetValue(Arg.Any<object>(), out Arg.Any<object?>()).Returns(false);
+
+        var app = Substitute.For<IConfidentialClientApplication>();
+        var appFactoryCallCount = 0;
+
+        var sut = new OAuthAuthenticator(
+            _memoryCache,
+            (_, _, _, _) =>
+            {
+                appFactoryCallCount++;
+                return app;
+            },
+            (_, _, _) => Task.FromResult(new AcquiredToken("token", DateTimeOffset.UtcNow.AddHours(1))));
+
+        // Act -- two calls with identical client/tenant/resource.
+        await sut.GetAccessTokenAsync(clientId, "secret", tenantId, resource, CancellationToken.None);
+        await sut.GetAccessTokenAsync(clientId, "secret", tenantId, resource, CancellationToken.None);
+
+        // Assert -- the confidential-client app was built exactly once and reused.
+        appFactoryCallCount.Should().Be(1);
     }
 }

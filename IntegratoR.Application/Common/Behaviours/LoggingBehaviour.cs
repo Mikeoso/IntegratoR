@@ -62,7 +62,10 @@ public class LoggingBehaviour<TRequest, TResponse> : IPipelineBehavior<TRequest,
         using (_logger.BeginScope(contextDictionary))
         {
             var requestName = typeof(TRequest).Name;
-            _logger.LogInformation("Handling {RequestName} with data: {@Request}", requestName, request);
+            _logger.LogInformation("Handling {RequestName}", requestName);
+            // The full request payload is intentionally logged only at Debug (off by default in
+            // production) to avoid emitting PII / secrets to Information-level sinks such as Application Insights.
+            _logger.LogDebug("Request payload for {RequestName}: {@Request}", requestName, request);
 
             var stopwatch = Stopwatch.StartNew();
 
@@ -71,14 +74,14 @@ public class LoggingBehaviour<TRequest, TResponse> : IPipelineBehavior<TRequest,
                 var response = await next().ConfigureAwait(false);
                 stopwatch.Stop();
 
-                if (response is Result { IsFailed: true } result)
+                if (response is IResultBase { IsFailed: true } baseResult)
                 {
                     _logger.LogWarning(
                         "Handled {RequestName} with failure result in {ElapsedMilliseconds}ms. Error: {ErrorCode} - {ErrorMessage}",
                         requestName,
                         stopwatch.ElapsedMilliseconds,
-                        result.GetError()?.Code,
-                        result.GetError()?.Message);
+                        baseResult.GetError()?.Code,
+                        baseResult.GetError()?.Message);
                 }
                 else
                 {

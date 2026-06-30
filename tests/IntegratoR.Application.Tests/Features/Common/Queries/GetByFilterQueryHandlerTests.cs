@@ -83,4 +83,30 @@ public class GetByFilterQueryHandlerTests
         result.Should().BeSuccessful();
         result.Value.Should().BeEmpty();
     }
+
+    [Fact]
+    public async Task Handle_DoesNotLogAtInformationLevel()
+    {
+        // Arrange -- per-request handler logging was lowered to Debug to keep hot paths quiet.
+        var entities = new List<TestEntity>
+        {
+            new() { Id = "1", PartitionKey = "pk", Name = "Alpha" }
+        };
+        Expression<Func<TestEntity, bool>> filter = e => e.Name != null;
+        var query = new GetByFilterQuery<TestEntity>(filter);
+        _service.FindAsync(filter, Arg.Any<CancellationToken>())
+            .Returns(Result.Ok<IEnumerable<TestEntity>>(entities));
+
+        // Act
+        var result = await _sut.Handle(query, CancellationToken.None);
+
+        // Assert
+        result.Should().BeSuccessful();
+        _logger.DidNotReceive().Log(
+            LogLevel.Information,
+            Arg.Any<EventId>(),
+            Arg.Any<object>(),
+            Arg.Any<Exception?>(),
+            Arg.Any<Func<object, Exception?, string>>());
+    }
 }

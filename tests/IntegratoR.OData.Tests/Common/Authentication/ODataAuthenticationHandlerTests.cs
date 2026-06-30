@@ -50,7 +50,7 @@ public class ODataAuthenticationHandlerTests
     {
         // Arrange
         const string token = "test-token";
-        _authenticator.GetAccessTokenAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
+        _authenticator.GetAccessTokenAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(Result.Ok(token));
 
         _fakeHandler.Queue(HttpStatusCode.OK);
@@ -70,14 +70,19 @@ public class ODataAuthenticationHandlerTests
     }
 
     /// <summary>
-    /// Verifies that a failed OAuth token acquisition returns a 401 response.
+    /// Verifies that a failed OAuth token acquisition returns a 401 response whose ReasonPhrase is a
+    /// fixed, generic string — it must NOT leak the underlying MSAL/AADSTS detail into the HTTP
+    /// response (security: ReasonPhrase must not expose internal error details).
     /// </summary>
     [Fact]
-    public async Task SendAsync_OAuthMode_FailedToken_Returns401Unauthorized()
+    public async Task SendAsync_OAuthMode_FailedToken_Returns401WithGenericReasonPhrase()
     {
-        // Arrange
-        var error = new IntegrationError("Auth.Failed", "Token acquisition failed", ErrorType.Failure);
-        _authenticator.GetAccessTokenAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
+        // Arrange -- the failure carries a sensitive MSAL detail that must not surface in the response.
+        var error = new IntegrationError(
+            "Auth.Msal.invalid_client",
+            "AADSTS7000215: Invalid client secret provided.",
+            ErrorType.Failure);
+        _authenticator.GetAccessTokenAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(Result.Fail<string>(error));
 
         ODataSettings settings = CreateOAuthSettings();
@@ -89,7 +94,8 @@ public class ODataAuthenticationHandlerTests
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-        response.ReasonPhrase.Should().Contain("Token acquisition failed");
+        response.ReasonPhrase.Should().Be("Authentication failed");
+        response.ReasonPhrase.Should().NotContain("AADSTS");
     }
 
     /// <summary>
@@ -100,7 +106,7 @@ public class ODataAuthenticationHandlerTests
     {
         // Arrange
         var error = new IntegrationError("Auth.Failed", "Token acquisition failed", ErrorType.Failure);
-        _authenticator.GetAccessTokenAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
+        _authenticator.GetAccessTokenAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(Result.Fail<string>(error));
 
         ODataSettings settings = CreateOAuthSettings();
@@ -203,7 +209,7 @@ public class ODataAuthenticationHandlerTests
         const string tenantId = "test-tenant-id";
         const string resource = "https://test.operations.dynamics.com";
 
-        _authenticator.GetAccessTokenAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
+        _authenticator.GetAccessTokenAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(Result.Ok("any-token"));
         _fakeHandler.Queue(HttpStatusCode.OK);
 
@@ -228,6 +234,33 @@ public class ODataAuthenticationHandlerTests
         await invoker.SendAsync(request, CancellationToken.None);
 
         // Assert
-        await _authenticator.Received(1).GetAccessTokenAsync(clientId, clientSecret, tenantId, resource);
+        await _authenticator.Received(1).GetAccessTokenAsync(clientId, clientSecret, tenantId, resource, Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// Verifies that OAuth mode forwards the caller's CancellationToken through to the authenticator,
+    /// so a cancelled request short-circuits token acquisition rather than blocking.
+    /// </summary>
+    [Fact]
+    public async Task SendAsync_OAuthMode_ForwardsCancellationTokenToAuthenticator()
+    {
+        // Arrange
+        using var cts = new CancellationTokenSource();
+        CancellationToken token = cts.Token;
+
+        _authenticator.GetAccessTokenAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Result.Ok("any-token"));
+        _fakeHandler.Queue(HttpStatusCode.OK);
+
+        ODataSettings settings = CreateOAuthSettings();
+        var invoker = CreateInvoker(settings);
+
+        // Act
+        var request = new HttpRequestMessage(HttpMethod.Get, "http://localhost/test");
+        await invoker.SendAsync(request, token);
+
+        // Assert -- the exact token reached the authenticator.
+        await _authenticator.Received(1).GetAccessTokenAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), token);
     }
 }
