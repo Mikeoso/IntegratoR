@@ -128,7 +128,9 @@ public static class IntegratoRServiceCollectionExtensions
         //     would silently never run. Entities come from the F&O assembly AND consumer assemblies (a
         //     consumer's CreateCommand<ConsumerEntity> needs its validator too); the open-generic
         //     validators come from IntegratoR.Application (baseline) and IntegratoR.OData.FO (derived).
-        //     See open-todos #15.
+        //     (The F&O-derived per-command validators are also closed and registered here as a benign
+        //     side-effect — nothing dispatches those FO-specific commands through the mediator today,
+        //     and TryAddEnumerable keeps the registration harmless.) See open-todos #15.
         RegisterClosedGenericValidators(
             services,
             validatorAssemblies:

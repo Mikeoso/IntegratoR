@@ -612,15 +612,14 @@ public class ServiceCollectionExtensionsTests
         }
     }
 
-    // Pinned behaviour for PR-C: AddIntegratoR now registers the F&O FluentValidation validators
-    // (step 6). GetDimensionOrdersQueryValidator — a non-generic validator — therefore fires in the
-    // MediatR ValidationBehaviour: an invalid (empty DimensionFormat) query is short-circuited with
-    // a Validation failure before the handler runs. (NOTE: open-generic validators such as the
-    // generic CreateCommandValidator<T> and the thin per-command derived validators are NOT
-    // discoverable by AddValidatorsFromAssembly, so generic command validation does not run through
-    // the pipeline today — a pre-existing framework-wide limitation, see the PR-C report. The
-    // derived validators are unit-proven against the concrete FO commands in
-    // GenericValidatorReuseTests.)
+    // Pinned behaviour: AddIntegratoR registers the F&O FluentValidation validators (step 6) AND
+    // closes the open-generic command/query validators over the discovered entities (step 6b), so
+    // generic command validation now runs through the pipeline. GetDimensionOrdersQueryValidator — a
+    // non-generic validator — fires in the MediatR ValidationBehaviour: an invalid (empty
+    // DimensionFormat) query is short-circuited with a Validation failure before the handler runs.
+    // (The open-generic CreateCommandValidator<T> etc. are now live too — proven by
+    // AddIntegratoR_GenericCreateValidator_ShortCircuitsNullEntity_ThroughPipeline and
+    // AddIntegratoR_RegistersClosedGenericCommandValidator_ForFOEntity above.)
     [Fact]
     public async Task AddIntegratoR_ValidationBehaviour_FiresFOValidator_ForGetDimensionOrdersQuery()
     {

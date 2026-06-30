@@ -188,6 +188,28 @@ public sealed class CqrsCommandRecordTests
         context.Should().ContainKey("Count").WhoseValue.Should().Be(0);
     }
 
+    /// <summary>Null-safe counterpart for UpdateBatchCommand (shares the batch implementation).</summary>
+    [Fact]
+    public void UpdateBatchCommand_GetLoggingContext_NullEntities_ReturnsZeroCountWithoutThrowing()
+    {
+        var command = new UpdateBatchCommand<TestEntity>(null!);
+
+        var context = command.GetLoggingContext();
+
+        context.Should().ContainKey("Count").WhoseValue.Should().Be(0);
+    }
+
+    /// <summary>Null-safe counterpart for DeleteBatchCommand (shares the batch implementation).</summary>
+    [Fact]
+    public void DeleteBatchCommand_GetLoggingContext_NullEntities_ReturnsZeroCountWithoutThrowing()
+    {
+        var command = new DeleteBatchCommand<TestEntity>(null!);
+
+        var context = command.GetLoggingContext();
+
+        context.Should().ContainKey("Count").WhoseValue.Should().Be(0);
+    }
+
     /// <summary>
     /// Regression for the multiple-enumeration fix. The batch command ctor now takes
     /// <c>IReadOnlyList&lt;T&gt;</c> and <c>GetLoggingContext()</c> reads the O(1) <c>.Count</c> property
