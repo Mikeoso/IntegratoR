@@ -8,6 +8,7 @@ using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.Abstractions.Domain.Entities;
 using IntegratoR.Abstractions.Interfaces.Authentication;
 using IntegratoR.Abstractions.Interfaces.Services;
+using IntegratoR.Application.Features.Common.Validators;
 using IntegratoR.OData.Domain.Settings;
 using IntegratoR.OData.FO.Domain.Entities.LedgerJournal;
 using IntegratoR.OData.FO.Domain.Models.Settings;
@@ -385,6 +386,72 @@ public class ServiceCollectionExtensionsTests
             result.Should().BeSuccessful();
             result.Value.Should().BeSameAs(header);
             await service.Received(1).GetByKeyAsync(key, Arg.Any<CancellationToken>());
+        }
+    }
+
+    [Fact]
+    public async Task AddIntegratoR_GenericCreateValidator_ShortCircuitsNullEntity_ThroughPipeline()
+    {
+        // Arrange
+        (ServiceProvider provider, IService<LedgerJournalHeader> service) = BuildProviderWithSubstitutedService();
+        await using (provider)
+        {
+            using IServiceScope scope = provider.CreateScope();
+            IMediator mediator = scope.ServiceProvider.GetRequiredService<IMediator>();
+
+            // Act — a null entity must be rejected by the now-live CreateCommandValidator<LedgerJournalHeader>
+            // inside ValidationBehaviour and surface as a graceful Validation failure (NOT an NRE), even
+            // though LoggingBehaviour runs first and reads the command's logging context. (Pre-fix the
+            // generic validator was never registered AND the command's GetLoggingContext dereferenced
+            // the null entity, so this NRE'd in LoggingBehaviour before validation.)
+            Result<LedgerJournalHeader> result =
+                await mediator.Send(new CreateCommand<LedgerJournalHeader>(null!), TestContext.Current.CancellationToken);
+
+            // Assert
+            result.Should().BeFailed();
+            result.Should().HaveErrorType(ErrorType.Validation);
+            result.Should().HaveErrorCode("Validation.Error");
+            await service.DidNotReceive().AddAsync(Arg.Any<LedgerJournalHeader>(), Arg.Any<CancellationToken>());
+        }
+    }
+
+    [Fact]
+    public void AddIntegratoR_RegistersClosedGenericCommandValidator_ForFOEntity()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddIntegratoR(CreateMinimalConfiguration());
+
+        // Act
+        using ServiceProvider provider = services.BuildServiceProvider();
+        List<IValidator<CreateCommand<LedgerJournalHeader>>> validators =
+            provider.GetServices<IValidator<CreateCommand<LedgerJournalHeader>>>().ToList();
+
+        // Assert — TryAddEnumerable registers exactly one closed baseline validator for the entity.
+        validators.Should().ContainSingle()
+            .Which.Should().BeOfType<CreateCommandValidator<LedgerJournalHeader>>();
+    }
+
+    [Fact]
+    public async Task AddIntegratoR_GenericCreateBatchValidator_ShortCircuitsEmptyBatch_ThroughPipeline()
+    {
+        // Arrange
+        (ServiceProvider provider, IBatchService<LedgerJournalHeader> service) = BuildProviderWithSubstitutedBatchService();
+        await using (provider)
+        {
+            using IServiceScope scope = provider.CreateScope();
+            IMediator mediator = scope.ServiceProvider.GetRequiredService<IMediator>();
+
+            // Act — an empty batch must be rejected by the now-live CreateBatchCommandValidator's
+            // .Any() rule before the handler/service is reached.
+            Result result =
+                await mediator.Send(new CreateBatchCommand<LedgerJournalHeader>([]), TestContext.Current.CancellationToken);
+
+            // Assert
+            result.Should().BeFailed();
+            result.Should().HaveErrorType(ErrorType.Validation);
+            await service.DidNotReceive().AddBatchAsync(Arg.Any<IEnumerable<LedgerJournalHeader>>(), Arg.Any<CancellationToken>());
         }
     }
 
