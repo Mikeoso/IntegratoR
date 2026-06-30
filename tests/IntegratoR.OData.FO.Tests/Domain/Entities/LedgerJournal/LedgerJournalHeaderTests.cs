@@ -32,10 +32,13 @@ public class LedgerJournalHeaderTests
     }
 
     /// <summary>
-    /// Verifies that GetCompositeKey returns the string literal "null" when JournalBatchNumber is null.
+    /// Verifies that GetCompositeKey returns a real null element (not the literal string "null")
+    /// when JournalBatchNumber is null. A header without a batch number has no identity yet;
+    /// <see cref="IntegratoR.OData.Common.Services.ODataService{TEntity}"/> turns the null element
+    /// into a Validation failure rather than writing against a non-existent batch named "null".
     /// </summary>
     [Fact]
-    public void GetCompositeKey_NullJournalBatchNumber_ReturnsNullStringLiteral()
+    public void GetCompositeKey_NullJournalBatchNumber_ReturnsNullElementNotLiteralString()
     {
         // Arrange
         var header = new LedgerJournalHeader
@@ -51,7 +54,8 @@ public class LedgerJournalHeaderTests
 
         // Assert
         key.Should().HaveCount(2);
-        key[1].Should().Be("null");
+        key[1].Should().BeNull();
+        key[1].Should().NotBe("null");
     }
 
     /// <summary>

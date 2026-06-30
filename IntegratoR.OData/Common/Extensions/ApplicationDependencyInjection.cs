@@ -151,11 +151,14 @@ internal static class ApplicationDependencyInjection
             return new ODataClient(options);
         });
 
-        // Register the adapter that wraps PanoramicData's ODataClient
+        // Register the adapter that wraps PanoramicData's ODataClient. The IHttpClientFactory is
+        // passed so the adapter can issue composite-key write requests through the named
+        // "ODataClient" client (carrying auth + Polly + BaseAddress).
         services.AddSingleton<IODataClientAdapter>(serviceProvider =>
         {
             var client = serviceProvider.GetRequiredService<ODataClient>();
-            return new ODataClientAdapter(client);
+            var httpClientFactory = serviceProvider.GetRequiredService<IHttpClientFactory>();
+            return new ODataClientAdapter(client, httpClientFactory);
         });
 
         // Register AsyncRetryPolicy for OData operations (in addition to HTTP retries)

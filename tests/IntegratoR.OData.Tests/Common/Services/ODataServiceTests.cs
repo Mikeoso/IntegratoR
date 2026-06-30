@@ -249,6 +249,7 @@ public class ODataServiceTests
             Arg.Any<Expression<Func<TestEntity, bool>>?>(),
             Arg.Any<Expression<Func<TestEntity, object>>?>(),
             Arg.Any<Expression<Func<TestEntity, object>>?>(),
+            Arg.Any<IReadOnlyList<(Expression<Func<TestEntity, object>> KeySelector, bool Descending)>?>(),
             Arg.Any<int?>(),
             Arg.Any<int?>(),
             Arg.Any<CancellationToken>())
@@ -276,6 +277,7 @@ public class ODataServiceTests
             Arg.Any<Expression<Func<TestEntity, bool>>?>(),
             Arg.Any<Expression<Func<TestEntity, object>>?>(),
             Arg.Any<Expression<Func<TestEntity, object>>?>(),
+            Arg.Any<IReadOnlyList<(Expression<Func<TestEntity, object>> KeySelector, bool Descending)>?>(),
             Arg.Any<int?>(),
             Arg.Any<int?>(),
             Arg.Any<CancellationToken>())
@@ -301,18 +303,21 @@ public class ODataServiceTests
             Arg.Any<Expression<Func<TestEntity, bool>>?>(),
             Arg.Any<Expression<Func<TestEntity, object>>?>(),
             Arg.Any<Expression<Func<TestEntity, object>>?>(),
+            Arg.Any<IReadOnlyList<(Expression<Func<TestEntity, object>> KeySelector, bool Descending)>?>(),
             Arg.Any<int?>(),
             Arg.Any<int?>(),
             Arg.Any<CancellationToken>())
             .Returns(new List<TestEntity>());
 
         // Act
-        var result = await _sut.QueryAsync(skip: 10, top: 5, cancellationToken: CancellationToken.None);
+        IReadOnlyList<(Expression<Func<TestEntity, object>> KeySelector, bool Descending)>? noOrderBy = null;
+        var result = await _sut.QueryAsync(filter: null, orderBy: noOrderBy, skip: 10, top: 5, cancellationToken: CancellationToken.None);
 
         // Assert
         result.Should().BeSuccessful();
         await _client.Received(1).FindEntriesAsync<TestEntity>(
             Arg.Any<string>(),
+            null,
             null,
             null,
             null,
@@ -334,6 +339,7 @@ public class ODataServiceTests
             Arg.Any<Expression<Func<TestEntity, bool>>?>(),
             Arg.Any<Expression<Func<TestEntity, object>>?>(),
             Arg.Any<Expression<Func<TestEntity, object>>?>(),
+            Arg.Any<IReadOnlyList<(Expression<Func<TestEntity, object>> KeySelector, bool Descending)>?>(),
             Arg.Any<int?>(),
             Arg.Any<int?>(),
             Arg.Any<CancellationToken>())
@@ -381,13 +387,82 @@ public class ODataServiceTests
             Arg.Any<Expression<Func<TestEntity, bool>>?>(),
             Arg.Any<Expression<Func<TestEntity, object>>?>(),
             Arg.Any<Expression<Func<TestEntity, object>>?>(),
+            Arg.Any<IReadOnlyList<(Expression<Func<TestEntity, object>> KeySelector, bool Descending)>?>(),
             Arg.Any<int?>(),
             Arg.Any<int?>(),
             Arg.Any<CancellationToken>())
             .Returns(entities);
 
         // Act
-        var result = await _sut.QueryAsync(cancellationToken: CancellationToken.None);
+        IReadOnlyList<(Expression<Func<TestEntity, object>> KeySelector, bool Descending)>? noOrderBy = null;
+        var result = await _sut.QueryAsync(filter: null, orderBy: noOrderBy, cancellationToken: CancellationToken.None);
+
+        // Assert
+        result.Should().BeSuccessful();
+    }
+
+    /// <summary>
+    /// Verifies that the new strongly-typed QueryAsync overload forwards its orderBy argument to
+    /// the adapter's FindEntriesAsync — the wiring the old Func-based overload silently dropped.
+    /// </summary>
+    [Fact]
+    public async Task QueryAsync_WithOrderBy_ForwardsOrderByToAdapter()
+    {
+        // Arrange
+        IReadOnlyList<(Expression<Func<TestEntity, object>> KeySelector, bool Descending)>? capturedOrderBy = null;
+        _client.FindEntriesAsync<TestEntity>(
+            Arg.Any<string>(),
+            Arg.Any<Expression<Func<TestEntity, bool>>?>(),
+            Arg.Any<Expression<Func<TestEntity, object>>?>(),
+            Arg.Any<Expression<Func<TestEntity, object>>?>(),
+            Arg.Do<IReadOnlyList<(Expression<Func<TestEntity, object>> KeySelector, bool Descending)>?>(o => capturedOrderBy = o),
+            Arg.Any<int?>(),
+            Arg.Any<int?>(),
+            Arg.Any<CancellationToken>())
+            .Returns(new List<TestEntity>());
+
+        var orderBy = new (Expression<Func<TestEntity, object>> KeySelector, bool Descending)[]
+        {
+            (e => e.Id, false),
+            (e => e.Name, true)
+        };
+
+        // Act
+        var result = await _sut.QueryAsync(filter: null, orderBy: orderBy, cancellationToken: CancellationToken.None);
+
+        // Assert
+        result.Should().BeSuccessful();
+        capturedOrderBy.Should().NotBeNull();
+        capturedOrderBy.Should().BeEquivalentTo(orderBy);
+    }
+
+    /// <summary>
+    /// Verifies that the [Obsolete] Func-based QueryAsync overload still compiles and returns
+    /// success (its body is retained as a no-op for orderBy). CS0618 is suppressed narrowly here
+    /// because the test intentionally exercises the deprecated overload.
+    /// </summary>
+    [Fact]
+    public async Task QueryAsync_ObsoleteFuncOverload_StillCompilesAndReturnsSuccess()
+    {
+        // Arrange
+        _client.FindEntriesAsync<TestEntity>(
+            Arg.Any<string>(),
+            Arg.Any<Expression<Func<TestEntity, bool>>?>(),
+            Arg.Any<Expression<Func<TestEntity, object>>?>(),
+            Arg.Any<Expression<Func<TestEntity, object>>?>(),
+            Arg.Any<IReadOnlyList<(Expression<Func<TestEntity, object>> KeySelector, bool Descending)>?>(),
+            Arg.Any<int?>(),
+            Arg.Any<int?>(),
+            Arg.Any<CancellationToken>())
+            .Returns(new List<TestEntity>());
+
+        // Act
+#pragma warning disable CS0618 // intentionally exercising the obsolete Func-based overload
+        var result = await _sut.QueryAsync(
+            filter: null,
+            orderBy: (Func<IQueryable<TestEntity>, IOrderedQueryable<TestEntity>>?)null,
+            cancellationToken: CancellationToken.None);
+#pragma warning restore CS0618
 
         // Assert
         result.Should().BeSuccessful();
@@ -962,7 +1037,9 @@ public class ODataServiceTests
             Arg.Any<CancellationToken>())
             .Returns(new TestEntityWithD365Attributes { DataAreaId = "USMF", Amount = 100m });
 
-        var entity = new TestEntityWithD365Attributes { DataAreaId = "USMF", Amount = 100m, JournalName = null };
+        // JournalBatchNumber is set so the composite key is valid; the test isolates IsRequired,
+        // not key validation.
+        var entity = new TestEntityWithD365Attributes { DataAreaId = "USMF", JournalBatchNumber = "JN-001", Amount = 100m, JournalName = null };
 
         // Act
         var result = await odataSut.UpdateAsync(entity, CancellationToken.None);

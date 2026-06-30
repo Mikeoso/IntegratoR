@@ -92,6 +92,9 @@ public class LedgerJournalHeader : BaseEntity<string>
     /// </summary>
     public override object[] GetCompositeKey()
     {
-        return [DataAreaId, JournalBatchNumber ?? "null"];
+        // null-forgiving: a null JournalBatchNumber flows through as a real null element (NOT the
+        // literal "null"); ODataService.BuildCompositeKeyObject turns that into a Validation failure.
+        // The ! suppresses CS8601 since the array is object[] but the property is string?.
+        return [DataAreaId, JournalBatchNumber!];
     }
 }

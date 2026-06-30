@@ -1,9 +1,13 @@
 using System.Linq.Expressions;
+using System.Net;
+using System.Net.Http.Headers;
+using System.Text;
 using IntegratoR.Abstractions.Interfaces.Entity;
 using IntegratoR.OData.Common.Filters;
 using IntegratoR.OData.Domain.Models;
 using IntegratoR.OData.Interfaces.Services;
 using PanoramicData.OData.Client;
+using PanoramicData.OData.Client.Exceptions;
 
 namespace IntegratoR.OData.Common.Services;
 
@@ -28,10 +32,30 @@ public class ODataClientAdapter : IODataClientAdapter
         };
 
     private readonly ODataClient _client;
+    private readonly IHttpClientFactory? _httpClientFactory;
 
+    /// <summary>
+    /// Creates an adapter over PanoramicData's <see cref="ODataClient"/> without a named-client
+    /// factory. Composite-key write operations (Update/Delete/BatchUpdate/BatchDelete on an
+    /// <see cref="IDictionary{TKey, TValue}"/> key) are NOT supported through this constructor and
+    /// throw <see cref="InvalidOperationException"/>; production DI always uses the two-argument
+    /// constructor. Retained for guard tests that never issue HTTP traffic.
+    /// </summary>
     public ODataClientAdapter(ODataClient client)
     {
         _client = client;
+    }
+
+    /// <summary>
+    /// Creates an adapter over PanoramicData's <see cref="ODataClient"/> with the named-client
+    /// factory required by the composite-key write bypass. The factory must resolve the
+    /// <c>"ODataClient"</c> named client so raw composite-key requests carry the same
+    /// authentication, Polly resilience, and base address as PanoramicData's own traffic.
+    /// </summary>
+    public ODataClientAdapter(ODataClient client, IHttpClientFactory httpClientFactory)
+    {
+        _client = client;
+        _httpClientFactory = httpClientFactory;
     }
 
     /// <inheritdoc />
@@ -149,6 +173,7 @@ public class ODataClientAdapter : IODataClientAdapter
         Expression<Func<TEntity, bool>>? filter = null,
         Expression<Func<TEntity, object>>? expand = null,
         Expression<Func<TEntity, object>>? select = null,
+        IReadOnlyList<(Expression<Func<TEntity, object>> KeySelector, bool Descending)>? orderBy = null,
         int? skip = null,
         int? top = null,
         CancellationToken cancellationToken = default)
@@ -161,6 +186,7 @@ public class ODataClientAdapter : IODataClientAdapter
         if (filter is not null) query = query.Filter(IntegratoRODataExpressionTranslator.ToFilterString(filter));
         if (expand is not null) query = query.Expand(IntegratoRODataExpressionTranslator.ToExpandString(expand));
         if (select is not null) query = query.Select(IntegratoRODataExpressionTranslator.ToSelectString(select));
+        if (orderBy is not null && orderBy.Count > 0) query = query.OrderBy(IntegratoRODataExpressionTranslator.ToOrderByString(orderBy));
         if (skip.HasValue) query = query.Skip(skip.Value);
         if (top.HasValue) query = query.Top(top.Value);
 
@@ -176,6 +202,15 @@ public class ODataClientAdapter : IODataClientAdapter
         CancellationToken cancellationToken = default)
         where TEntity : class, IEntity
     {
+        // Composite (dictionary) keys cannot be bound by PanoramicData's Key(object) path (it
+        // calls .ToString() on the dict, producing a malformed key) — route them through the
+        // raw-HttpClient bypass. See SendCompositeKeyRequestAsync and FindByKeyAsync's header.
+        if (key is IDictionary<string, object> compositeKey)
+        {
+            return await SendCompositeKeyRequestAsync<TEntity>(
+                HttpMethod.Patch, entitySet, compositeKey, payload, cancellationToken).ConfigureAwait(false);
+        }
+
         if (payload is IDictionary<string, object> dict)
         {
             var jsonResult = await _client.UpdateAsync<object, object>(entitySet, key, dict, null, cancellationToken)
@@ -194,6 +229,15 @@ public class ODataClientAdapter : IODataClientAdapter
         object key,
         CancellationToken cancellationToken = default)
     {
+        // Composite (dictionary) keys bypass PanoramicData's broken Key(object) path; the
+        // throwaway TEntity type parameter is unused for DELETE (no response body deserialised).
+        if (key is IDictionary<string, object> compositeKey)
+        {
+            await SendCompositeKeyRequestAsync<object>(
+                HttpMethod.Delete, entitySet, compositeKey, payload: null, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
         await _client.DeleteAsync(entitySet, key, null, cancellationToken).ConfigureAwait(false);
     }
 
@@ -235,10 +279,31 @@ public class ODataClientAdapter : IODataClientAdapter
         IEnumerable<(object Key, IDictionary<string, object> Payload)> items,
         CancellationToken cancellationToken = default)
     {
+        var itemList = items as IList<(object Key, IDictionary<string, object> Payload)> ?? items.ToList();
+
+        // A batch is homogeneous for a given TEntity: ODataService.BuildBatchKeys yields all-scalar
+        // keys for single-key entities or all-dictionary keys for composite entities, never mixed.
+        // D365 F&O entities are all composite-keyed and cannot use PanoramicData's atomic changeset
+        // (it cannot bind a dictionary key), so when any key is a dictionary, send EVERY item as an
+        // individual HTTP request preserving index order; otherwise keep the atomic changeset path.
+        if (itemList.Any(item => item.Key is IDictionary<string, object>))
+        {
+            return await SendCompositeKeyBatchAsync(
+                itemList.Count,
+                async (index, ct) =>
+                {
+                    // isComposite invariant (the homogeneity above) guarantees this cast is safe.
+                    var (key, payload) = itemList[index];
+                    return await SendCompositeKeyRequestRawAsync(
+                        HttpMethod.Patch, entitySet, (IDictionary<string, object>)key, payload, ct).ConfigureAwait(false);
+                },
+                cancellationToken).ConfigureAwait(false);
+        }
+
         var batch = _client.CreateBatch();
         batch.Changeset(changeset =>
         {
-            foreach (var (key, payload) in items)
+            foreach (var (key, payload) in itemList)
             {
                 changeset.Update<object, object>(entitySet, key, payload);
             }
@@ -253,16 +318,202 @@ public class ODataClientAdapter : IODataClientAdapter
         IEnumerable<object> keys,
         CancellationToken cancellationToken = default)
     {
+        var keyList = keys as IList<object> ?? keys.ToList();
+
+        // Homogeneous-batch invariant (see BatchUpdateAsync): a composite-keyed entity yields all
+        // dictionary keys, so when any key is a dictionary, send EVERY item as an individual HTTP
+        // request preserving index order; otherwise keep the atomic changeset path.
+        if (keyList.Any(key => key is IDictionary<string, object>))
+        {
+            return await SendCompositeKeyBatchAsync(
+                keyList.Count,
+                // isComposite invariant guarantees keyList[index] is an IDictionary here.
+                async (index, ct) => await SendCompositeKeyRequestRawAsync(
+                    HttpMethod.Delete, entitySet, (IDictionary<string, object>)keyList[index], payload: null, ct).ConfigureAwait(false),
+                cancellationToken).ConfigureAwait(false);
+        }
+
         var batch = _client.CreateBatch();
         batch.Changeset(changeset =>
         {
-            foreach (var key in keys)
+            foreach (var key in keyList)
             {
                 changeset.Delete(entitySet, key);
             }
         });
         ODataBatchResponse response = await batch.ExecuteAsync(cancellationToken).ConfigureAwait(false);
         return MapBatchResponse(response);
+    }
+
+    /// <summary>
+    /// Issues a single composite-key write (PATCH/DELETE) through the named <c>"ODataClient"</c>
+    /// HttpClient (which carries auth + Polly + BaseAddress), bypassing PanoramicData's broken
+    /// <c>Key(object)</c> dictionary path. On success a PATCH body is deserialised to
+    /// <typeparamref name="TEntity"/>; on a non-success status the matching PanoramicData
+    /// exception is thrown so the existing <c>ODataExceptionHandler</c> maps it (404 →
+    /// <see cref="ODataNotFoundException"/>; otherwise <see cref="ODataClientException"/> carrying
+    /// status, body, and URL).
+    /// </summary>
+    private async Task<TEntity> SendCompositeKeyRequestAsync<TEntity>(
+        HttpMethod method,
+        string entitySet,
+        IDictionary<string, object> key,
+        object? payload,
+        CancellationToken cancellationToken)
+        where TEntity : class
+    {
+        (HttpStatusCode statusCode, string? body, string requestUrl) =
+            await SendCompositeKeyRequestRawAsync(method, entitySet, key, payload, cancellationToken).ConfigureAwait(false);
+
+        if ((int)statusCode is < 200 or > 299)
+        {
+            throw CreateMappableException((int)statusCode, body, requestUrl);
+        }
+
+        // DELETE has no usable response body; callers discard the returned value.
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return null!;
+        }
+
+        return System.Text.Json.JsonSerializer.Deserialize<TEntity>(body, CaseInsensitiveOptions)
+            ?? throw new InvalidOperationException(
+                $"Failed to deserialize OData response to {typeof(TEntity).Name}. Response body was null or incompatible.");
+    }
+
+    /// <summary>
+    /// Issues a single composite-key write and returns the raw outcome (status, body, URL) WITHOUT
+    /// throwing — used by the batch path so per-item failures are collected rather than aborting
+    /// the whole batch. Validates each key field name and the dictionary is non-empty, mirroring
+    /// <see cref="FindByKeyAsync{TEntity}"/>.
+    /// </summary>
+    private async Task<(HttpStatusCode StatusCode, string? Body, string RequestUrl)> SendCompositeKeyRequestRawAsync(
+        HttpMethod method,
+        string entitySet,
+        IDictionary<string, object> key,
+        object? payload,
+        CancellationToken cancellationToken)
+    {
+        if (_httpClientFactory is null)
+        {
+            throw new InvalidOperationException(
+                "Composite-key write operations require the IHttpClientFactory-based constructor of " +
+                "ODataClientAdapter. Production DI uses the two-argument constructor; the single-argument " +
+                "constructor is for guard tests that never issue HTTP traffic.");
+        }
+
+        // requestUrl is a NON-ROOTED relative URI ("EntitySet(...)", no leading '/'). It is resolved
+        // against the named client's HttpClient.BaseAddress, which ApplicationDependencyInjection
+        // always sets via NormaliseBaseUrl (url.TrimEnd('/') + "/"), i.e. it ALWAYS ends with '/'.
+        // That trailing slash is what makes a non-rooted relative compose correctly and PRESERVE the
+        // base path segment (e.g. "https://host/fo/" + "LedgerJournalHeaders(...)" =>
+        // "https://host/fo/LedgerJournalHeaders(...)"). Without it, Uri composition would drop "/fo".
+        string requestUrl = BuildCompositeKeyUrl(entitySet, key);
+
+        using var request = new HttpRequestMessage(method, requestUrl);
+        if (payload is not null && method != HttpMethod.Delete)
+        {
+            string json = System.Text.Json.JsonSerializer.Serialize(payload, CaseInsensitiveOptions);
+            request.Content = new StringContent(json, Encoding.UTF8, "application/json");
+        }
+
+        HttpClient client = _httpClientFactory.CreateClient("ODataClient");
+        using HttpResponseMessage response = await client.SendAsync(request, cancellationToken).ConfigureAwait(false);
+
+        string? body = response.Content is null
+            ? null
+            : await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+
+        return (response.StatusCode, body, requestUrl);
+    }
+
+    /// <summary>
+    /// Issues every item of a composite-keyed batch as an individual HTTP request (composite-keyed
+    /// entities cannot use PanoramicData's atomic changeset), assembling a per-item
+    /// <see cref="BatchOperationResult"/> in original index order so the existing
+    /// <c>MapBatchResponse</c>/<c>BuildBatchErrors</c> contract is preserved. Per-item failures are
+    /// collected, never thrown — so a partial failure surfaces as failed indices, not an exception.
+    /// </summary>
+    private static async Task<IReadOnlyList<BatchOperationResult>> SendCompositeKeyBatchAsync(
+        int count,
+        Func<int, CancellationToken, Task<(HttpStatusCode StatusCode, string? Body, string RequestUrl)>> sendComposite,
+        CancellationToken cancellationToken)
+    {
+        var results = new List<BatchOperationResult>(count);
+
+        for (int i = 0; i < count; i++)
+        {
+            (HttpStatusCode statusCode, string? body, _) =
+                await sendComposite(i, cancellationToken).ConfigureAwait(false);
+
+            int code = (int)statusCode;
+            bool isSuccess = code is >= 200 and <= 299;
+            results.Add(new BatchOperationResult
+            {
+                Index = i,
+                StatusCode = code,
+                IsSuccess = isSuccess,
+                ErrorMessage = isSuccess ? null : $"HTTP {code}",
+                ResponseBody = body
+            });
+        }
+
+        return results;
+    }
+
+    /// <summary>
+    /// Builds the keyed URL segment <c>EntitySet(field=literal,…)</c> for a composite key, reusing
+    /// the same OData v4 literal formatter (<see cref="IntegratoRODataExpressionTranslator.FormatValue"/>)
+    /// as the filter/read path. Validates each field name and rejects empty dictionaries, mirroring
+    /// <see cref="FindByKeyAsync{TEntity}"/>.
+    /// </summary>
+    private static string BuildCompositeKeyUrl(string entitySet, IDictionary<string, object> key)
+    {
+        if (key.Count == 0)
+        {
+            throw new ArgumentException(
+                "Composite key dictionary must contain at least one key field. " +
+                "An empty dictionary would emit a keyless URL segment.",
+                nameof(key));
+        }
+
+        foreach (KeyValuePair<string, object> kv in key)
+        {
+            if (!IsValidODataFieldName(kv.Key))
+            {
+                throw new ArgumentException(
+                    $"Composite key field name '{kv.Key}' is not a valid OData property identifier. " +
+                    "Keys must match the pattern ^[A-Za-z_][A-Za-z0-9_.]*$ and come from entity " +
+                    "reflection (attribute-derived wire names), not user input.",
+                    nameof(key));
+            }
+        }
+
+        string segments = string.Join(
+            ",",
+            key.Select(kv => $"{kv.Key}={IntegratoRODataExpressionTranslator.FormatValue(kv.Value)}"));
+
+        return $"{entitySet}({segments})";
+    }
+
+    /// <summary>
+    /// Maps a non-success composite-key write response to the PanoramicData exception the existing
+    /// <c>ODataExceptionHandler</c> expects: 404 → <see cref="ODataNotFoundException"/>; any other
+    /// non-2xx → <see cref="ODataClientException"/> carrying status, body, and request URL.
+    /// </summary>
+    private static ODataClientException CreateMappableException(int statusCode, string? responseBody, string requestUrl)
+    {
+        if (statusCode == 404)
+        {
+            return new ODataNotFoundException(
+                $"Entity at '{requestUrl}' was not found (HTTP 404).", requestUrl);
+        }
+
+        return new ODataClientException(
+            $"OData request to '{requestUrl}' failed with HTTP {statusCode}.",
+            statusCode,
+            responseBody,
+            requestUrl);
     }
 
     /// <summary>

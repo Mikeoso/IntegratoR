@@ -1,3 +1,4 @@
+using System;
 using System.Linq.Expressions;
 using FluentResults;
 using IntegratoR.Abstractions.Interfaces.Entity;
@@ -33,9 +34,36 @@ public interface IODataService<TEntity> : IService<TEntity> where TEntity : IEnt
     /// <param name="top">The maximum number of entities to return. Corresponds to the OData `$top` query option.</param>
     /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
     /// <returns>A <see cref="Result{T}"/> containing a collection of entities that match the specified criteria.</returns>
+    [Obsolete("Since v1.4.0; the Func-based orderBy was never applied to the OData query (it was silently dropped). Use the overload taking IReadOnlyList<(Expression<Func<TEntity, object>> KeySelector, bool Descending)> orderBy.")]
     Task<Result<IEnumerable<TEntity>>> QueryAsync(
         Expression<Func<TEntity, bool>>? filter = null,
         Func<IQueryable<TEntity>, IOrderedQueryable<TEntity>>? orderBy = null,
+        Expression<Func<TEntity, object>>? expand = null,
+        Expression<Func<TEntity, object>>? select = null,
+        int? skip = null,
+        int? top = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Asynchronously retrieves a collection of entities using a comprehensive set of OData query
+    /// options, including a strongly-typed <c>$orderby</c> specification that honours
+    /// <c>[JsonPropertyName]</c> on each key selector.
+    /// </summary>
+    /// <param name="filter">A LINQ expression to filter the entities. Corresponds to the OData `$filter` query option.</param>
+    /// <param name="orderBy">
+    /// An ordered list of <c>(keySelector, descending)</c> tuples specifying the sort order.
+    /// Corresponds to the OData `$orderby` query option. Each key selector's member path honours
+    /// <c>[JsonPropertyName]</c>, so D365 camelCase wire names sort correctly.
+    /// </param>
+    /// <param name="expand">A LINQ expression to include related entities (navigation properties). Corresponds to the OData `$expand` query option.</param>
+    /// <param name="select">A LINQ expression to select a subset of properties. Corresponds to the OData `$select` query option.</param>
+    /// <param name="skip">The number of entities to skip for paging. Corresponds to the OData `$skip` query option.</param>
+    /// <param name="top">The maximum number of entities to return. Corresponds to the OData `$top` query option.</param>
+    /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
+    /// <returns>A <see cref="Result{T}"/> containing a collection of entities that match the specified criteria.</returns>
+    Task<Result<IEnumerable<TEntity>>> QueryAsync(
+        Expression<Func<TEntity, bool>>? filter,
+        IReadOnlyList<(Expression<Func<TEntity, object>> KeySelector, bool Descending)>? orderBy,
         Expression<Func<TEntity, object>>? expand = null,
         Expression<Func<TEntity, object>>? select = null,
         int? skip = null,

@@ -42,13 +42,19 @@ public interface IODataClientAdapter
         where TEntity : class, IEntity;
 
     /// <summary>
-    /// Queries entities with optional filter, expand, select, skip, and top parameters.
+    /// Queries entities with optional filter, expand, select, order-by, skip, and top parameters.
     /// </summary>
+    /// <param name="orderBy">
+    /// Optional ordered list of <c>(keySelector, descending)</c> tuples translated into an OData
+    /// <c>$orderby</c> clause. Each key selector honours <c>[JsonPropertyName]</c> on the member
+    /// path, so D365 camelCase wire names (e.g. <c>dataAreaId</c>) sort correctly.
+    /// </param>
     Task<IEnumerable<TEntity>> FindEntriesAsync<TEntity>(
         string entitySet,
         Expression<Func<TEntity, bool>>? filter = null,
         Expression<Func<TEntity, object>>? expand = null,
         Expression<Func<TEntity, object>>? select = null,
+        IReadOnlyList<(Expression<Func<TEntity, object>> KeySelector, bool Descending)>? orderBy = null,
         int? skip = null,
         int? top = null,
         CancellationToken cancellationToken = default)
@@ -58,6 +64,18 @@ public interface IODataClientAdapter
     /// Updates an existing entity via OData PATCH.
     /// The payload can be a <typeparamref name="TEntity"/> instance or an <see cref="IDictionary{TKey, TValue}"/> for partial payloads.
     /// </summary>
+    /// <param name="entitySet">The OData entity set name.</param>
+    /// <param name="key">
+    /// Either a scalar key value (for single-key entities) or an
+    /// <see cref="IDictionary{TKey, TValue}"/> of <c>wireName → value</c> pairs for composite
+    /// keys. Composite (dictionary) keys are routed through a raw-HttpClient bypass that PATCHes
+    /// the keyed URL <c>EntitySet(field=literal,…)</c>, because PanoramicData's <c>Key(object)</c>
+    /// path cannot bind a dictionary. Each dictionary key must be the <b>OData wire name</b>
+    /// (what appears in a <c>$filter</c>), obtained from entity reflection via
+    /// <c>PropertyNameResolver</c>, and must match <c>^[A-Za-z_][A-Za-z0-9_.]*$</c>.
+    /// </param>
+    /// <param name="payload">The PATCH payload (entity instance or partial dictionary).</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     Task<TEntity> UpdateAsync<TEntity>(
         string entitySet,
         object key,
@@ -68,6 +86,17 @@ public interface IODataClientAdapter
     /// <summary>
     /// Deletes an entity by key via OData DELETE.
     /// </summary>
+    /// <param name="entitySet">The OData entity set name.</param>
+    /// <param name="key">
+    /// Either a scalar key value (for single-key entities) or an
+    /// <see cref="IDictionary{TKey, TValue}"/> of <c>wireName → value</c> pairs for composite
+    /// keys. Composite (dictionary) keys are routed through a raw-HttpClient bypass that DELETEs
+    /// the keyed URL <c>EntitySet(field=literal,…)</c>, because PanoramicData's <c>Key(object)</c>
+    /// path cannot bind a dictionary. Each dictionary key must be the <b>OData wire name</b>
+    /// (what appears in a <c>$filter</c>), obtained from entity reflection via
+    /// <c>PropertyNameResolver</c>, and must match <c>^[A-Za-z_][A-Za-z0-9_.]*$</c>.
+    /// </param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     Task DeleteAsync(
         string entitySet,
         object key,

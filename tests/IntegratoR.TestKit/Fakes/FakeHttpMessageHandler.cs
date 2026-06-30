@@ -15,12 +15,21 @@ public sealed class FakeHttpMessageHandler : HttpMessageHandler
 {
     private readonly Queue<HttpResponseMessage> _responses = new();
     private readonly List<HttpRequestMessage> _sentRequests = new();
+    private readonly List<string?> _sentRequestBodies = new();
 
     /// <summary>
     /// Gets a read-only view of all <see cref="HttpRequestMessage"/> instances that were sent
     /// through this handler in the order they were received.
     /// </summary>
     public IReadOnlyList<HttpRequestMessage> SentRequests => _sentRequests.AsReadOnly();
+
+    /// <summary>
+    /// Gets a read-only view of the request body strings captured at send time, indexed in
+    /// lockstep with <see cref="SentRequests"/>. Captured eagerly so the body is still readable
+    /// after the caller disposes the <see cref="HttpRequestMessage"/> (which disposes its content).
+    /// A request with no content yields <c>null</c>.
+    /// </summary>
+    public IReadOnlyList<string?> SentRequestBodies => _sentRequestBodies.AsReadOnly();
 
     /// <summary>
     /// Enqueues a pre-built <see cref="HttpResponseMessage"/> to be returned by the next
@@ -51,7 +60,7 @@ public sealed class FakeHttpMessageHandler : HttpMessageHandler
     public HttpClient CreateClient() => new(this, disposeHandler: false);
 
     /// <inheritdoc/>
-    protected override Task<HttpResponseMessage> SendAsync(
+    protected override async Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request,
         CancellationToken cancellationToken)
     {
@@ -60,6 +69,13 @@ public sealed class FakeHttpMessageHandler : HttpMessageHandler
                 "No more queued responses. Call Queue() before making HTTP requests.");
 
         _sentRequests.Add(request);
-        return Task.FromResult(_responses.Dequeue());
+
+        // Capture the body eagerly so it survives the caller disposing the request.
+        string? body = request.Content is null
+            ? null
+            : await request.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        _sentRequestBodies.Add(body);
+
+        return _responses.Dequeue();
     }
 }
