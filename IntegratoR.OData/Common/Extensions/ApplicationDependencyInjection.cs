@@ -50,6 +50,11 @@ internal static class ApplicationDependencyInjection
 
     private static void AddODataDependencies(this IServiceCollection services)
     {
+        // Fail fast on dangerous or incomplete ODataSettings (an auth header smuggled into
+        // DefaultHeaders, or an authentication mode missing its credentials).
+        services.AddSingleton<IValidateOptions<ODataSettings>, ODataSettingsValidator>();
+        services.AddOptions<ODataSettings>().ValidateOnStart();
+
         // Register supporting services
         services.AddTransient<ODataAuthenticationHandler>();
         services.AddSingleton<ODataMetadataProvider>();

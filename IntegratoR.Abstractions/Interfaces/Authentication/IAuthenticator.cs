@@ -32,5 +32,20 @@ public interface IAuthenticator
     /// contains the access token string, ready to be used in an HTTP Authorization header (e.g., "Bearer {token}").
     /// On failure, it contains a structured <see cref="Error"/> detailing the reason for the authentication failure.
     /// </returns>
+    [Obsolete("Since v1.4.0; use the overload that accepts a CancellationToken.")]
     Task<Result<string>> GetAccessTokenAsync(string clientId, string clientSecret, string tenantId, string resource);
+
+    /// <summary>
+    /// Asynchronously acquires a valid OAuth 2.0 access token for a specified D365 F&amp;O resource.
+    /// </summary>
+    /// <param name="clientId">The Client ID (or Application ID) of the Azure AD App Registration.</param>
+    /// <param name="clientSecret">The Client Secret of the Azure AD App Registration.</param>
+    /// <param name="tenantId">The Azure AD Tenant ID where the application is registered.</param>
+    /// <param name="resource">The URI of the target resource/API to which access is being requested.</param>
+    /// <param name="cancellationToken">A token to observe while waiting for the token acquisition to complete.</param>
+    /// <returns>
+    /// A <see cref="Task"/> that resolves to a <see cref="Result{TValue}"/> carrying the access token on
+    /// success, or a structured error on failure.
+    /// </returns>
+    Task<Result<string>> GetAccessTokenAsync(string clientId, string clientSecret, string tenantId, string resource, CancellationToken cancellationToken);
 }

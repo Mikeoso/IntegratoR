@@ -21,6 +21,19 @@ namespace IntegratoR.OData.Tests.Common.Extensions;
 public class ApplicationDependencyInjectionTests
 {
     /// <summary>
+    /// Applies valid ApiKey credentials to <paramref name="options"/> so the
+    /// <see cref="ODataSettingsValidator"/> (registered with <c>ValidateOnStart</c>) passes when
+    /// <c>IOptions&lt;ODataSettings&gt;.Value</c> is materialised — required by any test that builds
+    /// the provider and reads settings or resolves the HttpClient/ODataClient.
+    /// </summary>
+    private static void ApplyValidApiKeyCredentials(ODataSettings options)
+    {
+        options.Authentication.Mode = AuthenticationMode.ApiKey;
+        options.Authentication.ApiManagement.SubscriptionKey = "test-subscription-key";
+        options.Authentication.ApiManagement.SubscriptionHeaderKey = "Ocp-Apim-Subscription-Key";
+    }
+
+    /// <summary>
     /// Verifies that settings are correctly bound from IConfiguration using the config-based overload.
     /// </summary>
     [Fact]
@@ -33,6 +46,7 @@ public class ApplicationDependencyInjectionTests
                 ["ODataSettings:Url"] = "https://test.operations.dynamics.com/data",
                 ["ODataSettings:Authentication:Mode"] = "OAuth",
                 ["ODataSettings:Authentication:OAuth:ClientId"] = "test-client-id",
+                ["ODataSettings:Authentication:OAuth:ClientSecret"] = "test-client-secret",
                 ["ODataSettings:Authentication:OAuth:TenantId"] = "test-tenant-id",
                 ["ODataSettings:Authentication:OAuth:Resource"] = "https://test.operations.dynamics.com",
             })
@@ -99,6 +113,8 @@ public class ApplicationDependencyInjectionTests
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["ODataSettings:Url"] = "https://test.operations.dynamics.com/data",
+                ["ODataSettings:Authentication:Mode"] = "ApiKey",
+                ["ODataSettings:Authentication:ApiManagement:SubscriptionKey"] = "test-sub-key",
                 ["ODataSettings:MetadataFilePath"] = "metadata.xml",
                 ["ODataSettings:Resilience:EnableRetries"] = "false",
                 ["ODataSettings:Resilience:RetryCount"] = "5",
@@ -142,6 +158,9 @@ public class ApplicationDependencyInjectionTests
         {
             options.Url = "https://action.operations.dynamics.com/data";
             options.Authentication.OAuth.ClientId = "action-client-id";
+            // Mode defaults to ApiKey; supply a subscription key so ODataSettingsValidator
+            // (ValidateOnStart) passes when IOptions<ODataSettings>.Value is materialised below.
+            options.Authentication.ApiManagement.SubscriptionKey = "action-sub-key";
         });
         var provider = services.BuildServiceProvider();
 
@@ -201,7 +220,11 @@ public class ApplicationDependencyInjectionTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton<IAuthenticator>(Substitute.For<IAuthenticator>());
-        services.AddODataClient(options => options.Url = "https://test.example.com");
+        services.AddODataClient(options =>
+        {
+            options.Url = "https://test.example.com";
+            ApplyValidApiKeyCredentials(options);
+        });
 
         // Act
         var provider = services.BuildServiceProvider();
@@ -252,7 +275,11 @@ public class ApplicationDependencyInjectionTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton<IAuthenticator>(Substitute.For<IAuthenticator>());
-        services.AddODataClient(options => options.Url = configuredUrl);
+        services.AddODataClient(options =>
+        {
+            options.Url = configuredUrl;
+            ApplyValidApiKeyCredentials(options);
+        });
 
         var provider = services.BuildServiceProvider();
 
@@ -324,7 +351,11 @@ public class ApplicationDependencyInjectionTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton<IAuthenticator>(Substitute.For<IAuthenticator>());
-        services.AddODataClient(options => options.Url = configuredUrl);
+        services.AddODataClient(options =>
+        {
+            options.Url = configuredUrl;
+            ApplyValidApiKeyCredentials(options);
+        });
 
         var provider = services.BuildServiceProvider();
 
@@ -373,7 +404,11 @@ public class ApplicationDependencyInjectionTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton<IAuthenticator>(Substitute.For<IAuthenticator>());
-        services.AddODataClient(options => options.Url = configuredUrl);
+        services.AddODataClient(options =>
+        {
+            options.Url = configuredUrl;
+            ApplyValidApiKeyCredentials(options);
+        });
 
         var provider = services.BuildServiceProvider();
 
@@ -387,5 +422,63 @@ public class ApplicationDependencyInjectionTests
         // Assert
         settings.Url.Should().Be(configuredUrl);
         settings.Url.Should().NotEndWith("/");
+    }
+
+    /// <summary>
+    /// Verifies that the <see cref="ODataSettingsValidator"/> registered with <c>ValidateOnStart</c>
+    /// rejects invalid configuration: materialising <c>IOptions&lt;ODataSettings&gt;.Value</c> throws
+    /// <see cref="OptionsValidationException"/> when OAuth mode is missing a credential OR an
+    /// authentication header is smuggled into DefaultHeaders. A fully valid config resolves cleanly.
+    /// </summary>
+    [Fact]
+    public void AddODataClient_InvalidSettings_ValidateOnStartThrowsOptionsValidationException()
+    {
+        // Arrange — OAuth mode missing ClientSecret (and tenant/resource).
+        var oauthServices = new ServiceCollection();
+        oauthServices.AddLogging();
+        oauthServices.AddSingleton<IAuthenticator>(Substitute.For<IAuthenticator>());
+        oauthServices.AddODataClient(options =>
+        {
+            options.Url = "https://test.example.com";
+            options.Authentication.Mode = AuthenticationMode.OAuth;
+            options.Authentication.OAuth.ClientId = "client-id";
+            // ClientSecret/TenantId/Resource intentionally left blank.
+        });
+        var oauthProvider = oauthServices.BuildServiceProvider();
+
+        // Act / Assert — OAuth missing credentials.
+        Action resolveOAuth = () => _ = oauthProvider.GetRequiredService<IOptions<ODataSettings>>().Value;
+        resolveOAuth.Should().Throw<OptionsValidationException>();
+
+        // Arrange — forbidden Authorization header smuggled into DefaultHeaders (otherwise valid ApiKey).
+        var headerServices = new ServiceCollection();
+        headerServices.AddLogging();
+        headerServices.AddSingleton<IAuthenticator>(Substitute.For<IAuthenticator>());
+        headerServices.AddODataClient(options =>
+        {
+            options.Url = "https://test.example.com";
+            ApplyValidApiKeyCredentials(options);
+            options.Authentication.ApiManagement.DefaultHeaders["Authorization"] = "Bearer leaked";
+        });
+        var headerProvider = headerServices.BuildServiceProvider();
+
+        // Act / Assert — forbidden header.
+        Action resolveHeader = () => _ = headerProvider.GetRequiredService<IOptions<ODataSettings>>().Value;
+        resolveHeader.Should().Throw<OptionsValidationException>();
+
+        // Arrange — fully valid ApiKey config must resolve without throwing.
+        var validServices = new ServiceCollection();
+        validServices.AddLogging();
+        validServices.AddSingleton<IAuthenticator>(Substitute.For<IAuthenticator>());
+        validServices.AddODataClient(options =>
+        {
+            options.Url = "https://test.example.com";
+            ApplyValidApiKeyCredentials(options);
+        });
+        var validProvider = validServices.BuildServiceProvider();
+
+        // Act / Assert — valid config resolves cleanly.
+        Action resolveValid = () => _ = validProvider.GetRequiredService<IOptions<ODataSettings>>().Value;
+        resolveValid.Should().NotThrow();
     }
 }

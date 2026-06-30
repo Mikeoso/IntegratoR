@@ -1,3 +1,6 @@
+using System.Collections.Concurrent;
+using System.Security.Cryptography;
+using System.Text;
 using FluentResults;
 using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.Abstractions.Interfaces.Authentication;
@@ -22,43 +25,60 @@ namespace IntegratoR.Application.Common.Authentication;
 /// </summary>
 /// <remarks>
 /// This implementation is responsible for the entire token lifecycle: checking the cache,
-/// acquiring a new token from Azure AD if necessary, and caching it for future use.
+/// acquiring a new token from Azure AD if necessary, and caching it for future use. The built
+/// <see cref="IConfidentialClientApplication"/> is reused per (clientId, tenantId, resource) so
+/// MSAL's own in-memory token cache is consulted before a network call is made.
 ///
-/// **Important Architectural Note:** This implementation uses <see cref="IMemoryCache"/>,
-/// which is local to a single server instance. While suitable for single-instance applications
-/// or development environments, it is **not appropriate** for stateless, multi-instance environments
-/// like Azure Functions on a Consumption Plan. In a scaled-out scenario, each function instance
-/// would have its own separate cache, leading to unnecessary token requests. For such environments,
-/// an implementation using <c>IDistributedCache</c> (backed by a service like Azure Cache for Redis)
-/// should be used instead to share the token across all instances.
+/// **Important Architectural Note:** the proactive-expiry token cache uses <see cref="IMemoryCache"/>,
+/// which is local to a single instance. For scaled-out, multi-instance environments an
+/// <c>IDistributedCache</c>-backed implementation should be used instead.
 /// </remarks>
 public class OAuthAuthenticator : IAuthenticator
 {
+    // Reuse the built confidential-client app per (clientId, tenantId, resource) so MSAL's internal
+    // token cache is reused instead of being discarded on every IMemoryCache miss.
+    private static readonly ConcurrentDictionary<string, IConfidentialClientApplication> AppCache = new();
+
     private readonly IMemoryCache _memoryCache;
+    private readonly Func<string, string, string, string, IConfidentialClientApplication> _appFactory;
+    private readonly Func<IConfidentialClientApplication, string[], CancellationToken, Task<AcquiredToken>> _tokenAcquirer;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="OAuthAuthenticator"/> class.
     /// </summary>
     /// <param name="memoryCache">The memory cache instance, injected via dependency injection.</param>
     public OAuthAuthenticator(IMemoryCache memoryCache)
+        : this(memoryCache, DefaultAppFactory, DefaultAcquireAsync)
+    {
+    }
+
+    /// <summary>
+    /// Test seam constructor. Lets unit tests substitute the confidential-client app factory and the
+    /// token-acquisition delegate so the MSAL network path can be exercised without a real Azure AD.
+    /// </summary>
+    internal OAuthAuthenticator(
+        IMemoryCache memoryCache,
+        Func<string, string, string, string, IConfidentialClientApplication> appFactory,
+        Func<IConfidentialClientApplication, string[], CancellationToken, Task<AcquiredToken>> tokenAcquirer)
     {
         _memoryCache = memoryCache;
+        _appFactory = appFactory;
+        _tokenAcquirer = tokenAcquirer;
     }
 
     /// <inheritdoc />
+    [Obsolete("Since v1.4.0; use the overload that accepts a CancellationToken.")]
+    public Task<Result<string>> GetAccessTokenAsync(string clientId, string clientSecret, string tenantId, string resource)
+        => GetAccessTokenAsync(clientId, clientSecret, tenantId, resource, CancellationToken.None);
+
+    /// <inheritdoc />
     /// <remarks>
-    /// This method first attempts to retrieve a valid token from the in-memory cache. If a token is
-    /// not found, it uses the MSAL <see cref="ConfidentialClientApplicationBuilder"/> to construct a
-    /// request to Azure AD.
-    ///
-    /// It uses the modern `/.default` scope, which is the recommended approach for the client
-    /// credentials flow, requesting all statically-defined application permissions for the given resource.
-    ///
-    /// Upon successful acquisition, the token is cached with a proactive expiration buffer of 5 minutes.
-    /// This is a crucial best practice to prevent race conditions and clock skew issues where the
-    /// application might attempt to use a token just as it expires.
+    /// Attempts to serve a cached token first; on a miss it acquires a new token via the reused
+    /// confidential-client app using the <c>/.default</c> scope, then caches it with a 5-minute
+    /// proactive-expiry buffer. All MSAL failures (service and client) are mapped to a failed
+    /// <see cref="Result{TValue}"/> rather than thrown.
     /// </remarks>
-    public async Task<Result<string>> GetAccessTokenAsync(string clientId, string clientSecret, string tenantId, string resource)
+    public async Task<Result<string>> GetAccessTokenAsync(string clientId, string clientSecret, string tenantId, string resource, CancellationToken cancellationToken)
     {
         // A unique cache key is generated based on the client and resource to ensure
         // tokens for different applications or environments do not collide.
@@ -71,30 +91,53 @@ public class OAuthAuthenticator : IAuthenticator
 
         try
         {
-            var confidentialClientApp = ConfidentialClientApplicationBuilder
-                .Create(clientId)
-                .WithClientSecret(clientSecret)
-                .WithAuthority(new Uri($"https://login.microsoftonline.com/{tenantId}"))
-                .Build();
+            // Include a hash of the secret in the cache key so a rotated client secret yields a fresh
+            // app (with a fresh MSAL token cache) instead of silently reusing a stale one. The raw
+            // secret is never placed in the key.
+            var secretHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(clientSecret)));
+            var appKey = $"{clientId}|{tenantId}|{resource}|{secretHash}";
+            IConfidentialClientApplication confidentialClientApp =
+                AppCache.GetOrAdd(appKey, _ => _appFactory(clientId, clientSecret, tenantId, resource));
 
-            // The "/.default" scope requests all application-level permissions that have been
-            // granted to this application registration for the specified resource.
+            // The "/.default" scope requests all application-level permissions granted to this
+            // application registration for the specified resource.
             var scopes = new[] { $"{resource}/.default" };
-            var authResult = await confidentialClientApp.AcquireTokenForClient(scopes).ExecuteAsync().ConfigureAwait(false);
+            AcquiredToken token = await _tokenAcquirer(confidentialClientApp, scopes, cancellationToken).ConfigureAwait(false);
 
-            // Proactively expire the cache entry 5 minutes before the actual token expires
-            // to avoid using an invalidated token due to clock skew or transit delays.
-            var cacheExpiration = authResult.ExpiresOn.Subtract(TimeSpan.FromMinutes(5));
-            _memoryCache.Set(tokenCacheKey, authResult.AccessToken, cacheExpiration);
+            // Proactively expire the cache entry 5 minutes before the actual token expires to avoid
+            // using an invalidated token due to clock skew or transit delays.
+            var cacheExpiration = token.ExpiresOn.Subtract(TimeSpan.FromMinutes(5));
+            _memoryCache.Set(tokenCacheKey, token.AccessToken, cacheExpiration);
 
-            return Result.Ok(authResult.AccessToken);
+            return Result.Ok(token.AccessToken);
         }
-        catch (MsalServiceException ex)
+        catch (MsalException ex)
         {
-            // Catching the specific MSAL exception allows us to create a rich, structured error
-            // that is agnostic of the underlying library, providing a stable error contract.
-            // The MSAL error code is included for easier debugging.
-            return Result.Fail<string>(new IntegrationError($"Auth.Msal.{ex.ErrorCode}", ex.Message, ErrorType.Failure, ex));
+            // Catch the MSAL BASE type so both MsalServiceException and MsalClientException map to a
+            // structured failed Result (never thrown). The short MSAL error code (e.g. "invalid_client")
+            // is safe to surface; the full ex.Message can carry AADSTS codes / tenant IDs, so it is kept
+            // only on the inner exception for server-side diagnostics, never in the error message.
+            var code = string.IsNullOrEmpty(ex.ErrorCode) ? "Unknown" : ex.ErrorCode;
+            return Result.Fail<string>(new IntegrationError($"Auth.Msal.{code}", "Token acquisition failed", ErrorType.Failure, ex));
         }
     }
+
+    private static IConfidentialClientApplication DefaultAppFactory(string clientId, string clientSecret, string tenantId, string resource)
+        => ConfidentialClientApplicationBuilder
+            .Create(clientId)
+            .WithClientSecret(clientSecret)
+            .WithAuthority(new Uri($"https://login.microsoftonline.com/{tenantId}"))
+            .Build();
+
+    private static async Task<AcquiredToken> DefaultAcquireAsync(IConfidentialClientApplication app, string[] scopes, CancellationToken cancellationToken)
+    {
+        AuthenticationResult result = await app.AcquireTokenForClient(scopes).ExecuteAsync(cancellationToken).ConfigureAwait(false);
+        return new AcquiredToken(result.AccessToken, result.ExpiresOn);
+    }
 }
+
+/// <summary>
+/// Minimal token-acquisition result used by the <see cref="OAuthAuthenticator"/> test seam so the
+/// acquisition path can be substituted without constructing an MSAL <see cref="AuthenticationResult"/>.
+/// </summary>
+internal sealed record AcquiredToken(string AccessToken, DateTimeOffset ExpiresOn);

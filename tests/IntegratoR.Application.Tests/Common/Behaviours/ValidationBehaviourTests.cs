@@ -44,8 +44,8 @@ public class ValidationBehaviourTests
     {
         // Arrange
         var validator = Substitute.For<IValidator<TestGenericRequest>>();
-        validator.Validate(Arg.Any<ValidationContext<TestGenericRequest>>())
-            .Returns(new ValidationResult());
+        validator.ValidateAsync(Arg.Any<ValidationContext<TestGenericRequest>>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new ValidationResult()));
         var sut = new ValidationBehaviour<TestGenericRequest, Result<string>>(
             new[] { validator });
         var request = new TestGenericRequest();
@@ -65,8 +65,8 @@ public class ValidationBehaviourTests
     {
         // Arrange
         var validator = Substitute.For<IValidator<TestGenericRequest>>();
-        validator.Validate(Arg.Any<ValidationContext<TestGenericRequest>>())
-            .Returns(new ValidationResult(new[] { new ValidationFailure("Entity", "Entity is required.") }));
+        validator.ValidateAsync(Arg.Any<ValidationContext<TestGenericRequest>>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new ValidationResult(new[] { new ValidationFailure("Entity", "Entity is required.") })));
         var sut = new ValidationBehaviour<TestGenericRequest, Result<string>>(new[] { validator });
         var request = new TestGenericRequest();
         var next = Substitute.For<RequestHandlerDelegate<Result<string>>>();
@@ -84,8 +84,8 @@ public class ValidationBehaviourTests
     {
         // Arrange
         var validator = Substitute.For<IValidator<TestGenericRequest>>();
-        validator.Validate(Arg.Any<ValidationContext<TestGenericRequest>>())
-            .Returns(new ValidationResult(new[] { new ValidationFailure("Entity", "Entity is required.") }));
+        validator.ValidateAsync(Arg.Any<ValidationContext<TestGenericRequest>>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new ValidationResult(new[] { new ValidationFailure("Entity", "Entity is required.") })));
         var sut = new ValidationBehaviour<TestGenericRequest, Result<string>>(new[] { validator });
         var request = new TestGenericRequest();
         var next = Substitute.For<RequestHandlerDelegate<Result<string>>>();
@@ -103,8 +103,8 @@ public class ValidationBehaviourTests
     {
         // Arrange
         var validator = Substitute.For<IValidator<TestGenericRequest>>();
-        validator.Validate(Arg.Any<ValidationContext<TestGenericRequest>>())
-            .Returns(new ValidationResult(new[] { new ValidationFailure("Entity", "Entity is required.") }));
+        validator.ValidateAsync(Arg.Any<ValidationContext<TestGenericRequest>>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new ValidationResult(new[] { new ValidationFailure("Entity", "Entity is required.") })));
         var sut = new ValidationBehaviour<TestGenericRequest, Result<string>>(new[] { validator });
         var request = new TestGenericRequest();
         var next = Substitute.For<RequestHandlerDelegate<Result<string>>>();
@@ -122,8 +122,8 @@ public class ValidationBehaviourTests
     {
         // Arrange
         var validator = Substitute.For<IValidator<TestGenericRequest>>();
-        validator.Validate(Arg.Any<ValidationContext<TestGenericRequest>>())
-            .Returns(new ValidationResult(new[] { new ValidationFailure("Entity", "Error") }));
+        validator.ValidateAsync(Arg.Any<ValidationContext<TestGenericRequest>>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new ValidationResult(new[] { new ValidationFailure("Entity", "Error") })));
         var sut = new ValidationBehaviour<TestGenericRequest, Result<string>>(new[] { validator });
         var request = new TestGenericRequest();
         var next = Substitute.For<RequestHandlerDelegate<Result<string>>>();
@@ -141,8 +141,8 @@ public class ValidationBehaviourTests
     {
         // Arrange
         var validator = Substitute.For<IValidator<TestNonGenericRequest>>();
-        validator.Validate(Arg.Any<ValidationContext<TestNonGenericRequest>>())
-            .Returns(new ValidationResult(new[] { new ValidationFailure("Entity", "Error") }));
+        validator.ValidateAsync(Arg.Any<ValidationContext<TestNonGenericRequest>>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new ValidationResult(new[] { new ValidationFailure("Entity", "Error") })));
         var sut = new ValidationBehaviour<TestNonGenericRequest, Result>(new[] { validator });
         var request = new TestNonGenericRequest();
         var next = Substitute.For<RequestHandlerDelegate<Result>>();
@@ -160,12 +160,12 @@ public class ValidationBehaviourTests
     {
         // Arrange
         var validator = Substitute.For<IValidator<TestGenericRequest>>();
-        validator.Validate(Arg.Any<ValidationContext<TestGenericRequest>>())
-            .Returns(new ValidationResult(new[]
+        validator.ValidateAsync(Arg.Any<ValidationContext<TestGenericRequest>>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new ValidationResult(new[]
             {
                 new ValidationFailure("Field1", "First error message"),
                 new ValidationFailure("Field2", "Second error message")
-            }));
+            })));
         var sut = new ValidationBehaviour<TestGenericRequest, Result<string>>(new[] { validator });
         var request = new TestGenericRequest();
         var next = Substitute.For<RequestHandlerDelegate<Result<string>>>();
@@ -177,5 +177,57 @@ public class ValidationBehaviourTests
         result.IsFailed.Should().BeTrue();
         result.Errors.Should().HaveCount(1);
         result.Errors.First().Message.Should().Be("First error message");
+    }
+
+    [Fact]
+    public async Task Handle_AsyncValidator_RunsAndForwardsCancellationToken()
+    {
+        // Arrange
+        using var cts = new CancellationTokenSource();
+        CancellationToken token = cts.Token;
+
+        var validator = Substitute.For<IValidator<TestGenericRequest>>();
+        validator.ValidateAsync(Arg.Any<ValidationContext<TestGenericRequest>>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new ValidationResult()));
+        var sut = new ValidationBehaviour<TestGenericRequest, Result<string>>(new[] { validator });
+        var request = new TestGenericRequest();
+        var next = Substitute.For<RequestHandlerDelegate<Result<string>>>();
+        next(Arg.Any<CancellationToken>()).Returns(Result.Ok("value"));
+
+        // Act
+        var result = await sut.Handle(request, next, token);
+
+        // Assert -- the validator was invoked asynchronously with the exact token threaded through.
+        result.IsSuccess.Should().BeTrue();
+        await validator.Received(1)
+            .ValidateAsync(Arg.Any<ValidationContext<TestGenericRequest>>(), token);
+    }
+
+    [Fact]
+    public async Task Handle_TwoSeparateValidators_AggregatesFailuresAcrossValidators()
+    {
+        // Arrange
+        var validator1 = Substitute.For<IValidator<TestGenericRequest>>();
+        validator1.ValidateAsync(Arg.Any<ValidationContext<TestGenericRequest>>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new ValidationResult(new[] { new ValidationFailure("Field1", "First validator error") })));
+
+        var validator2 = Substitute.For<IValidator<TestGenericRequest>>();
+        validator2.ValidateAsync(Arg.Any<ValidationContext<TestGenericRequest>>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new ValidationResult(new[] { new ValidationFailure("Field2", "Second validator error") })));
+
+        var sut = new ValidationBehaviour<TestGenericRequest, Result<string>>(new[] { validator1, validator2 });
+        var request = new TestGenericRequest();
+        var next = Substitute.For<RequestHandlerDelegate<Result<string>>>();
+
+        // Act
+        var result = await sut.Handle(request, next, CancellationToken.None);
+
+        // Assert -- both validators ran; the first aggregated failure surfaces as the error.
+        await validator1.Received(1).ValidateAsync(Arg.Any<ValidationContext<TestGenericRequest>>(), Arg.Any<CancellationToken>());
+        await validator2.Received(1).ValidateAsync(Arg.Any<ValidationContext<TestGenericRequest>>(), Arg.Any<CancellationToken>());
+        result.IsFailed.Should().BeTrue();
+        result.Errors.Should().HaveCount(1);
+        result.Errors.First().Message.Should().Be("First validator error");
+        await next.DidNotReceive()(Arg.Any<CancellationToken>());
     }
 }

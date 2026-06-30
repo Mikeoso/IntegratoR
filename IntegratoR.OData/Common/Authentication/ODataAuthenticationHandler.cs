@@ -73,7 +73,7 @@ public class ODataAuthenticationHandler : DelegatingHandler
     {
         if (_settings.Authentication.Mode == AuthenticationMode.OAuth)
         {
-            Result<string> tokenResult = await _authenticator.GetAccessTokenAsync(_settings.Authentication.OAuth.ClientId, _settings.Authentication.OAuth.ClientSecret, _settings.Authentication.OAuth.TenantId, _settings.Authentication.OAuth.Resource).ConfigureAwait(false);
+            Result<string> tokenResult = await _authenticator.GetAccessTokenAsync(_settings.Authentication.OAuth.ClientId, _settings.Authentication.OAuth.ClientSecret, _settings.Authentication.OAuth.TenantId, _settings.Authentication.OAuth.Resource, cancellationToken).ConfigureAwait(false);
 
             if (tokenResult.IsSuccess)
             {
@@ -83,7 +83,7 @@ public class ODataAuthenticationHandler : DelegatingHandler
             {
                 return new HttpResponseMessage(HttpStatusCode.Unauthorized)
                 {
-                    ReasonPhrase = $"Failed to acquire F&O OAuth token: {tokenResult.GetError()?.Message}"
+                    ReasonPhrase = "Authentication failed"
                 };
             }
         }

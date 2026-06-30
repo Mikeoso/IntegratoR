@@ -200,6 +200,29 @@ public class ODataExceptionHandlerTests
     }
 
     /// <summary>
+    /// Security: a 401 must map to a fixed, generic error message that does NOT echo the underlying
+    /// exception detail (tenant IDs, AADSTS codes, MSAL specifics). The message is the constant
+    /// "Authentication or authorisation failure" — the full detail stays server-side in the log only.
+    /// </summary>
+    [Fact]
+    public async Task HandleException_Unauthorized_MessageIsGenericAndOmitsExceptionDetail()
+    {
+        // Arrange
+        var handler = CreateHandler();
+
+        // Act
+        var result = await handler.ExecuteAsync(
+            "Test",
+            () => throw new ODataUnauthorizedException("AADSTS500011 tenant 1111-2222-3333 directory not found"),
+            cancellationToken: CancellationToken.None);
+
+        // Assert
+        result.Should().BeFailed();
+        result.GetError()!.Message.Should().Be("Authentication or authorisation failure");
+        result.GetError()!.Message.Should().NotContain("AADSTS");
+    }
+
+    /// <summary>
     /// Verifies that ODataForbiddenException maps to the Unauthorized error code.
     /// </summary>
     [Fact]

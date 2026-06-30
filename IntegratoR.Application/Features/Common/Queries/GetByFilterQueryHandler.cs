@@ -51,7 +51,7 @@ public class GetByFilterQueryHandler<TEntity> : IRequestHandler<GetByFilterQuery
     /// </returns>
     public async Task<Result<IEnumerable<TEntity>>> Handle(GetByFilterQuery<TEntity> request, CancellationToken cancellationToken)
     {
-        _logger.LogInformation("Handling GetByFilterQuery for {EntityType} with filter: {Filter}", typeof(TEntity).Name, request.Filter.ToString());
+        _logger.LogDebug("Handling GetByFilterQuery for {EntityType} with filter: {Filter}", typeof(TEntity).Name, request.Filter.ToString());
 
         var entitiesResult = await _service.FindAsync(request.Filter, cancellationToken).ConfigureAwait(false);
 

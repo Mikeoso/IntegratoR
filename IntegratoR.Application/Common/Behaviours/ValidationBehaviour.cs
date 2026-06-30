@@ -1,5 +1,6 @@
 using FluentResults;
 using FluentValidation;
+using FluentValidation.Results;
 using IntegratoR.Abstractions.Common.Results;
 using MediatR;
 
@@ -69,10 +70,9 @@ public class ValidationBehaviour<TRequest, TResponse> : IPipelineBehavior<TReque
     /// 3. If failures exist, it short-circuits the pipeline and returns a standardized validation error.
     /// 4. If validation succeeds, it calls the next delegate in the pipeline.
     ///
-    /// The complex reflection block for handling failures is necessary to dynamically create the correct
-    /// type of failed <see cref="IResult"/>, as <typeparamref name="TResponse"/> can be either the generic
-    /// <see cref="Result{TValue}"/> or the non-generic <see cref="Result"/>. This allows the behavior
-    /// to be universally applied to any command or query.
+    /// Failed results are produced via <see cref="ResultFactory.FailFromError{TResult}"/>, which builds the
+    /// correct closed type (<see cref="Result{TValue}"/> or the non-generic <see cref="Result"/>) so the
+    /// behaviour applies universally to any command or query.
     /// </remarks>
     public async Task<TResponse> Handle(TRequest request, RequestHandlerDelegate<TResponse> next, CancellationToken cancellationToken)
     {
@@ -84,12 +84,14 @@ public class ValidationBehaviour<TRequest, TResponse> : IPipelineBehavior<TReque
 
         var context = new ValidationContext<TRequest>(request);
 
-        // Execute all validators and aggregate their failures.
-        var validationFailures = _validators
-            .Select(validator => validator.Validate(context))
-            .SelectMany(validationResult => validationResult.Errors)
-            .Where(validationFailure => validationFailure is not null)
-            .ToList();
+        // Execute all validators sequentially (so async FluentValidation rules run) and aggregate
+        // their failures, forwarding the CancellationToken to each validator.
+        var validationFailures = new List<ValidationFailure>();
+        foreach (var validator in _validators)
+        {
+            var validationResult = await validator.ValidateAsync(context, cancellationToken).ConfigureAwait(false);
+            validationFailures.AddRange(validationResult.Errors.Where(validationFailure => validationFailure is not null));
+        }
 
         if (validationFailures.Any())
         {
@@ -97,28 +99,11 @@ public class ValidationBehaviour<TRequest, TResponse> : IPipelineBehavior<TReque
             var firstFailure = validationFailures.First();
             var error = new IntegrationError("Validation.Error", firstFailure.ErrorMessage, ErrorType.Validation);
 
-            // Dynamically create the correct type of failed Result (generic or non-generic).
-            var resultType = typeof(TResponse);
-            if (resultType.IsGenericType && resultType.GetGenericTypeDefinition() == typeof(Result<>))
-            {
-                var genericType = resultType.GetGenericArguments()[0];
-                var failMethod = typeof(Result)
-                    .GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
-                    .First(m => m.Name == "Fail" && m.IsGenericMethod
-                        && m.GetParameters().Length == 1
-                        && m.GetParameters()[0].ParameterType == typeof(IError))
-                    .MakeGenericMethod(genericType);
-
-                return (TResponse)failMethod!.Invoke(null, new object[] { error })!;
-            }
-            else
-            {
-                // This handles the non-generic Result case for commands that don't return a value.
-                return (TResponse)(object)Result.Fail(error);
-            }
+            // Build the correctly-typed failed Result (generic or non-generic) via the shared cached factory.
+            return ResultFactory.FailFromError<TResponse>(error);
         }
 
         // If validation was successful, proceed to the next behavior or the handler.
-        return await next();
+        return await next().ConfigureAwait(false);
     }
 }

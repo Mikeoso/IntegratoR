@@ -1,7 +1,5 @@
-using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Net;
-using System.Reflection;
 using System.Text.Json;
 using FluentResults;
 using IntegratoR.Abstractions.Common.Results;
@@ -27,8 +25,6 @@ namespace IntegratoR.OData.Common.Services;
 /// </remarks>
 public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
 {
-    private static readonly ConcurrentDictionary<Type, MethodInfo> FailSingleErrorCache = new();
-
     private readonly ILogger _logger;
     private readonly string _entityTypeName;
     private readonly AsyncRetryPolicy? _retryPolicy;
@@ -277,7 +273,7 @@ public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
         var (errorCode, errorMessage, errorType) = code switch
         {
             401 or 403 =>
-                ("Unauthorized", $"Authentication failed: {exception.Message}", ErrorType.Failure),
+                ("Unauthorized", "Authentication or authorisation failure", ErrorType.Failure),
             400 =>
                 ("ValidationFailed",
                     innerErrorDetail is not null
@@ -567,22 +563,7 @@ public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
     }
 
     private static TResult CreateFailResult<TResult>(IError error) where TResult : IResultBase
-    {
-        if (typeof(TResult).IsGenericType)
-        {
-            var genericType = typeof(TResult).GetGenericArguments()[0];
-            var failMethod = FailSingleErrorCache.GetOrAdd(genericType, type =>
-                typeof(Result)
-                    .GetMethods(BindingFlags.Public | BindingFlags.Static)
-                    .First(m => m.Name == "Fail" && m.IsGenericMethod
-                        && m.GetParameters().Length == 1
-                        && m.GetParameters()[0].ParameterType == typeof(IError))
-                    .MakeGenericMethod(type));
-            return (TResult)failMethod.Invoke(null, [error])!;
-        }
-
-        return (TResult)(object)Result.Fail(error);
-    }
+        => ResultFactory.FailFromError<TResult>(error);
 
     private void LogSuccess(
         OperationContext context,
