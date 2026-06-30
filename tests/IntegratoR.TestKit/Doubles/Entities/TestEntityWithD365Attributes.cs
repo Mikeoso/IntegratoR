@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using IntegratoR.Abstractions.Domain.Entities;
 using IntegratoR.OData.Common.Annotations;
 
@@ -13,13 +14,17 @@ public class TestEntityWithD365Attributes : BaseEntity<string>
 {
     /// <summary>
     /// Gets or sets the data area (company). Required, editable on create but not after.
+    /// First component of the composite key.
     /// </summary>
+    [Key]
     [ODataField(AllowEdit = false, IsRequired = true, EdmType = "Edm.String")]
     public required string DataAreaId { get; set; }
 
     /// <summary>
     /// Gets or sets the journal number. Not editable on create (server-generated) or update.
+    /// Second component of the composite key.
     /// </summary>
+    [Key]
     [ODataField(AllowEditOnCreate = false, AllowEdit = false, EdmType = "Edm.String")]
     public string? JournalBatchNumber { get; set; }
 
@@ -41,5 +46,5 @@ public class TestEntityWithD365Attributes : BaseEntity<string>
     public required decimal Amount { get; set; }
 
     /// <inheritdoc/>
-    public override object[] GetCompositeKey() => [DataAreaId, JournalBatchNumber ?? ""];
+    public override object[] GetCompositeKey() => [DataAreaId, JournalBatchNumber!];
 }

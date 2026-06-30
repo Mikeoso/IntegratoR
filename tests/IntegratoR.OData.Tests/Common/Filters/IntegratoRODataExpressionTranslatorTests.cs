@@ -681,4 +681,55 @@ public sealed class IntegratoRODataExpressionTranslatorTests
         second.Should().Be(first);
         third.Should().Be(first);
     }
+
+    /// <summary>
+    /// Single ascending key on a [JsonPropertyName("dataAreaId")] property must emit the camelCase
+    /// wire name (proving [JsonPropertyName] is honoured), with no <c>desc</c> suffix.
+    /// </summary>
+    [Fact]
+    public void ToOrderByString_SingleAscending_HonoursJsonPropertyName()
+    {
+        var orderBy = new (Expression<Func<JournalEntity, object>>, bool)[]
+        {
+            (x => x.DataAreaId, false)
+        };
+
+        var result = IntegratoRODataExpressionTranslator.ToOrderByString(orderBy);
+
+        result.Should().Be("dataAreaId");
+    }
+
+    /// <summary>
+    /// A descending key emits the <c>desc</c> suffix after the resolved wire name.
+    /// </summary>
+    [Fact]
+    public void ToOrderByString_SingleDescending_EmitsDescSuffix()
+    {
+        var orderBy = new (Expression<Func<JournalEntity, object>>, bool)[]
+        {
+            (x => x.DataAreaId, true)
+        };
+
+        var result = IntegratoRODataExpressionTranslator.ToOrderByString(orderBy);
+
+        result.Should().Be("dataAreaId desc");
+    }
+
+    /// <summary>
+    /// Multiple keys join with ", " and each honours its own wire-name resolution and direction:
+    /// the camelCase [JsonPropertyName] field ascending, followed by a PascalCase field descending.
+    /// </summary>
+    [Fact]
+    public void ToOrderByString_MultiKey_JoinsAndHonoursDirectionAndJsonPropertyName()
+    {
+        var orderBy = new (Expression<Func<JournalEntity, object>>, bool)[]
+        {
+            (x => x.DataAreaId, false),
+            (x => x.JournalBatchNumber, true)
+        };
+
+        var result = IntegratoRODataExpressionTranslator.ToOrderByString(orderBy);
+
+        result.Should().Be("dataAreaId, JournalBatchNumber desc");
+    }
 }

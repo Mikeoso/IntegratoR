@@ -80,6 +80,48 @@ internal static class IntegratoRODataExpressionTranslator
     }
 
     /// <summary>
+    /// Converts a strongly-typed order-by specification into an OData <c>$orderby</c> clause,
+    /// honouring <see cref="JsonPropertyNameAttribute"/> on each key selector's member path.
+    /// Emits <c>path</c> for ascending and <c>path desc</c> for descending, joined with <c>, </c>.
+    /// </summary>
+    /// <exception cref="NotSupportedException">
+    /// Thrown when a key selector does not resolve to a member access (e.g. an unsupported
+    /// expression form). Failing fast prevents emitting an invalid <c>$orderby=</c> query
+    /// parameter that the OData server would reject.
+    /// </exception>
+    internal static string ToOrderByString<T>(IReadOnlyList<(Expression<Func<T, object>> KeySelector, bool Descending)> orderBy)
+    {
+        ArgumentNullException.ThrowIfNull(orderBy);
+
+        var clauses = new List<string>(orderBy.Count);
+
+        foreach (var (keySelector, descending) in orderBy)
+        {
+            ArgumentNullException.ThrowIfNull(keySelector);
+
+            // The C# compiler inserts Convert(member, object) around value-type members because
+            // the selector returns object; unwrap it before requiring a MemberExpression.
+            Expression body = keySelector.Body;
+            if (body is UnaryExpression { NodeType: ExpressionType.Convert } convert)
+            {
+                body = convert.Operand;
+            }
+
+            if (body is not MemberExpression member)
+            {
+                throw new NotSupportedException(
+                    $"The order-by expression '{keySelector}' did not resolve to a member access. " +
+                    "Use a property access (x => x.Property).");
+            }
+
+            var path = GetMemberPath(member);
+            clauses.Add(descending ? $"{path} desc" : path);
+        }
+
+        return string.Join(", ", clauses);
+    }
+
+    /// <summary>
     /// Converts a navigation selector expression into an OData <c>$expand</c> clause supporting
     /// nested expand and per-segment <c>$select</c>.
     /// </summary>

@@ -98,14 +98,20 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
                 ErrorType.Validation)));
         }
 
+        var keyResult = BuildCompositeKeyObject(keyValues);
+        if (keyResult.IsFailed)
+        {
+            return Task.FromResult(Result.Fail<TEntity>(keyResult.Errors));
+        }
+
+        var key = keyResult.Value;
+
         return _exceptionHandler.ExecuteAsync(
             operationName: "GetByKey",
             operation: async () =>
             {
                 _logger.LogDebug("Retrieving {EntityType} by key: {@KeyValues}",
                     typeof(TEntity).Name, keyValues);
-
-                var key = BuildCompositeKeyObject(keyValues);
 
                 var entity = await _client
                     .FindByKeyAsync<TEntity>(_entitySetName, key, cancellationToken)
@@ -134,6 +140,14 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
                 ErrorType.Validation)));
         }
 
+        var keyResult = BuildCompositeKeyObject(entity.GetCompositeKey());
+        if (keyResult.IsFailed)
+        {
+            return Task.FromResult(Result.Fail<TEntity>(keyResult.Errors));
+        }
+
+        var key = keyResult.Value;
+
         return _exceptionHandler.ExecuteAsync(
             operationName: "Update",
             operation: async () =>
@@ -141,7 +155,6 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
                 _logger.LogDebug("Updating {EntityType} with key {@Key}",
                     typeof(TEntity).Name, entity.GetCompositeKey());
 
-                var key = BuildCompositeKeyObject(entity.GetCompositeKey());
                 var payload = CreatePayload(entity, isCreateOperation: false);
 
                 return await _client
@@ -163,14 +176,20 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
                 ErrorType.Validation)));
         }
 
+        var keyResult = BuildCompositeKeyObject(entity.GetCompositeKey());
+        if (keyResult.IsFailed)
+        {
+            return Task.FromResult(Result.Fail(keyResult.Errors));
+        }
+
+        var key = keyResult.Value;
+
         return _exceptionHandler.ExecuteNonQueryAsync(
             operationName: "Delete",
             operation: async () =>
             {
                 _logger.LogDebug("Deleting {EntityType} with key {@Key}",
                     typeof(TEntity).Name, entity.GetCompositeKey());
-
-                var key = BuildCompositeKeyObject(entity.GetCompositeKey());
 
                 await _client
                     .DeleteAsync(_entitySetName, key, cancellationToken)
@@ -186,6 +205,7 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
     #region IODataService Implementation
 
     /// <inheritdoc />
+    [Obsolete("Since v1.4.0; the Func-based orderBy was never applied to the OData query (it was silently dropped). Use the overload taking IReadOnlyList<(Expression<Func<TEntity, object>> KeySelector, bool Descending)> orderBy.")]
     public Task<Result<IEnumerable<TEntity>>> QueryAsync(
         Expression<Func<TEntity, bool>>? filter = null,
         Func<IQueryable<TEntity>, IOrderedQueryable<TEntity>>? orderBy = null,
@@ -195,10 +215,30 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
         int? top = null,
         CancellationToken cancellationToken = default)
     {
+        // orderBy is intentionally NOT forwarded — the Func-based shape cannot be translated to an
+        // OData $orderby clause and was always silently dropped. Use the typed overload below.
         return _exceptionHandler.ExecuteCollectionAsync(
             operationName: "Query",
             operation: async () => await _client
-                .FindEntriesAsync<TEntity>(_entitySetName, filter, expand, select, skip, top, cancellationToken)
+                .FindEntriesAsync<TEntity>(_entitySetName, filter, expand, select, orderBy: null, skip, top, cancellationToken)
+                .ConfigureAwait(false),
+            cancellationToken: cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public Task<Result<IEnumerable<TEntity>>> QueryAsync(
+        Expression<Func<TEntity, bool>>? filter,
+        IReadOnlyList<(Expression<Func<TEntity, object>> KeySelector, bool Descending)>? orderBy,
+        Expression<Func<TEntity, object>>? expand = null,
+        Expression<Func<TEntity, object>>? select = null,
+        int? skip = null,
+        int? top = null,
+        CancellationToken cancellationToken = default)
+    {
+        return _exceptionHandler.ExecuteCollectionAsync(
+            operationName: "Query",
+            operation: async () => await _client
+                .FindEntriesAsync<TEntity>(_entitySetName, filter, expand, select, orderBy, skip, top, cancellationToken)
                 .ConfigureAwait(false),
             cancellationToken: cancellationToken);
     }
@@ -259,11 +299,18 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
     {
         var entityList = entities as IList<TEntity> ?? entities.ToList();
 
+        var keysResult = BuildBatchKeys(entityList);
+        if (keysResult.IsFailed)
+        {
+            return Task.FromResult(Result.Fail(keysResult.Errors));
+        }
+
+        var keys = keysResult.Value;
+
         return _exceptionHandler.ExecuteNonQueryAsync(
             operationName: "DeleteBatch",
             operation: async () =>
             {
-                var keys = entityList.Select(e => BuildCompositeKeyObject(e.GetCompositeKey()));
                 IReadOnlyList<BatchOperationResult> results = await _client
                     .BatchDeleteAsync(_entitySetName, keys, cancellationToken)
                     .ConfigureAwait(false);
@@ -280,12 +327,20 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
     {
         var entityList = entities as IList<TEntity> ?? entities.ToList();
 
+        var keysResult = BuildBatchKeys(entityList);
+        if (keysResult.IsFailed)
+        {
+            return Task.FromResult(Result.Fail(keysResult.Errors));
+        }
+
+        var items = entityList
+            .Select((e, i) => (keysResult.Value[i], (IDictionary<string, object>)CreatePayload(e, isCreateOperation: false)))
+            .ToList();
+
         return _exceptionHandler.ExecuteNonQueryAsync(
             operationName: "UpdateBatch",
             operation: async () =>
             {
-                var items = entityList.Select(e =>
-                    (BuildCompositeKeyObject(e.GetCompositeKey()), (IDictionary<string, object>)CreatePayload(e, isCreateOperation: false)));
                 IReadOnlyList<BatchOperationResult> results = await _client
                     .BatchUpdateAsync(_entitySetName, items, cancellationToken)
                     .ConfigureAwait(false);
@@ -314,36 +369,80 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
 
     /// <summary>
     /// Builds a composite key object from key values by mapping them to key property names.
-    /// For single keys, returns the value directly. For composite keys, returns a dictionary.
+    /// For single keys, returns the value directly. For composite keys, returns a dictionary of
+    /// <c>wireName → value</c>. Returns a <see cref="ErrorType.Validation"/> failure when the
+    /// supplied value count does not match the number of <c>[Key]</c> properties, or when any key
+    /// element is null (a null key cannot identify an entity).
     /// </summary>
-    private object BuildCompositeKeyObject(object[] keyValues)
+    private static Result<object> BuildCompositeKeyObject(object[] keyValues)
     {
         if (keyValues.Length == 1)
         {
-            return keyValues[0];
+            if (keyValues[0] is null)
+            {
+                return Result.Fail<object>(new IntegrationError(
+                    $"{typeof(TEntity).Name}.InvalidKey",
+                    "The single key value was null; a null key cannot identify an entity.",
+                    ErrorType.Validation));
+            }
+
+            return Result.Ok(keyValues[0]);
         }
 
+        // GetProperties() order is undefined, so sort by MetadataToken (declaration order within
+        // the type) to keep each [Key] property zipped to its corresponding value deterministically.
         var keyProperties = KeyPropertyCache.GetOrAdd(typeof(TEntity), type =>
             type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
                 .Where(p => p.GetCustomAttribute<System.ComponentModel.DataAnnotations.KeyAttribute>() is not null)
+                .OrderBy(p => p.MetadataToken)
                 .ToArray());
 
-        if (keyProperties.Length == keyValues.Length)
+        if (keyProperties.Length != keyValues.Length)
         {
-            var keyDict = new Dictionary<string, object>();
-            for (var i = 0; i < keyProperties.Length; i++)
-            {
-                keyDict[PropertyNameResolver.Resolve(keyProperties[i])] = keyValues[i];
-            }
-            return keyDict;
+            return Result.Fail<object>(new IntegrationError(
+                $"{typeof(TEntity).Name}.KeyCountMismatch",
+                $"Expected {keyProperties.Length} key properties but received {keyValues.Length} values. " +
+                $"Check [Key] attributes on {typeof(TEntity).Name}.",
+                ErrorType.Validation));
         }
 
-        // Fallback: return first value if key property count doesn't match
-        _logger.LogWarning(
-            "Key property count mismatch for {EntityType}: expected {Expected} key properties but received {Actual} values. " +
-            "Falling back to first key value. Check [Key] attributes on the entity.",
-            typeof(TEntity).Name, keyProperties.Length, keyValues.Length);
-        return keyValues[0];
+        var keyDict = new Dictionary<string, object>();
+        for (var i = 0; i < keyProperties.Length; i++)
+        {
+            var name = PropertyNameResolver.Resolve(keyProperties[i]);
+            if (keyValues[i] is null)
+            {
+                return Result.Fail<object>(new IntegrationError(
+                    $"{typeof(TEntity).Name}.InvalidKey",
+                    $"Composite key element at index {i} for field '{name}' was null; a null key cannot identify an entity.",
+                    ErrorType.Validation));
+            }
+
+            keyDict[name] = keyValues[i];
+        }
+
+        return Result.Ok<object>(keyDict);
+    }
+
+    /// <summary>
+    /// Builds the composite key object for every entity in a batch, short-circuiting on the first
+    /// <see cref="ErrorType.Validation"/> failure so a bad key is surfaced before any HTTP traffic.
+    /// </summary>
+    private static Result<List<object>> BuildBatchKeys(IList<TEntity> entities)
+    {
+        var keys = new List<object>(entities.Count);
+        foreach (var entity in entities)
+        {
+            var keyResult = BuildCompositeKeyObject(entity.GetCompositeKey());
+            if (keyResult.IsFailed)
+            {
+                return Result.Fail<List<object>>(keyResult.Errors);
+            }
+
+            keys.Add(keyResult.Value);
+        }
+
+        return Result.Ok(keys);
     }
 
     private static Dictionary<string, object> CreatePayload(TEntity entity, bool isCreateOperation)

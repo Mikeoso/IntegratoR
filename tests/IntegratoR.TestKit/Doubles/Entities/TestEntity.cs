@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using IntegratoR.Abstractions.Domain.Entities;
 
 namespace IntegratoR.TestKit.Doubles.Entities;
@@ -11,11 +12,13 @@ public class TestEntity : BaseEntity<string>
     /// <summary>
     /// Gets or sets the primary identifier. First component of the composite key.
     /// </summary>
+    [Key]
     public required string Id { get; set; }
 
     /// <summary>
     /// Gets or sets the partition key. Second component of the composite key.
     /// </summary>
+    [Key]
     public required string PartitionKey { get; set; }
 
     /// <summary>
