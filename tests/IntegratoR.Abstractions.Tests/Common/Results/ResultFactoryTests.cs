@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using FluentAssertions;
 using FluentResults;
 using IntegratoR.Abstractions.Common.Results;
@@ -43,5 +45,32 @@ public class ResultFactoryTests
         result.Should().BeOfType<Result>();
         result.IsFailed.Should().BeTrue();
         result.GetError()!.Code.Should().Be("Some.Code");
+    }
+
+    [Fact]
+    public void FailFromError_UnsupportedResultType_ThrowsNotSupportedException()
+    {
+        // Arrange
+        var error = new IntegrationError("Some.Code", "some message", ErrorType.Failure);
+
+        // Act
+        Action act = () => ResultFactory.FailFromError<CustomResult>(error);
+
+        // Assert -- a custom IResultBase that is neither Result nor Result<T> is a programming
+        // error, not a business failure, so the factory throws rather than returning a result.
+        act.Should().Throw<NotSupportedException>();
+    }
+
+    /// <summary>
+    /// A custom <see cref="IResultBase"/> that is neither <see cref="Result"/> nor
+    /// <see cref="Result{TValue}"/>, used to exercise the unsupported-type guard.
+    /// </summary>
+    private sealed class CustomResult : IResultBase
+    {
+        public bool IsFailed => true;
+        public bool IsSuccess => false;
+        public List<IReason> Reasons => [];
+        public IReadOnlyList<IError> Errors => [];
+        public IReadOnlyList<ISuccess> Successes => [];
     }
 }

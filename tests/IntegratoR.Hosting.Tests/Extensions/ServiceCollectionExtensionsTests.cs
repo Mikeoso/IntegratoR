@@ -476,6 +476,75 @@ public class ServiceCollectionExtensionsTests
         }
     }
 
+    [Fact]
+    public async Task AddIntegratoR_GenericCreateBatchCommandHandler_PropagatesServiceFailure()
+    {
+        // Arrange
+        (ServiceProvider provider, IBatchService<LedgerJournalHeader> service) = BuildProviderWithSubstitutedBatchService();
+        await using (provider)
+        {
+            service.AddBatchAsync(Arg.Any<IEnumerable<LedgerJournalHeader>>(), Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult(Result.Fail(new IntegrationError("Batch.Create.Failed", "create batch failed", ErrorType.Failure))));
+
+            using IServiceScope scope = provider.CreateScope();
+            IMediator mediator = scope.ServiceProvider.GetRequiredService<IMediator>();
+
+            // Act
+            Result result =
+                await mediator.Send(new CreateBatchCommand<LedgerJournalHeader>(new[] { CreateTestHeader() }), TestContext.Current.CancellationToken);
+
+            // Assert -- the handler propagates the service failure unchanged; it does not throw.
+            result.Should().BeFailed();
+            result.Should().HaveErrorCode("Batch.Create.Failed");
+        }
+    }
+
+    [Fact]
+    public async Task AddIntegratoR_GenericUpdateBatchCommandHandler_PropagatesServiceFailure()
+    {
+        // Arrange
+        (ServiceProvider provider, IBatchService<LedgerJournalHeader> service) = BuildProviderWithSubstitutedBatchService();
+        await using (provider)
+        {
+            service.UpdateBatchAsync(Arg.Any<IEnumerable<LedgerJournalHeader>>(), Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult(Result.Fail(new IntegrationError("Batch.Update.Failed", "update batch failed", ErrorType.Failure))));
+
+            using IServiceScope scope = provider.CreateScope();
+            IMediator mediator = scope.ServiceProvider.GetRequiredService<IMediator>();
+
+            // Act
+            Result result =
+                await mediator.Send(new UpdateBatchCommand<LedgerJournalHeader>(new[] { CreateTestHeader() }), TestContext.Current.CancellationToken);
+
+            // Assert
+            result.Should().BeFailed();
+            result.Should().HaveErrorCode("Batch.Update.Failed");
+        }
+    }
+
+    [Fact]
+    public async Task AddIntegratoR_GenericDeleteBatchCommandHandler_PropagatesServiceFailure()
+    {
+        // Arrange
+        (ServiceProvider provider, IBatchService<LedgerJournalHeader> service) = BuildProviderWithSubstitutedBatchService();
+        await using (provider)
+        {
+            service.DeleteBatchAsync(Arg.Any<IEnumerable<LedgerJournalHeader>>(), Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult(Result.Fail(new IntegrationError("Batch.Delete.Failed", "delete batch failed", ErrorType.Failure))));
+
+            using IServiceScope scope = provider.CreateScope();
+            IMediator mediator = scope.ServiceProvider.GetRequiredService<IMediator>();
+
+            // Act
+            Result result =
+                await mediator.Send(new DeleteBatchCommand<LedgerJournalHeader>(new[] { CreateTestHeader() }), TestContext.Current.CancellationToken);
+
+            // Assert
+            result.Should().BeFailed();
+            result.Should().HaveErrorCode("Batch.Delete.Failed");
+        }
+    }
+
     // Pinned behaviour for PR-C: AddIntegratoR now registers the F&O FluentValidation validators
     // (step 6). GetDimensionOrdersQueryValidator — a non-generic validator — therefore fires in the
     // MediatR ValidationBehaviour: an invalid (empty DimensionFormat) query is short-circuited with

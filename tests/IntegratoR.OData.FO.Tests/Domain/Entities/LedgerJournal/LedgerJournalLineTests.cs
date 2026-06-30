@@ -85,4 +85,24 @@ public class LedgerJournalLineTests
             attribute.IgnoreOnCreate.Should().BeFalse("CurrencyCode is consumer-supplied and must reach the wire");
         }
     }
+
+    /// <summary>
+    /// Regression pin: DebitAmount and CreditAmount are consumer-supplied and must reach the wire
+    /// even at their <c>0m</c> default (a balanced line always has one side at zero). They carry
+    /// <c>[ODataField(IsRequired = true)]</c> so <c>CreatePayload</c> forces them into the create
+    /// payload rather than dropping them as default-valued.
+    /// </summary>
+    [Theory]
+    [InlineData(nameof(LedgerJournalLine.DebitAmount))]
+    [InlineData(nameof(LedgerJournalLine.CreditAmount))]
+    public void Amount_CarriesIsRequired(string propertyName)
+    {
+        PropertyInfo? property = typeof(LedgerJournalLine).GetProperty(propertyName);
+
+        property.Should().NotBeNull();
+        ODataFieldAttribute? attribute = property!.GetCustomAttribute<ODataFieldAttribute>();
+
+        attribute.Should().NotBeNull("the amount must be forced into the create payload at its 0m default");
+        attribute!.IsRequired.Should().BeTrue();
+    }
 }

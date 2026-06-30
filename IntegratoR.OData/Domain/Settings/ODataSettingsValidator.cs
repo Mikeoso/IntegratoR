@@ -85,6 +85,15 @@ public sealed class ODataSettingsValidator : IValidateOptions<ODataSettings>
                 }
 
                 break;
+
+            default:
+                // An out-of-range enum value (e.g. from a typo'd config binding) must not pass
+                // silently — the auth handler would otherwise fall through to the ApiKey/APIM path
+                // with no credentials. Fail fast and force an explicit, recognised mode.
+                failures.Add(
+                    $"ODataSettings.Authentication.Mode has an unrecognised value '{options.Authentication.Mode}'. " +
+                    "Set it explicitly to ApiKey or OAuth.");
+                break;
         }
 
         return failures.Count > 0
