@@ -7,12 +7,13 @@ using Microsoft.Extensions.Logging;
 
 namespace IntegratoR.OData.FO.Features.Commands.LedgerJournals.UpdateLedgerJournalHeader;
 
-public class UpdateLedgerJournalHandler<TEntity> : IRequestHandler<UpdateLedgerJournalHeadersCommand<TEntity>, Result> where TEntity : LedgerJournalHeader
+/// <summary>Updates a batch of LedgerJournalHeader entities in D365 F&amp;O, emitting domain-specific structured logs. Retained over the generic UpdateBatchCommandHandler&lt;T&gt; because it adds journal-context (Count) logging.</summary>
+public class UpdateLedgerJournalHeadersHandler<TEntity> : IRequestHandler<UpdateLedgerJournalHeadersCommand<TEntity>, Result> where TEntity : LedgerJournalHeader
 {
-    private readonly ILogger<UpdateLedgerJournalHeadersCommand<TEntity>> _logger;
+    private readonly ILogger<UpdateLedgerJournalHeadersHandler<TEntity>> _logger;
     private readonly IODataBatchService<TEntity> _service;
 
-    public UpdateLedgerJournalHandler(ILogger<UpdateLedgerJournalHeadersCommand<TEntity>> logger, IODataBatchService<TEntity> service)
+    public UpdateLedgerJournalHeadersHandler(ILogger<UpdateLedgerJournalHeadersHandler<TEntity>> logger, IODataBatchService<TEntity> service)
     {
         _logger = logger;
         _service = service;
@@ -27,7 +28,7 @@ public class UpdateLedgerJournalHandler<TEntity> : IRequestHandler<UpdateLedgerJ
         return result.Match(
             onSuccess: () =>
             {
-                _logger.LogInformation("Successfully updated {Count} Ledger Journal Headers.", request.LedgerJournalHeaders.Count());
+                _logger.LogInformation("Successfully updated {Count} Ledger Journal Headers.", request.LedgerJournalHeaders.Count);
                 return Result.Ok();
             },
             onFailure: error =>

@@ -12,21 +12,21 @@ using IntegratoR.Abstractions.Interfaces.Queries;
 using IntegratoR.OData.FO.Domain.Enums.Dimensions;
 using IntegratoR.OData.FO.Domain.Models.FinancialDimensions;
 
-public record GetDimensionOrdersQuery(string dimensionFormat, DimensionHierarchyType hierarchyType)
+public record GetDimensionOrdersQuery(string DimensionFormat, DimensionHierarchyType HierarchyType)
     : ICacheableQuery<Result<DimensionFormat>>
 {
-    public string CacheKey => $"{nameof(GetDimensionOrdersQuery)}-{dimensionFormat}-{hierarchyType}";
+    public string CacheKey => $"{nameof(GetDimensionOrdersQuery)}-{DimensionFormat}-{HierarchyType}";
 
     public TimeSpan? CacheDuration => TimeSpan.FromMinutes(15);
 
     public string GenerateCacheKey() => CacheKey;
 
-    public object[] GetCacheKeyValues() => [nameof(GetDimensionOrdersQuery), dimensionFormat, hierarchyType];
+    public object[] GetCacheKeyValues() => [nameof(GetDimensionOrdersQuery), DimensionFormat, HierarchyType];
 
     public IReadOnlyDictionary<string, object> GetLoggingContext() => new Dictionary<string, object>
     {
-        { "DimensionFormat", dimensionFormat },
-        { "HierarchyType", hierarchyType.ToString() }
+        { "DimensionFormat", DimensionFormat },
+        { "HierarchyType", HierarchyType.ToString() }
     };
 }
 ```

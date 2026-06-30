@@ -1,5 +1,4 @@
 using IntegratoR.Abstractions.Common.CQRS.Commands;
-using IntegratoR.Abstractions.Interfaces.Commands;
 using IntegratoR.OData.FO.Domain.Entities.LedgerJournal;
 
 namespace IntegratoR.OData.FO.Features.Commands.LedgerJournals.CreateLedgerJournalHeader;

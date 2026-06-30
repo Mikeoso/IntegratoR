@@ -27,8 +27,8 @@ public class GetDimensionOrdersQueryHandler : IRequestHandler<GetDimensionOrders
 
     public async Task<Result<DimensionFormat>> Handle(GetDimensionOrdersQuery request, CancellationToken cancellationToken)
     {
-        var dimensionFormatName = request.dimensionFormat;
-        var dimensionHierarchyType = request.hierarchyType;
+        var dimensionFormatName = request.DimensionFormat;
+        var dimensionHierarchyType = request.HierarchyType;
 
         _logger.LogInformation("Fetching dimension format '{DimensionFormatName}' of type '{DimensionHierarchyType}' from F&O.", dimensionFormatName, dimensionHierarchyType);
 

@@ -6,10 +6,10 @@ public class GetDimensionOrdersQueryValidator : AbstractValidator<GetDimensionOr
 {
     public GetDimensionOrdersQueryValidator()
     {
-        RuleFor(x => x.dimensionFormat)
+        RuleFor(x => x.DimensionFormat)
             .NotEmpty().WithMessage("Dimension format must be provided.")
             .MaximumLength(100).WithMessage("Dimension format must not exceed 100 characters.");
-        RuleFor(x => x.hierarchyType)
+        RuleFor(x => x.HierarchyType)
             .IsInEnum().WithMessage("Hierarchy type must be a valid enum value.");
     }
 }

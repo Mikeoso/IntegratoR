@@ -103,7 +103,27 @@ public static class IntegratoRServiceCollectionExtensions
             services.PostConfigure(builder.FOPostConfigure);
         }
 
-        // 6. Register consumer FluentValidation validators. Consumer MediatR handlers — including
+        // 6. Register the F&O FluentValidation validators. The F&O layer (AddODataClientFOProxy)
+        //    registers its MediatR handlers but not its validators; wiring them here keeps the
+        //    FluentValidation.DependencyInjectionExtensions dependency in the composition root.
+        //    This registers the NON-GENERIC GetDimensionOrdersQueryValidator, which then fires in
+        //    the MediatR ValidationBehaviour.
+        //
+        //    KNOWN LIMITATION: AddValidatorsFromAssembly's assembly scanner does NOT register
+        //    OPEN-GENERIC validators (it cannot build a closed IValidator<> service type from a
+        //    partially-open generic). This affects BOTH the generic baseline validators in
+        //    IntegratoR.Application (CreateCommandValidator<T> etc.) AND the thin derived per-command
+        //    validators in IntegratoR.OData.FO (CreateLedgerJournalLineCommandValidator<T> etc.).
+        //    Consequently, generic/open-generic command validation does NOT run through the pipeline
+        //    today — a pre-existing framework-wide gap, not introduced here. The derived FO
+        //    validators are still useful and are unit-proven against the concrete FO commands in
+        //    GenericValidatorReuseTests; closing the open-generic pipeline gap is deferred (it needs
+        //    a per-entity closed-validator registration mechanism, out of scope for PR-C).
+        services.AddValidatorsFromAssembly(
+            typeof(IntegratoR.OData.FO.Domain.Entities.LedgerJournal.LedgerJournalHeader).Assembly,
+            includeInternalTypes: true);
+
+        // 7. Register consumer FluentValidation validators. Consumer MediatR handlers — including
         //    the closed generic CRUD/query handlers for consumer entities — are already registered
         //    by the combined RegisterGenericHandlers scan in step 3b, so they must NOT be scanned
         //    again here (a second AddMediatR pass would emit duplicate handler registrations).

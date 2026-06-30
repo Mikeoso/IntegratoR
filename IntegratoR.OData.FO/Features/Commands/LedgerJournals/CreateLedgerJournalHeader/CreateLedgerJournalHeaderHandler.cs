@@ -7,10 +7,17 @@ using Microsoft.Extensions.Logging;
 
 namespace IntegratoR.OData.FO.Features.Commands.LedgerJournals.CreateLedgerJournalHeader;
 
-public class CreateLedgerJournalHeaderHandler<TEntity>(ILogger<CreateLedgerJournalHeaderHandler<TEntity>> logger, IService<TEntity> service) : IRequestHandler<CreateLedgerJournalHeaderCommand<TEntity>, Result<TEntity>> where TEntity : LedgerJournalHeader
+/// <summary>Creates a single LedgerJournalHeader in D365 F&amp;O, emitting domain-specific structured logs. Retained over the generic CreateCommandHandler&lt;T&gt; because it adds journal-context logging.</summary>
+public class CreateLedgerJournalHeaderHandler<TEntity> : IRequestHandler<CreateLedgerJournalHeaderCommand<TEntity>, Result<TEntity>> where TEntity : LedgerJournalHeader
 {
-    private readonly ILogger<CreateLedgerJournalHeaderHandler<TEntity>> _logger = logger;
-    private readonly IService<TEntity> _service = service;
+    private readonly ILogger<CreateLedgerJournalHeaderHandler<TEntity>> _logger;
+    private readonly IService<TEntity> _service;
+
+    public CreateLedgerJournalHeaderHandler(ILogger<CreateLedgerJournalHeaderHandler<TEntity>> logger, IService<TEntity> service)
+    {
+        _logger = logger;
+        _service = service;
+    }
 
     public async Task<Result<TEntity>> Handle(CreateLedgerJournalHeaderCommand<TEntity> request, CancellationToken cancellationToken)
     {

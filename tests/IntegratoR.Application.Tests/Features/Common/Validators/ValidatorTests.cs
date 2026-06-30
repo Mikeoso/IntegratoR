@@ -89,7 +89,7 @@ public class ValidatorTests
     {
         // Arrange
         var validator = new CreateBatchCommandValidator<TestEntity>();
-        var command = new CreateBatchCommand<TestEntity>(Enumerable.Empty<TestEntity>());
+        var command = new CreateBatchCommand<TestEntity>(Array.Empty<TestEntity>());
 
         // Act
         var result = validator.Validate(command);
@@ -175,7 +175,7 @@ public class ValidatorTests
     {
         // Arrange
         var validator = new UpdateBatchCommandValidator<TestEntity>();
-        var command = new UpdateBatchCommand<TestEntity>(Enumerable.Empty<TestEntity>());
+        var command = new UpdateBatchCommand<TestEntity>(Array.Empty<TestEntity>());
 
         // Act
         var result = validator.Validate(command);
@@ -261,7 +261,7 @@ public class ValidatorTests
     {
         // Arrange
         var validator = new DeleteBatchCommandValidator<TestEntity>();
-        var command = new DeleteBatchCommand<TestEntity>(Enumerable.Empty<TestEntity>());
+        var command = new DeleteBatchCommand<TestEntity>(Array.Empty<TestEntity>());
 
         // Act
         var result = validator.Validate(command);

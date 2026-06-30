@@ -388,6 +388,129 @@ public class ServiceCollectionExtensionsTests
         }
     }
 
+    // The generic batch handlers inject IBatchService<TEntity> (declared in IntegratoR.Abstractions
+    // so the Application layer can depend on it without referencing OData). These tests substitute
+    // a closed IBatchService<LedgerJournalHeader> so the generic batch handlers resolve a fake and
+    // pin that the new generic batch handlers are closed by the RegisterGenericHandlers scan and
+    // dispatch to the correct IBatchService method.
+    private static (ServiceProvider Provider, IBatchService<LedgerJournalHeader> Service) BuildProviderWithSubstitutedBatchService()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        IConfiguration configuration = CreateMinimalConfiguration();
+
+        services.AddIntegratoR(configuration);
+
+        IBatchService<LedgerJournalHeader> substitute = Substitute.For<IBatchService<LedgerJournalHeader>>();
+        services.AddScoped(_ => substitute);
+
+        return (services.BuildServiceProvider(), substitute);
+    }
+
+    [Fact]
+    public async Task AddIntegratoR_ResolvesGenericCreateBatchCommandHandler_ForFOEntity()
+    {
+        // Arrange
+        (ServiceProvider provider, IBatchService<LedgerJournalHeader> service) = BuildProviderWithSubstitutedBatchService();
+        await using (provider)
+        {
+            service.AddBatchAsync(Arg.Any<IEnumerable<LedgerJournalHeader>>(), Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult(Result.Ok()));
+
+            using IServiceScope scope = provider.CreateScope();
+            IMediator mediator = scope.ServiceProvider.GetRequiredService<IMediator>();
+
+            // Act
+            Result result =
+                await mediator.Send(new CreateBatchCommand<LedgerJournalHeader>(new[] { CreateTestHeader() }), TestContext.Current.CancellationToken);
+
+            // Assert
+            result.Should().BeSuccessful();
+            await service.Received(1).AddBatchAsync(Arg.Any<IEnumerable<LedgerJournalHeader>>(), Arg.Any<CancellationToken>());
+        }
+    }
+
+    [Fact]
+    public async Task AddIntegratoR_ResolvesGenericUpdateBatchCommandHandler_ForFOEntity()
+    {
+        // Arrange
+        (ServiceProvider provider, IBatchService<LedgerJournalHeader> service) = BuildProviderWithSubstitutedBatchService();
+        await using (provider)
+        {
+            service.UpdateBatchAsync(Arg.Any<IEnumerable<LedgerJournalHeader>>(), Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult(Result.Ok()));
+
+            using IServiceScope scope = provider.CreateScope();
+            IMediator mediator = scope.ServiceProvider.GetRequiredService<IMediator>();
+
+            // Act
+            Result result =
+                await mediator.Send(new UpdateBatchCommand<LedgerJournalHeader>(new[] { CreateTestHeader() }), TestContext.Current.CancellationToken);
+
+            // Assert
+            result.Should().BeSuccessful();
+            await service.Received(1).UpdateBatchAsync(Arg.Any<IEnumerable<LedgerJournalHeader>>(), Arg.Any<CancellationToken>());
+        }
+    }
+
+    [Fact]
+    public async Task AddIntegratoR_ResolvesGenericDeleteBatchCommandHandler_ForFOEntity()
+    {
+        // Arrange
+        (ServiceProvider provider, IBatchService<LedgerJournalHeader> service) = BuildProviderWithSubstitutedBatchService();
+        await using (provider)
+        {
+            service.DeleteBatchAsync(Arg.Any<IEnumerable<LedgerJournalHeader>>(), Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult(Result.Ok()));
+
+            using IServiceScope scope = provider.CreateScope();
+            IMediator mediator = scope.ServiceProvider.GetRequiredService<IMediator>();
+
+            // Act
+            Result result =
+                await mediator.Send(new DeleteBatchCommand<LedgerJournalHeader>(new[] { CreateTestHeader() }), TestContext.Current.CancellationToken);
+
+            // Assert
+            result.Should().BeSuccessful();
+            await service.Received(1).DeleteBatchAsync(Arg.Any<IEnumerable<LedgerJournalHeader>>(), Arg.Any<CancellationToken>());
+        }
+    }
+
+    // Pinned behaviour for PR-C: AddIntegratoR now registers the F&O FluentValidation validators
+    // (step 6). GetDimensionOrdersQueryValidator — a non-generic validator — therefore fires in the
+    // MediatR ValidationBehaviour: an invalid (empty DimensionFormat) query is short-circuited with
+    // a Validation failure before the handler runs. (NOTE: open-generic validators such as the
+    // generic CreateCommandValidator<T> and the thin per-command derived validators are NOT
+    // discoverable by AddValidatorsFromAssembly, so generic command validation does not run through
+    // the pipeline today — a pre-existing framework-wide limitation, see the PR-C report. The
+    // derived validators are unit-proven against the concrete FO commands in
+    // GenericValidatorReuseTests.)
+    [Fact]
+    public async Task AddIntegratoR_ValidationBehaviour_FiresFOValidator_ForGetDimensionOrdersQuery()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddLogging();
+        IConfiguration configuration = CreateMinimalConfiguration();
+        services.AddIntegratoR(configuration);
+
+        await using ServiceProvider provider = services.BuildServiceProvider();
+        using IServiceScope scope = provider.CreateScope();
+        IMediator mediator = scope.ServiceProvider.GetRequiredService<IMediator>();
+
+        // Act — an empty DimensionFormat violates the validator's NotEmpty rule; validation must
+        // short-circuit before the handler attempts any OData call.
+        var result = await mediator.Send(
+            new IntegratoR.OData.FO.Features.Queries.Dimensions.GetDimensionOrder.GetDimensionOrdersQuery(
+                string.Empty,
+                IntegratoR.OData.FO.Domain.Enums.Dimensions.DimensionHierarchyType.DataEntityDefaultDimensionFormat),
+            TestContext.Current.CancellationToken);
+
+        // Assert — failed with the validation error code (proving the validator fired in the pipeline).
+        result.Should().BeFailed();
+        result.Should().HaveErrorCode("Validation.Error");
+    }
+
     [Fact]
     public async Task AddIntegratoR_ResolvesGenericGetByFilterQueryHandler_ForFOEntity()
     {
