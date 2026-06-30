@@ -568,25 +568,13 @@ public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
     private void LogSuccess(
         OperationContext context,
         TimeSpan elapsed,
-        int? count = null,
         int attemptCount = 1)
     {
         var attemptInfo = attemptCount > 1 ? $" (after {attemptCount} attempts)" : "";
 
-        if (count.HasValue)
-        {
-            _logger.LogInformation(
-                "{Operation} on {EntityType} succeeded in {ElapsedMs}ms{AttemptInfo}. " +
-                "Retrieved {Count} entities",
-                context.OperationName, context.EntityType, elapsed.TotalMilliseconds,
-                attemptInfo, count.Value);
-        }
-        else
-        {
-            _logger.LogInformation(
-                "{Operation} on {EntityType} succeeded in {ElapsedMs}ms{AttemptInfo}",
-                context.OperationName, context.EntityType, elapsed.TotalMilliseconds, attemptInfo);
-        }
+        _logger.LogInformation(
+            "{Operation} on {EntityType} succeeded in {ElapsedMs}ms{AttemptInfo}",
+            context.OperationName, context.EntityType, elapsed.TotalMilliseconds, attemptInfo);
     }
 }
 

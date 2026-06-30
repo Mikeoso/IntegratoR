@@ -7,7 +7,7 @@ namespace IntegratoR.TestKit.Doubles.Entities;
 /// A composite-key test entity that mirrors the D365 F&O pattern of combining two string fields
 /// as the primary key. Use in generic handler tests instead of production entities.
 /// </summary>
-public class TestEntity : BaseEntity<string>
+public class TestEntity : BaseEntity
 {
     /// <summary>
     /// Gets or sets the primary identifier. First component of the composite key.

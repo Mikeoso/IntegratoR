@@ -303,7 +303,7 @@ public sealed class ODataClientAdapterCompositeKeyWriteTests : IDisposable
     /// take a dependency on <c>IntegratoR.OData.FO</c>.
     /// </summary>
     [Table("LedgerJournalHeaders")]
-    public sealed class TestJournalHeader : BaseEntity<string>
+    public sealed class TestJournalHeader : BaseEntity
     {
         [Key]
         [JsonPropertyName("dataAreaId")]

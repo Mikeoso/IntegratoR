@@ -5,7 +5,7 @@ namespace IntegratoR.TestKit.Doubles.Entities;
 /// <summary>
 /// A single integer-key test entity for use in generic handler tests that require a simple key.
 /// </summary>
-public class TestSingleKeyEntity : BaseEntity<int>
+public class TestSingleKeyEntity : BaseEntity
 {
     /// <summary>
     /// Gets or sets the primary integer identifier.

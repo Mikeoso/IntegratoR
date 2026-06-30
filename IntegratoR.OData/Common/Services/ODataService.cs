@@ -244,7 +244,7 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
     }
 
     /// <inheritdoc />
-    public Task<Result<IEnumerable<TEntity>>> FindAll(CancellationToken cancellationToken = default)
+    public Task<Result<IEnumerable<TEntity>>> FindAllAsync(CancellationToken cancellationToken = default)
     {
         return _exceptionHandler.ExecuteCollectionAsync(
             operationName: "FindAll",
@@ -253,6 +253,11 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
                 .ConfigureAwait(false),
             cancellationToken: cancellationToken);
     }
+
+    /// <inheritdoc />
+    [Obsolete("since v1.4.0; use FindAllAsync; removed next MAJOR")]
+    public Task<Result<IEnumerable<TEntity>>> FindAll(CancellationToken cancellationToken = default)
+        => FindAllAsync(cancellationToken);
 
     /// <inheritdoc />
     public Task<Result<int>> CountAsync(

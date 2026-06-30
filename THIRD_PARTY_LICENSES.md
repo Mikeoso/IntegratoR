@@ -12,16 +12,18 @@ licenses through the package manager).
 `ODataQueryBuilder.ExpressionParsing.cs` and `ODataQueryBuilder.LambdaParsing.cs` in
 PanoramicData.OData.Client (https://github.com/panoramicdata/panoramicdata.odata.client).
 
-The structural code is a near-copy of the upstream parser with one targeted modification:
-each read of a `MemberInfo.Name` (for entity property paths) is routed through a
-`ResolveJsonName` helper that consults `[System.Text.Json.Serialization.JsonPropertyName]`
-before falling back to the CLR member name. This adds attribute-based property name
-mapping to the filter / select / expand path resolution, which the upstream library does
-not currently support.
+The structural code began as a near-copy of the upstream parser. Each read of a
+`MemberInfo.Name` (for entity property paths) is routed through a `ResolveJsonName` helper
+that consults `[System.Text.Json.Serialization.JsonPropertyName]` before falling back to
+the CLR member name, adding attribute-based property name mapping to the filter / select /
+expand / orderby path resolution.
 
-When the upstream PR adding `[JsonPropertyName]` support is merged and released,
-`IntegratoRODataExpressionTranslator` can be deleted and `ODataClientAdapter` can revert
-to passing LINQ expressions directly to PanoramicData.
+`IntegratoRODataExpressionTranslator` is a **permanent, owned D365 extension** of the
+PanoramicData parser, not a temporary fork awaiting an upstream merge. The MIT attribution
+below is retained, but the translator has diverged intentionally from upstream (D365 enum
+literal handling, .NET 10 expression-tree workarounds, `[JsonPropertyName]` resolution, and
+the composite-key write path) and is **not tracked for deletion**. Treat it as first-party
+source maintained in this repository.
 
 ```
 MIT License

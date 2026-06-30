@@ -4,20 +4,15 @@ This page lists known constraints in the framework and the planned resolutions. 
 
 > Last refreshed against v1.3.5.
 
-## Composite-Key Write Path
+## Composite-Key Write Path — RESOLVED
 
-**What:** `UpdateCommand<T>` and `DeleteCommand<T>` against entities with composite keys (every D365 F&O entity that includes `DataAreaId`) currently route through `PanoramicData.OData.Client`'s single-primitive-key `UpdateAsync` / `DeleteAsync` methods. The composite-key dictionary falls through to `Object.ToString()` and produces a malformed OData URL like `LedgerJournalHeaders(System.Collections.Generic.Dictionary`2[System.String,System.Object])`.
+**Status:** resolved. `UpdateCommand<T>` and `DeleteCommand<T>` against entities with composite keys (every D365 F&O entity that includes `DataAreaId`) now write correctly.
 
-**Symptoms:**
+**What was wrong:** writes previously routed through `PanoramicData.OData.Client`'s single-primitive-key `UpdateAsync` / `DeleteAsync` methods. The composite-key dictionary fell through to `Object.ToString()` and produced a malformed OData URL like `LedgerJournalHeaders(System.Collections.Generic.Dictionary`2[System.String,System.Object])`, so updates returned `*.NotFound` and deletes silently no-opped.
 
-- `UpdateCommand<LedgerJournalHeader>` returns `Result.Fail(IntegrationError("LedgerJournalHeader.NotFound", "Resource not found: LedgerJournalHeaders(System.Collections.Generic.Dictionary…)", NotFound))`.
-- `DeleteCommand<LedgerJournalHeader>` returns `Result.Ok` with a `Warning` log line that says *"may indicate a malformed request URL"* — this is the framework's observability fix (since v1.3.4) surfacing the silent failure that would otherwise look like a successful delete.
+**How it is fixed:** `ODataClientAdapter` detects a composite key (an `IDictionary<string, object>`) and issues the PATCH / DELETE through an owned raw-`HttpClient` bypass that builds the keyed URL manually — `LedgerJournalHeaders(dataAreaId='USMF',JournalBatchNumber='B0001')` — sent through the named `"ODataClient"` client so it carries the same authentication, Polly resilience, and `BaseAddress` as every other request. This mirrors the long-standing read-path bypass used by `GetByKeyQuery<T>`. The bypass is owned, first-party source maintained in this repository (not a fork awaiting upstream).
 
-**Why:** PanoramicData.OData.Client 10.0.55 has no API overload that accepts a composite key for write operations. The library's internal `ODataEntityType.Key` tracks the multiple key fields per entity, but `UpdateAsync` and `DeleteAsync` expose only `Key(object)` / `Key<TKey>(TKey)`. The library would need an upstream PR adding `Key(IDictionary<string, object>)` overloads.
-
-**Workaround status:** Read paths (`GetByKeyQuery<T>`) already work — they bypass the limitation by constructing a `$filter` predicate. The write-path workaround is a planned raw `HttpClient` bypass in `ODataClientAdapter` that builds the composite-key URL manually for `UpdateAsync` / `DeleteAsync`. The design is fully scoped and tracked internally by maintainers. Implementation is queued behind smoke-test and dimension-related work that ships first.
-
-**Mitigation today:** treat write-path failures as recoverable in the consumer's code. The framework's `Warning` log for suppressed-404 delete is the diagnostic signal. For one-off cleanup of orphan rows created by the LedgerJournal smoke test, use the D365 UI.
+**Coverage:** adapter-level unit tests pin the keyed URL construction, value formatting (string / Guid / enum / `DateOnly`), and the 404-treated-as-success delete path; the LedgerJournal smoke test exercises the create → update → re-read → delete → verify-gone round-trip end to end.
 
 ## `IValidateOptions<T>` Not Implemented
 

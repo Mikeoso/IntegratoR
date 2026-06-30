@@ -19,7 +19,7 @@ namespace IntegratoR.OData.Tests.Common.Services;
 /// A test entity with a <see cref="JsonIgnoreAttribute"/> decorated property to verify
 /// that <see cref="ODataService{TEntity}"/> excludes such properties from the create payload.
 /// </summary>
-public class TestEntityWithJsonIgnore : BaseEntity<string>
+public class TestEntityWithJsonIgnore : BaseEntity
 {
     /// <summary>Gets or sets the primary key.</summary>
     public required string Id { get; set; }
@@ -327,10 +327,10 @@ public class ODataServiceTests
     }
 
     /// <summary>
-    /// Verifies that FindAll returns a success result with all entities.
+    /// Verifies that FindAllAsync returns a success result with all entities.
     /// </summary>
     [Fact]
-    public async Task FindAll_ReturnsSuccessWithAllEntities()
+    public async Task FindAllAsync_ReturnsSuccessWithAllEntities()
     {
         // Arrange
         var entities = new[] { TestEntityBuilder.Default().Build(), TestEntityBuilder.Default().Build() };
@@ -346,7 +346,36 @@ public class ODataServiceTests
             .Returns(entities);
 
         // Act
+        var result = await _sut.FindAllAsync(CancellationToken.None);
+
+        // Assert
+        result.Should().BeSuccessful();
+        result.Value.Should().HaveCount(2);
+    }
+
+    /// <summary>
+    /// Verifies that the obsolete <c>FindAll</c> still works (delegating to <c>FindAllAsync</c>).
+    /// </summary>
+    [Fact]
+    public async Task FindAll_Obsolete_StillReturnsEntities()
+    {
+        // Arrange
+        var entities = new[] { TestEntityBuilder.Default().Build(), TestEntityBuilder.Default().Build() };
+        _client.FindEntriesAsync<TestEntity>(
+            Arg.Any<string>(),
+            Arg.Any<Expression<Func<TestEntity, bool>>?>(),
+            Arg.Any<Expression<Func<TestEntity, object>>?>(),
+            Arg.Any<Expression<Func<TestEntity, object>>?>(),
+            Arg.Any<IReadOnlyList<(Expression<Func<TestEntity, object>> KeySelector, bool Descending)>?>(),
+            Arg.Any<int?>(),
+            Arg.Any<int?>(),
+            Arg.Any<CancellationToken>())
+            .Returns(entities);
+
+        // Act
+#pragma warning disable CS0618 // Type or member is obsolete — proving the obsolete overload still works
         var result = await _sut.FindAll(CancellationToken.None);
+#pragma warning restore CS0618
 
         // Assert
         result.Should().BeSuccessful();
