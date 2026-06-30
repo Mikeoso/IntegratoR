@@ -234,7 +234,11 @@ public sealed class StatefulD365Handler : HttpMessageHandler
             }
         }
 
-        return Json(HttpStatusCode.OK, stored.ToJsonString());
+        // D365 answers a PATCH with 204 No Content (it does not echo the entity unless asked via
+        // Prefer: return=representation), so the store is mutated but no body is returned. Mirroring
+        // that here exercises ODataService.UpdateAsync's null-result handling — a 200+body would
+        // have masked the live 204-No-Content bug this test now guards against.
+        return new HttpResponseMessage(HttpStatusCode.NoContent);
     }
 
     // ----- DELETE ----------------------------------------------------------------------------

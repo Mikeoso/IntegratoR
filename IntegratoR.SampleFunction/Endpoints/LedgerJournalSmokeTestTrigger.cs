@@ -477,10 +477,13 @@ public sealed class LedgerJournalSmokeTestTrigger
     {
         if (result.IsSuccess)
         {
+            // result.Value can be null on a successful write whose server response carried no body
+            // (e.g. an OData 204 No Content), so guard before invoking the onSuccess projector — a
+            // diagnostic trigger must never NRE and lose every per-step result to a 500.
             return new SmokeTestStep(
                 name,
                 Success: true,
-                Details: onSuccess?.Invoke(result.Value));
+                Details: result.Value is not null ? onSuccess?.Invoke(result.Value) : null);
         }
 
         IntegrationError? error = result.GetError();
