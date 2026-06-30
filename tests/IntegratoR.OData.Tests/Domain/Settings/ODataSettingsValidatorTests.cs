@@ -183,4 +183,33 @@ public class ODataSettingsValidatorTests
         // Assert
         result.Succeeded.Should().BeTrue();
     }
+
+    /// <summary>
+    /// An out-of-range <see cref="AuthenticationMode"/> (e.g. a typo'd config binding) must fail
+    /// fast rather than fall through to the credential-less APIM path.
+    /// </summary>
+    [Fact]
+    public void Validate_UnrecognisedAuthenticationMode_Fails()
+    {
+        // Arrange
+        var settings = new ODataSettings
+        {
+            Url = "https://test.operations.dynamics.com/data",
+            Authentication = new ODataAuthenticationSettings
+            {
+                Mode = (AuthenticationMode)999,
+                ApiManagement = new ODataApiManagementSettings
+                {
+                    SubscriptionKey = "valid-key",
+                    SubscriptionHeaderKey = "Ocp-Apim-Subscription-Key"
+                }
+            }
+        };
+
+        // Act
+        var result = _sut.Validate(null, settings);
+
+        // Assert
+        result.Failed.Should().BeTrue();
+    }
 }
