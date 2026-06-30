@@ -73,8 +73,6 @@ public sealed class LedgerJournalSmokeTestTrigger
 
         var steps = new List<SmokeTestStep>();
         string? journalBatchNumber = null;
-        decimal? debitLineNumber = null;
-        decimal? creditLineNumber = null;
 
         _logger.LogInformation(
             "LedgerJournal smoke test starting for company {Company} with journal {JournalName}.",
@@ -171,11 +169,6 @@ public sealed class LedgerJournalSmokeTestTrigger
 
         if (createDebitResult.IsSuccess)
         {
-            debitLineNumber = createDebitResult.Value.LineNumber;
-        }
-
-        if (createDebitResult.IsSuccess)
-        {
             var creditLine = new LedgerJournalLine
             {
                 DataAreaId = input.Company,
@@ -194,11 +187,6 @@ public sealed class LedgerJournalSmokeTestTrigger
 
             steps.Add(BuildStep("CreateCreditLine", createCreditResult,
                 onSuccess: r => $"LineNumber={r.LineNumber}"));
-
-            if (createCreditResult.IsSuccess)
-            {
-                creditLineNumber = createCreditResult.Value.LineNumber;
-            }
         }
 
         // ---------------------------------------------------------------------------------
@@ -226,7 +214,6 @@ public sealed class LedgerJournalSmokeTestTrigger
         {
             var toUpdate = getByKeyResult.Value;
             toUpdate.Description = $"{toUpdate.Description}-UPDATED";
-            expectedUpdatedDescription = toUpdate.Description;
 
             var updateResult = await _mediator
                 .Send(new UpdateCommand<LedgerJournalHeader>(toUpdate), cancellationToken)
@@ -234,6 +221,14 @@ public sealed class LedgerJournalSmokeTestTrigger
 
             steps.Add(BuildStep("UpdateHeader", updateResult,
                 onSuccess: r => $"Description={r.Description}"));
+
+            // Only assert the persisted value when the update actually succeeded; otherwise
+            // VerifyHeaderUpdated would re-read the original description and emit a misleading
+            // failure that double-counts the UpdateHeader failure.
+            if (updateResult.IsSuccess)
+            {
+                expectedUpdatedDescription = toUpdate.Description;
+            }
         }
 
         // ---------------------------------------------------------------------------------
@@ -291,30 +286,35 @@ public sealed class LedgerJournalSmokeTestTrigger
             steps.Add(BuildStep("UpdateLine", updateLineResult,
                 onSuccess: r => $"Text={r.TransactionText}"));
 
-            var rereadLineResult = await _mediator
-                .Send(new GetByKeyQuery<LedgerJournalLine>(
-                    [input.Company, journalBatchNumber!, lineToUpdate.LineNumber]),
-                    cancellationToken)
-                .ConfigureAwait(false);
+            // Only re-read + assert when the update succeeded; otherwise VerifyLineUpdated would
+            // read the pre-update text and emit a misleading failure on top of UpdateLine.
+            if (updateLineResult.IsSuccess)
+            {
+                var rereadLineResult = await _mediator
+                    .Send(new GetByKeyQuery<LedgerJournalLine>(
+                        [input.Company, journalBatchNumber!, lineToUpdate.LineNumber]),
+                        cancellationToken)
+                    .ConfigureAwait(false);
 
-            if (rereadLineResult.IsSuccess && rereadLineResult.Value.TransactionText == "SMOKE-UPDATED")
-            {
-                steps.Add(new SmokeTestStep(
-                    "VerifyLineUpdated",
-                    Success: true,
-                    Details: $"Text={rereadLineResult.Value.TransactionText}"));
-            }
-            else if (rereadLineResult.IsSuccess)
-            {
-                steps.Add(new SmokeTestStep(
-                    "VerifyLineUpdated",
-                    Success: false,
-                    Details: $"Expected Text='SMOKE-UPDATED' but read '{rereadLineResult.Value.TransactionText}'."));
-            }
-            else
-            {
-                steps.Add(BuildStep("VerifyLineUpdated", rereadLineResult,
-                    onSuccess: r => $"Text={r.TransactionText}"));
+                if (rereadLineResult.IsSuccess && rereadLineResult.Value.TransactionText == "SMOKE-UPDATED")
+                {
+                    steps.Add(new SmokeTestStep(
+                        "VerifyLineUpdated",
+                        Success: true,
+                        Details: $"Text={rereadLineResult.Value.TransactionText}"));
+                }
+                else if (rereadLineResult.IsSuccess)
+                {
+                    steps.Add(new SmokeTestStep(
+                        "VerifyLineUpdated",
+                        Success: false,
+                        Details: $"Expected Text='SMOKE-UPDATED' but read '{rereadLineResult.Value.TransactionText}'."));
+                }
+                else
+                {
+                    steps.Add(BuildStep("VerifyLineUpdated", rereadLineResult,
+                        onSuccess: r => $"Text={r.TransactionText}"));
+                }
             }
         }
         else if (linesForUpdate.IsFailed)
@@ -401,12 +401,10 @@ public sealed class LedgerJournalSmokeTestTrigger
         }
         else
         {
-            steps.Add(new SmokeTestStep(
-                "VerifyHeaderDeleted",
-                Success: false,
-                ErrorCode: goneError?.Code,
-                ErrorType: goneError?.Type.ToString(),
-                ErrorMessage: "Operation failed; see host logs for details."));
+            // A non-NotFound failure (e.g. a transient error on the re-read) — route through
+            // BuildStep so the full detail is logged server-side and the error code/type fall
+            // back to sane values for non-IntegrationError failures.
+            steps.Add(BuildStep("VerifyHeaderDeleted", goneResult));
         }
 
         var success = steps.All(s => s.Success);
