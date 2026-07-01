@@ -1,23 +1,50 @@
 # Run Smoke Tests
+> Last verified against v2.0.1
 
-`IntegratoR.SampleFunction` ships two HTTP triggers that exercise the full framework stack against a live D365 F&O sandbox. They are the fastest way to verify that authentication, OData wiring, the LINQ-to-OData translator, and the Polly resilience layer all cooperate correctly before integrating real business logic.
+`IntegratoR.SampleFunction` ships two HTTP triggers that drive the whole stack — auth, OData wiring, the LINQ-to-OData translator, Polly resilience — against a live D365 F&O sandbox. Run them to prove a fresh deployment works before you wire in real business logic. They are part of the sample host, not a separate NuGet package.
 
-Both triggers are part of the open-source sample project — clone the repository, restore packages, and run them locally. They are not shipped as a separate NuGet package.
+Start with the read-only dimension trigger: it needs no company context and leaves no records behind.
 
-## What Each Trigger Exercises
+```bash
+curl -s -X POST http://localhost:7123/api/smoke/financial-dimensions \
+     -H "Content-Type: application/json" \
+     -d '{"DimensionFormatName":"Sachkontodimensionen","HierarchyType":"DataEntityLedgerDimensionFormat"}'
+```
 
-| Trigger | Route | Operations | Side effects |
+A green run returns the delimiter and ordered segments the handler parsed out of D365:
+
+```json
+{
+  "Success": true,
+  "Delimiter": "-",
+  "Segments": ["MainAccount", "A_Kostenstelle", "C_Profitcenter"],
+  "Steps": [
+    {
+      "Name": "GetDimensionOrders",
+      "Success": true,
+      "ErrorCode": null,
+      "ErrorType": null,
+      "ErrorMessage": null,
+      "Details": "Delimiter='-', Segments=[MainAccount, A_Kostenstelle, C_Profitcenter]"
+    }
+  ]
+}
+```
+
+The exact segment list depends on the target environment — the example is the shape captured against a JFI sandbox.
+
+## The two triggers
+
+| Function ID | Route | Flow | Side effects |
 |---|---|---|---|
-| `LedgerJournalSmokeTestTrigger` | `POST /api/smoke/ledger-journal` | Create → Get → Filter → Update → Delete on `LedgerJournalHeader` and `LedgerJournalLine` | Creates a real journal in D365; deletes it again on the same run — self-cleaning, no orphan left behind |
-| `FinancialDimensionSmokeTestTrigger` | `POST /api/smoke/financial-dimensions` | `GetDimensionOrdersQuery` (one MediatR `Send` that chains two D365 reads) | **None** — read-only, safe to run repeatedly |
+| `FinancialDimensionSmokeTest_HTTPTrigger` | `POST /api/smoke/financial-dimensions` | One `GetDimensionOrdersQuery` (chains two D365 reads) | None — read-only, safe to repeat |
+| `LedgerJournalSmokeTest_HTTPTrigger` | `POST /api/smoke/ledger-journal` | Create → GetByKey → Filter → Update → Delete on `LedgerJournalHeader` + `LedgerJournalLine` | Writes a real journal, then deletes it — self-cleaning on a green run |
 
-Both triggers use `AuthorizationLevel.Function`. Running locally with `func start` no host key is required; once deployed to Azure they need a function/host key (`?code=<key>` or the `x-functions-key` header).
+Both use `AuthorizationLevel.Function`. Locally under `func start` no key is needed; once deployed to Azure they need a function/host key (`?code=<key>` or the `x-functions-key` header).
 
-The financial-dimension trigger is the recommended first run: it is read-only, depends on no company context, and verifies authentication + OData + the `[JsonPropertyName]` filter translator in one round-trip.
+## Run the triggers locally
 
-## Run the Triggers Locally
-
-The triggers require Azurite for storage emulation (the Azure Functions worker reads secrets from Blob Storage even when all triggers are HTTP) and the standard isolated-worker host:
+The host needs Azurite for storage emulation (the Functions host needs an `AzureWebJobsStorage` account for its own runtime state even when every trigger is HTTP) plus the standard isolated-worker `func` host:
 
 ```bash
 # 1. Start Azurite in a separate terminal
@@ -25,8 +52,7 @@ azurite --silent --location /tmp/azurite-data \
         --blobHost 127.0.0.1 --queueHost 127.0.0.1 --tableHost 127.0.0.1
 
 # 2. Build and publish the SampleFunction
-dotnet publish IntegratoR.SampleFunction \
-   -c Debug -o IntegratoR.SampleFunction/bin/output
+dotnet publish IntegratoR.SampleFunction -c Debug -o IntegratoR.SampleFunction/bin/output
 
 # 3. Copy local.settings.json into the publish output (csproj sets CopyToPublishDirectory=Never)
 cp IntegratoR.SampleFunction/local.settings.json IntegratoR.SampleFunction/bin/output/
@@ -36,24 +62,12 @@ cd IntegratoR.SampleFunction/bin/output
 FUNCTIONS_WORKER_RUNTIME=dotnet-isolated func start --port 7123
 ```
 
-The host banner should show:
+> [!NOTE]
+> `FUNCTIONS_WORKER_RUNTIME=dotnet-isolated` selects the out-of-process host that .NET 10 needs; the in-process host does not support isolated workers. If `func` still starts the in-process host, force the out-of-process one with `func start --runtime default --port 7123`.
 
-```
-Core Tools Version:       4.9.0+...
-Function Runtime Version: 4.1047.100.....
-```
+## Financial dimension smoke test
 
-If the version is `4.4.0` instead, the in-process host has been picked up — that variant does not support .NET 10 isolated workers. Restart `func start` **without** the `--csharp` flag.
-
-## Financial Dimension Smoke Test
-
-```bash
-curl -s -X POST http://localhost:7123/api/smoke/financial-dimensions \
-     -H "Content-Type: application/json" \
-     -d '{"DimensionFormatName":"Sachkontodimensionen","HierarchyType":"DataEntityLedgerDimensionFormat"}'
-```
-
-Request body:
+POST a `DimensionFormatName` and `HierarchyType` that exist in the target sandbox. The trigger sends one `GetDimensionOrdersQuery`, which chains a `DimensionIntegrationFormat` filter with a `DimensionParameters` find-all and returns the parsed delimiter and segments.
 
 ```json
 {
@@ -64,119 +78,97 @@ Request body:
 
 | Field | Type | Notes |
 |---|---|---|
-| `DimensionFormatName` | string | Must match a row in D365 `DimensionIntegrationFormats` |
-| `HierarchyType` | string (enum name) | `JsonStringEnumConverter` accepts the enum **name** (e.g. `"DataEntityLedgerDimensionFormat"`) — numeric values also work but the name is more readable |
+| `DimensionFormatName` | string (required) | Must match a `DimensionIntegrationFormat` row in D365 |
+| `HierarchyType` | string (enum name) | The global `JsonStringEnumConverter` binds the `DimensionHierarchyType` **name** (e.g. `"DataEntityLedgerDimensionFormat"`) |
 
-Successful response:
+No company context is required — the dimension metadata entities are global, not per-`DataAreaId`.
 
-```json
-{
-  "Success": true,
-  "Delimiter": "-",
-  "Segments": ["MainAccount", "A_Kostenstelle", "B_Segment", "C_Profitcenter",
-               "D_Projekte", "E_Artikel_PSP", "F_Debitor", "G_Bewegungsarten",
-               "H_Partnergesellschaft"],
-  "Steps": [
-    {
-      "Name": "GetDimensionOrders",
-      "Success": true,
-      "ErrorCode": null,
-      "ErrorType": null,
-      "ErrorMessage": null,
-      "Details": "Delimiter='-', Segments=[MainAccount, A_Kostenstelle, ...]"
-    }
-  ]
-}
-```
+## Ledger journal smoke test
 
-The exact segment list depends on the D365 environment — the example above is the response captured against a sandbox configured with nine dimension segments separated by hyphens. The trigger executes a single MediatR `Send(...)` for `GetDimensionOrdersQuery`, which chains two D365 reads (`DimensionIntegrationFormat.FindAsync` plus `DimensionParameters.FindAll`) and returns roughly in 1–4 seconds depending on APIM warm state.
-
-A failed response surfaces the `IntegrationError` per step:
-
-```json
-{
-  "Success": false,
-  "Delimiter": null,
-  "Segments": null,
-  "Steps": [
-    {
-      "Name": "GetDimensionOrders",
-      "Success": false,
-      "ErrorCode": "OData.AuthenticationFailed",
-      "ErrorType": "Failure",
-      "ErrorMessage": "Failed to acquire OAuth token for resource ..."
-    }
-  ]
-}
-```
-
-## LedgerJournal Smoke Test
-
-The journal smoke test exercises the full write path end to end — composite-key creation, payload field exclusion via `[ODataField]`, balanced debit/credit line creation, **composite-key Update and Delete**, and re-read verification that each write landed. It was verified green against a live D365 (JFI) sandbox on 2026-07-01: the complete create → update → delete → verify-gone cycle passed and self-cleaned with no orphan record.
+The journal trigger drives the full write path: composite-key create, `[ODataField]` payload exclusion, a balanced debit/credit line pair, composite-key Update and Delete, and re-read verification that each write landed.
 
 ```bash
 curl -s -X POST http://localhost:7123/api/smoke/ledger-journal \
      -H "Content-Type: application/json" \
      -d '{
-       "Company":                 "USMF",
-       "JournalName":             "GenJrn",
-       "AccountDisplayValue":     "110180-",
+       "Company":                   "USMF",
+       "JournalName":               "GenJrn",
+       "AccountDisplayValue":       "110180-",
        "OffsetAccountDisplayValue": "211100-",
-       "Amount":                  100.00,
-       "CurrencyCode":            "USD"
+       "Amount":                    100.00,
+       "CurrencyCode":              "USD"
      }'
 ```
 
-The trigger runs the full ordered write-and-verify chain:
+`Company` and `JournalName` are required; an empty either returns `SmokeTest.MissingFields` (`Validation`). The header the trigger builds uses the current non-generic `BaseEntity` — `LedgerJournalHeader` overrides `GetCompositeKey() => [DataAreaId, JournalBatchNumber!]`, so the framework constructs the keyed URL for you.
+
+The ordered chain, each step a `Result<T>` inspected in turn:
 
 | Step | What it proves |
 |---|---|
-| `CreateHeader` | `CreateCommand<LedgerJournalHeader>` payload exclusion for `JournalBatchNumber` |
+| `CreateHeader` | `CreateCommand<LedgerJournalHeader>`; `JournalBatchNumber` excluded on create (server-assigned) |
 | `GetHeaderByKey` | `GetByKeyQuery<LedgerJournalHeader>` composite-key construction |
-| `FilterHeaderByDataAreaId` | `GetByFilterQuery` and the `[JsonPropertyName]`-aware filter translator |
-| `CreateDebitLine` | `CreateCommand<LedgerJournalLine>` with the required `CurrencyCode` |
-| `CreateCreditLine` | Same path, second line |
+| `FilterHeaderByDataAreaId` | `GetByFilterQuery` + the `[JsonPropertyName]`-aware translator (`dataAreaId` camelCase) |
+| `CreateDebitLine` / `CreateCreditLine` | `CreateCommand<LedgerJournalLine>` with required `CurrencyCode` |
 | `FilterLinesByDataAreaId` | Translator against `LedgerJournalLine` |
-| `UpdateHeader` | `UpdateCommand<LedgerJournalHeader>` composite-key **PATCH** via the owned bypass |
-| `VerifyHeaderUpdated` | Re-reads the header by composite key and confirms the new `Description` |
-| `UpdateLine` | `UpdateCommand<LedgerJournalLine>` composite-key PATCH on the line |
-| `VerifyLineUpdated` | Re-reads the line and confirms the updated `TransactionText` |
-| `DeleteLine[…]` | `DeleteCommand<LedgerJournalLine>` composite-key **DELETE** per line |
-| `DeleteHeader` | `DeleteCommand<LedgerJournalHeader>` composite-key DELETE |
+| `UpdateHeader` / `VerifyHeaderUpdated` | Composite-key PATCH via the owned bypass, then re-read confirms the new `Description` |
+| `UpdateLine` / `VerifyLineUpdated` | Line PATCH sets `TransactionText` (wire `Text`), then re-read confirms it |
+| `DeleteLine[…]` / `DeleteHeader` | Composite-key DELETE — lines first, header last (D365 rejects deleting a header with child lines) |
 | `VerifyHeaderDeleted` | Re-reads the header; a `NotFound` result confirms the delete landed |
 
-The response is the same per-step JSON shape as the financial-dimensions trigger.
+Composite-key Update and Delete run through the owned raw-`HttpClient` bypass in `ODataClientAdapter` (since v2.0.0). It builds the keyed URL manually — `LedgerJournalHeaders(dataAreaId='USMF',JournalBatchNumber='B0001')` — through the named `"ODataClient"` client, so the write carries the same auth, Polly resilience, and `BaseAddress` as every other call. Because the chain deletes what it creates and verifies the header is gone, a green run leaves no orphan.
 
-Composite-key Update and Delete run through the owned raw-`HttpClient` bypass in `ODataClientAdapter` (shipped in v2.0.0) — it builds the keyed URL manually, e.g. `LedgerJournalHeaders(dataAreaId='1210',JournalBatchNumber='LNR0000300')`, through the named `"ODataClient"` client so the write carries the same auth, Polly resilience, and `BaseAddress` as every other request. Because the chain deletes everything it creates and verifies the header is gone, a green run leaves no record behind.
+Verified against live D365 (JFI) on 2026-07-01: the complete create → update → delete → verify-gone cycle passed and self-cleaned.
 
-## Diagnosing a Failed Smoke Test
+> [!NOTE]
+> D365 answers a composite-key PATCH with `204 No Content`, so `UpdateCommand` returns your caller entity and `result.Value` may be null on a successful write. The step builder null-guards `result.Value` before projecting details — a diagnostic trigger must never throw and lose every per-step result to a 500.
 
-The per-step `Steps[]` array surfaces the failing operation and the `IntegrationError` it produced. Common failure shapes:
+## Read a failed step
+
+Each entry in `Steps[]` carries the failing operation and its `IntegrationError`. On failure the trigger surfaces the `Code` and `Type`, and returns a generic `ErrorMessage` — the full server detail is logged host-side only, never echoed to the caller.
+
+```json
+{
+  "Success": false,
+  "CreatedJournalBatchNumber": null,
+  "Steps": [
+    {
+      "Name": "CreateHeader",
+      "Success": false,
+      "ErrorCode": "Auth.Msal.invalid_client",
+      "ErrorType": "Failure",
+      "ErrorMessage": "Operation failed; see host logs for details."
+    }
+  ]
+}
+```
+
+Common failure shapes:
 
 | `ErrorCode` | `ErrorType` | Likely cause |
 |---|---|---|
-| `OData.AuthenticationFailed` | `Failure` | OAuth credentials wrong, expired, or service principal lacks API access |
-| `OData.NotFound` | `NotFound` | Wrong `Url` (path segment missing), wrong `[Table]` attribute on the entity, or company/journal name does not exist in D365 |
-| `SmokeTest.MissingFields` | `Validation` | Required field in the request body is empty |
-| `SmokeTest.InvalidJson` | `Validation` | Request body is not valid JSON |
-| `DimensionParameters.NotFound` | `NotFound` | The dimension singleton row is missing in this environment (very rare) |
+| `Auth.Msal.{code}` | `Failure` | OAuth token acquisition failed — wrong/expired client secret, or the service principal lacks API access. (An auth short-circuit on the HTTP path surfaces as a 401 with `ReasonPhrase "Authentication failed"`.) |
+| `SmokeTest.MissingFields` | `Validation` | A required request-body field is empty |
+| `SmokeTest.InvalidJson` | `Validation` | The request body is not valid JSON |
+| `<Entity>.NotFound` | `NotFound` | Wrong `Url` path segment, wrong `[Table]` attribute, or the company/journal name does not exist |
 
-The full diagnostic chain — host log lines, retry warnings, circuit breaker state — is in the `func start` output. See [Troubleshoot Common Issues](Troubleshoot-Common-Issues) for resolutions to specific errors.
+> [!WARNING]
+> An `UpdateHeader` step that fails with HTTP 403 (`ODataSecurityException`, "update not allowed for field 'X'") means a read-only field entered the PATCH payload. On `LedgerJournalHeader`, `JournalName`, `AccountingCurrency`, `IsPosted`, `JournalTotalDebit`, and `JournalTotalCredit` are `IgnoreOnUpdate`; a single such field in the payload makes D365 reject the whole PATCH.
 
-## Use in CI
+The full diagnostic chain — retry warnings, circuit-breaker state, the logged server message — is in the `func start` output. See [Troubleshoot Common Issues](Troubleshoot-Common-Issues) for resolutions.
 
-Both triggers can be wired into a CI smoke pipeline that exercises a sandbox after every deployment. Recommended pattern:
+## Wire into CI
 
-1. Deploy the framework to a sandbox slot
-2. Run the financial-dimension smoke test (read-only, fast, low-risk)
-3. Run the ledger-journal smoke test (writes a journal, then deletes it — self-cleaning, no orphan left behind)
-4. Block promotion to production if either step's `Success` is `false`
+Both triggers signal outcome through the JSON `Success` field, not the HTTP status — the response is `200 OK` unless the body is malformed (`400`). A CI script must check `.Success` against the body, not the status code:
 
-The triggers signal failure via the JSON `Success` field, not the HTTP status code — the HTTP response is always 200 (unless the request body is malformed). CI scripts should check `.Success` against the response body (e.g. `jq -e '.Success'`), not rely on HTTP status alone.
+1. Deploy to a sandbox slot.
+2. Run the financial-dimension test (read-only, fast).
+3. Run the ledger-journal test (writes then self-cleans).
+4. Block promotion if either body's `Success` is `false` — for example, `jq -e '.Success'`.
 
 ## See Also
 
-- [Troubleshoot Common Issues](Troubleshoot-Common-Issues) — diagnostic guide for the error codes above
-- [Known Limitations](Known-Limitations) — remaining open items (composite-key writes are resolved)
-- [Work with Dimensions](Work-with-Dimensions) — what the dimension smoke test exercises
-- [Send Commands](Send-Commands) — what the journal smoke test exercises
+- [Send Commands](Send-Commands)
+- [Work with Dimensions](Work-with-Dimensions)
+- [Handle Errors](Handle-Errors)
+- [Troubleshoot Common Issues](Troubleshoot-Common-Issues)

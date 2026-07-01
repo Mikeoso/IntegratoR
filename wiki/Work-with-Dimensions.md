@@ -1,177 +1,175 @@
 # Work with Dimensions
+> Last verified against v2.0.1
 
-D365 F&O financial dimensions are encoded on the wire as delimited strings: `"618160-001-023-..."`. The position of each value is dictated by the per-environment **dimension format**, which the consumer reads from D365 via `GetDimensionOrdersQuery` and uses to drive the `FinancialDimensionBuilder` and `FinancialDimensionReader`.
-
-> **Prerequisites:** A configured OData client (`AddODataClientFOProxy`) and a dimension format seeded in D365's Dimension integration setup (`DimensionIntegrationFormat`).
-
-## Read the Dimension Format from D365
+D365 F&O encodes a financial dimension as a delimiter-separated string like `618160-001-PC42`. The segment order is per-environment metadata, so resolve the format from D365 first, then use `FinancialDimensionBuilder` to write a value and `FinancialDimensionReader` to read one back.
 
 ```csharp
 using FluentResults;
+using IntegratoR.Abstractions.Common.Results;
+using IntegratoR.OData.FO.Builders;
 using IntegratoR.OData.FO.Domain.Enums.Dimensions;
 using IntegratoR.OData.FO.Domain.Models.FinancialDimensions;
 using IntegratoR.OData.FO.Features.Queries.Dimensions.GetDimensionOrder;
 
-Result<DimensionFormat> result = await mediator.Send(
+// 1. Resolve the active format for company USMF (cached for 15 minutes).
+Result<DimensionFormat> formatResult = await mediator.Send(
     new GetDimensionOrdersQuery(
         DimensionFormat: "Sachkontodimensionen",
         HierarchyType: DimensionHierarchyType.DataEntityLedgerDimensionFormat),
     cancellationToken).ConfigureAwait(false);
 
-if (result.IsSuccess)
+if (formatResult.IsFailed)
 {
-    DimensionFormat format = result.Value;
-    // format.Delimiter == "-"
-    // format.Segments  == ["MainAccount", "A_Kostenstelle", "B_Segment", ...]
+    IntegrationError? error = formatResult.GetError();
+    // error.Message names the missing metadata; fail explicitly rather than guessing.
+    return;
 }
-```
 
-The query signature is `GetDimensionOrdersQuery(string DimensionFormat, DimensionHierarchyType HierarchyType)`. Both parameters are part of the entity's composite filter: `DimensionFormat` matches `DimensionIntegrationFormat.DimensionFormatName`, `HierarchyType` matches `DimensionIntegrationFormat.DimensionFormatType`.
+DimensionFormat format = formatResult.Value;
+// format.Delimiter == "-"
+// format.Segments  == ["MainAccount", "A_Kostenstelle", "C_Profitcenter"]
 
-The handler chains two calls to D365:
-
-1. `DimensionIntegrationFormat.FindAsync` — filters on `DimensionFormatName == name && DimensionFormatType == type && IsActive == NoYes.Yes`. Returns the dimension format definition.
-2. `DimensionParameters.FindAll` — returns the singleton row that carries the global `DimensionSegmentDelimiter` enum.
-
-The handler then splits the `FinancialDimensionFormat` string from result (1) using the delimiter character resolved from result (2). The query is `ICacheableQuery` with a 15-minute cache duration — repeated calls within that window return the cached `DimensionFormat` instance.
-
-## `DimensionHierarchyType` Values
-
-The `DimensionHierarchyType` enum mirrors the D365 base enum. Most consumers need one of these:
-
-| Value | Underlying int | Typical use |
-|---|---|---|
-| `AccountStructure` | 0 | Primary chart-of-accounts structure |
-| `DataEntityDefaultDimensionFormat` | 17 | Default dimension format (no main account) |
-| `DataEntityLedgerDimensionFormat` | 18 | **Ledger dimension format — main account + dimensions, most common** |
-| `DataEntityBudgetDimensionFormat` | 19 | Budget dimension format |
-| `Customer` | 7 | Dimensions attached to a Customer master record |
-| `Vendor` | 8 | Dimensions attached to a Vendor master record |
-| `Project` | 9 | Dimensions attached to a Project record |
-| `FixedAsset` | 10 | Dimensions attached to a Fixed Asset record |
-| `Employee` | 12 | Dimensions attached to an Employee record |
-
-The full enum is in `IntegratoR.OData.FO.Domain.Enums.Dimensions.DimensionHierarchyType` — see the source for the complete list including country-specific variants.
-
-## Build a Dimension String
-
-```csharp
-using IntegratoR.OData.FO.Builders;
-using IntegratoR.OData.FO.Domain.Models.FinancialDimensions;
-
-DimensionFormat format = new()
-{
-    Delimiter = "-",
-    Segments = new List<string> { "MainAccount", "Department", "CostCenter" }
-};
-
-FinancialDimensionBuilder builder = new();
-string displayValue = builder
+// 2. Build a display value; the Add order is irrelevant — Build sorts by format.Segments.
+string displayValue = new FinancialDimensionBuilder()
     .Initialize(format)
-    .Add("CostCenter",  "CC002")
+    .Add("C_Profitcenter", "PC42")
     .Add("MainAccount", "618160")
+    .Add("A_Kostenstelle", "001")
     .Build();
 
-// displayValue == "618160--CC002"
+// displayValue == "618160-001-PC42"
 ```
 
-The order of `Add(...)` calls does **not** matter. The builder sorts values into the segment order defined by `DimensionFormat.Segments`. A segment with no value contributes an empty placeholder between the delimiters — `"618160--CC002"` shows that the `Department` segment was intentionally blank, which D365 requires to maintain the structural integrity of the dimension string.
+`GetDimensionOrdersQuery(string DimensionFormat, DimensionHierarchyType HierarchyType)` takes PascalCase parameters (since v2.0.0 — the old camelCase `dimensionFormat`/`hierarchyType` are gone). `DimensionFormat` matches D365's `DimensionFormatName`; `HierarchyType` matches `DimensionFormatType`. The handler chains two reads — the active `DimensionIntegrationFormat` row, then the singleton `DimensionParameters` row for the delimiter — and splits the format string into ordered `Segments`.
 
-The `Add(...)` method ignores empty values silently: passing `null`, `""`, or whitespace for either `name` or `value` is a no-op. To remove a previously-added value, call `Initialize(format)` or `Clear()` and start over.
+## Handle the failure path
 
-## How `Build()` Works
-
-```
-Segments:    MainAccount  →  Department  →  CostCenter
-Added:       "618160"        (none)         "CC002"
-Output part: "618160"        ""             "CC002"
-Joined:      "618160" + "-" + "" + "-" + "CC002"
-             = "618160--CC002"
-```
-
-The double delimiter `--` is the D365 convention for an intentionally-blank segment. Skipping the empty placeholder would shift `CostCenter` into the `Department` slot at parse time.
-
-## Read a Dimension String Back
-
-`FinancialDimensionReader` parses a delimited string back into a name → value dictionary using the same `DimensionFormat`. The reader is the inverse of the builder — the same `DimensionFormat` instance can drive both writes and reads.
-
-## End-to-End Example
+`GetDimensionOrdersQuery` returns a failed `Result<DimensionFormat>` when the delimiter row is missing:
 
 ```csharp
-// 1. Resolve the format from D365 (cached for 15 minutes).
-Result<DimensionFormat> formatResult = await mediator.Send(
-    new GetDimensionOrdersQuery(
-        "Sachkontodimensionen",
+Result<DimensionFormat> result = await mediator.Send(
+    new GetDimensionOrdersQuery("Sachkontodimensionen",
         DimensionHierarchyType.DataEntityLedgerDimensionFormat),
     cancellationToken).ConfigureAwait(false);
 
-if (formatResult.IsFailed)
+if (result.IsFailed)
 {
-    // Format does not exist in this environment — fail the operation explicitly.
-    return Result.Fail<string>(formatResult.Errors);
+    IntegrationError? error = result.GetError();
+    if (error?.Code == "DimensionParameters.NotFound" && error.Type == ErrorType.NotFound)
+    {
+        // The singleton DimensionParameters row was never seeded in this environment.
+        // Seed it in D365 (General ledger > Setup) before retrying.
+    }
+    return;
 }
-
-// 2. Build a dimension display value for a journal line.
-string displayValue = new FinancialDimensionBuilder()
-    .Initialize(formatResult.Value)
-    .Add("MainAccount",      "618160")
-    .Add("A_Kostenstelle",   "001")
-    .Add("C_Profitcenter",   "PC42")
-    .Build();
-
-// 3. Use it on a LedgerJournalLine, e.g. as DefaultDimensionDisplayValue.
-LedgerJournalLine line = new()
-{
-    DataAreaId = "1210",
-    JournalBatchNumber = "JBN-000431",
-    DebitAmount = 1000m,
-    CreditAmount = 0m,
-    CurrencyCode = "EUR",
-    // ... set the display value on the appropriate field
-};
 ```
 
-> **Warning — `DefaultDimensionDisplayValue` is `[ODataField(IgnoreOnCreate = true)]`.** The natural target field on `LedgerJournalLine` is marked `IgnoreOnCreate = true`, so it is **stripped from the create payload** — any value you set on it is silently dropped and never persists. This is the D365 quirk to watch: a create appears to succeed while the dimensions vanish. Set dimensions through the journal-creation path D365 actually honours rather than relying on this field at create time.
+The handler propagates the underlying OData errors verbatim on a lookup failure (entity-set-not-found, authentication, APIM rejection), so `error.Message` carries the real cause rather than a generic wrapper.
 
-The live shape of this flow is captured by the bundled smoke-test trigger — see [Run Smoke Tests](Run-Smoke-Tests) for the HTTP call that exercises `GetDimensionOrdersQuery` end-to-end and shows the live response from a real D365 sandbox.
+> [!CAUTION]
+> `GetDimensionOrdersQuery` **succeeds with an empty `Segments` list** when the format name matches zero rows — it is not a `NotFound` failure. Treat an empty `Segments` as a misspelled `DimensionFormat` or missing D365 setup, and check it before building.
 
-## Configure the Default Format Name
+## Read a dimension string back
 
-The `FOSettings` configuration section holds D365-specific defaults:
+`FinancialDimensionReader.Parse(DimensionFormat, string)` is the inverse of the builder. It returns `Result<Dictionary<string, string>>` mapping each segment name to its value, preserving empty segments for lossless round-tripping:
+
+```csharp
+Result<Dictionary<string, string>> parsed =
+    FinancialDimensionReader.Parse(format, "618160-001-PC42");
+
+if (parsed.IsFailed)
+{
+    IntegrationError? error = parsed.GetError();
+    // error.Code is one of DimensionReader.InvalidFormat / EmptyInput / SegmentCountMismatch,
+    // all ErrorType.Validation. SegmentCountMismatch is the common one — the string was built
+    // with a different format than the one passed here.
+    return;
+}
+
+Dictionary<string, string> segments = parsed.Value;
+// segments["MainAccount"]    == "618160"
+// segments["A_Kostenstelle"] == "001"
+// segments["C_Profitcenter"] == "PC42"
+```
+
+The three failure codes, all `ErrorType.Validation`:
+
+| Code | Cause |
+|---|---|
+| `DimensionReader.InvalidFormat` | `format` is null, has no segments, has an empty delimiter, or a segment name is empty. |
+| `DimensionReader.EmptyInput` | `dimensionString` is null or empty. |
+| `DimensionReader.SegmentCountMismatch` | The string splits into a different segment count than `format.Segments` — usually a format mismatch between build and read. |
+
+## How Build handles omitted segments
+
+`Build` walks `format.Segments` in order and emits an empty placeholder for any segment you did not `Add`:
+
+```
+Segments:    MainAccount  →  A_Kostenstelle  →  C_Profitcenter
+Added:       "618160"        (none)             "PC42"
+Joined:      "618160"  "-"  ""  "-"  "PC42"   ==  "618160--PC42"
+```
+
+The double delimiter `--` is the D365 convention for an intentionally blank segment; dropping it would shift `C_Profitcenter` into the `A_Kostenstelle` slot when D365 parses the string. `Add` ignores a null, empty, or whitespace `name` or `value` (a no-op), and `Build` returns an empty string when the builder was never initialised. Call `Initialize(format)` again or `Clear()` to reuse the instance.
+
+## Configure a default format name
+
+Bind `FOSettings` to carry an environment default so you do not repeat the name on every call:
 
 ```json
 {
   "FOSettings": {
-    "DimensionFormatName": "Sachkontodimensionen"
+    "DimensionFormatName": "Sachkontodimensionen",
+    "DimensionHierarchyType": "DataEntityLedgerDimensionFormat"
   }
 }
 ```
 
-This is bound to `IntegratoR.OData.FO.Domain.Models.Settings.FOSettings` and is available via `IOptions<FOSettings>` for consumers that want a single configured default rather than passing the name on each call.
-
-Programmatic overrides use the builder hook:
+Read it via `IOptions<FOSettings>`, or override it programmatically through the builder hook — `AddIntegratoR` is the only DI entry point:
 
 ```csharp
 services.AddIntegratoR(configuration, integrator =>
 {
     integrator.ConfigureFO(fo =>
     {
-        fo.DimensionFormatName = "Default account";
+        fo.DimensionFormatName = "Sachkontodimensionen";
+        fo.DimensionHierarchyType = DimensionHierarchyType.DataEntityLedgerDimensionFormat;
     });
 });
 ```
 
-## When Things Go Wrong
+## DON'T / DO — persisting the value on a journal line
 
-**`DimensionParameters.NotFound` with `ErrorType.NotFound`** — `DimensionParameters` is a singleton-row entity in D365. An empty response means the row was never seeded in this environment. Verify by browsing to the dimension parameters page in D365 F&O.
+> [!WARNING]
+> `DefaultDimensionDisplayValue` on `LedgerJournalLine` is `[ODataField(IgnoreOnCreate = true)]` — it is stripped from the create payload. Set it on a `CreateCommand<LedgerJournalLine>` and the create appears to succeed while the dimensions silently vanish.
 
-**Empty `Segments` returned successfully** — the dimension format name does not exist (filter matched zero rows). The handler returns an empty `DimensionFormat` with no segments rather than a `NotFound` failure in this case; an empty segment list at runtime indicates either a misspelled `dimensionFormat` parameter or a missing setup in D365.
+```csharp
+// DON'T — the dimension string is dropped on create; the line posts without dimensions.
+LedgerJournalLine line = new()
+{
+    DataAreaId = "USMF",
+    JournalBatchNumber = "B0001",
+    AccountDisplayValue = "618160",
+    AccountType = LedgerJournalACType.Ledger,
+    DebitAmount = 1000m,
+    CreditAmount = 0m,
+    CurrencyCode = "EUR",
+    TransDate = DateTimeOffset.UtcNow,
+    DefaultDimensionDisplayValue = displayValue // stripped — IgnoreOnCreate
+};
 
-**`DimensionFormat` returned but `Build()` produces a wildly wrong string** — the segments in D365 are not in the order the consumer expected. Always log the resolved `Segments` array at startup to catch this early.
+// DO — carry the dimensions inside AccountDisplayValue, the account+dimension composite string.
+line.AccountDisplayValue = displayValue; // e.g. "618160-001-PC42"
+```
+
+`AccountDisplayValue` is **also** `[ODataField(IgnoreOnCreate = true)]`, so the framework strips it from the POST body too. D365 resolves the main account and dimensions server-side from the journal template; whether it accepts the composite string on create depends on that template, so it is not a guaranteed round-trip. Read the value back from `result.Value` after the create, and see [Known Limitations](Known-Limitations) for the `required` + `IgnoreOnCreate` audit.
+
+`GetCharValue` currently maps only the `Hyphen` delimiter; any other `DimensionSegmentDelimiter` throws `ArgumentOutOfRangeException` inside the handler. If your environment uses a non-hyphen delimiter, that is a live gap — see [Known Limitations](Known-Limitations).
+
+The bundled smoke test proves this flow against a real D365 sandbox — `POST /api/smoke/financial-dimensions` runs `GetDimensionOrdersQuery` end to end and returns the live delimiter and segments. See [Run Smoke Tests](Run-Smoke-Tests).
 
 ## See Also
-
-- [Run Smoke Tests](Run-Smoke-Tests) — the FinancialDimension smoke test exercises this flow live
-- [Run Queries](Run-Queries) — `GetDimensionOrdersQuery` as a custom cacheable query
-- [Cache Query Results](Cache-Query-Results) — the 15-minute cache duration governs how often D365 is hit
-- [Define Entities](Define-Entities) — `DimensionIntegrationFormat` and `DimensionParameters` entity shapes
+- [Run Queries](Run-Queries)
+- [Cache Query Results](Cache-Query-Results)
+- [Handle Errors](Handle-Errors)
+- [Run Smoke Tests](Run-Smoke-Tests)

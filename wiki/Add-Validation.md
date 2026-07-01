@@ -1,10 +1,12 @@
 # Add Validation
+> Last verified against v2.0.1
 
-Validation runs as a MediatR pipeline behaviour. Any command or query with a registered FluentValidation `AbstractValidator<TRequest>` is validated **before** its handler runs — the handler can assume valid input.
+Validation runs as a pipeline behaviour: `ValidationBehaviour` executes every registered FluentValidation validator for a command or query before its handler runs, so the handler assumes valid input. A registered validator on the request type is all you write.
 
-## Define a Validator
+Define a validator for a `CreateCommand<LedgerJournalHeader>` and register its assembly through `AddIntegratoR`.
 
 ```csharp
+using System.Reflection;
 using FluentValidation;
 using IntegratoR.Abstractions.Common.CQRS.Commands;
 using IntegratoR.OData.FO.Domain.Entities.LedgerJournal;
@@ -28,11 +30,7 @@ public sealed class CreateLedgerJournalHeaderValidator
 }
 ```
 
-A validator is just a class deriving from `AbstractValidator<TRequest>` where `TRequest` is the MediatR request type. For generic commands the validator targets the closed generic — `CreateCommand<LedgerJournalHeader>`, not `CreateCommand<>`.
-
-## Register Validators
-
-The validator must live in an assembly registered via `AddConsumerHandlers(...)`:
+`AbstractValidator<TRequest>` targets the closed request type — `CreateCommand<LedgerJournalHeader>`, never the open `CreateCommand<>`. Register the validator's assembly through the builder:
 
 ```csharp
 services.AddIntegratoR(context.Configuration, integrator =>
@@ -41,7 +39,7 @@ services.AddIntegratoR(context.Configuration, integrator =>
 });
 ```
 
-`AddConsumerHandlers` scans the supplied assembly for MediatR handlers **and** FluentValidation validators in the same pass. Custom validators in third-party libraries can be added by passing their assembly explicitly:
+`AddConsumerHandlers` scans each assembly for MediatR handlers and FluentValidation validators in one pass. Pass a third-party assembly explicitly to pick up its validators:
 
 ```csharp
 integrator.AddConsumerHandlers(
@@ -49,35 +47,68 @@ integrator.AddConsumerHandlers(
     typeof(SomeExternalValidator).Assembly);
 ```
 
-Internally, `AddIntegratoR` registers every assembly passed to `AddConsumerHandlers` via `services.AddValidatorsFromAssembly(...)` for its validators, and folds it into the combined `RegisterGenericHandlers = true` MediatR scan so its handlers — including the closed generic CRUD/query handlers for its entities — register in the same pass as the framework's own.
+## Send a request and read the rejection
 
-## How Validation Fits Into the Pipeline
-
-`ValidationBehaviour` runs in the canonical chain (Logging → Validation → Caching → Handler), short-circuiting with `Result.Fail(IntegrationError("Validation.Error", <first failure message>, ErrorType.Validation))` so the handler never runs on invalid input — see [Extend the Pipeline](Extend-the-Pipeline) for the full chain.
-
-> The behaviour returns only the **first** validation failure. Multiple `RuleFor` violations on the same request reach the consumer as a single error. This is intentional — most HTTP clients only surface one error at a time. Validators that need to surface multiple failures should compose the messages into a single rule (`When` / `Must` / custom validator).
-
-## Validation Error Shape
-
-The consumer sees:
+Send a `LedgerJournalHeader` that breaks a rule (`DataAreaId` "US" is two characters), and validation short-circuits before the OData call.
 
 ```csharp
-Result<LedgerJournalHeader> result = await mediator.Send(command, cancellationToken);
+LedgerJournalHeader header = new()
+{
+    DataAreaId = "US",              // fails Length(4)
+    JournalName = "GENJ",
+    Description = "April accruals",
+};
+
+Result<LedgerJournalHeader> result =
+    await mediator.Send(new CreateCommand<LedgerJournalHeader>(header), cancellationToken);
 
 if (result.IsFailed)
 {
-    IntegrationError? error = result.GetError();
+    IntegrationError error = result.GetError();
     // error.Code    == "Validation.Error"
     // error.Type    == ErrorType.Validation
-    // error.Message == "DataAreaId is required."   (first failure message)
+    // error.Message == "DataAreaId must be exactly 4 characters."
 }
 ```
 
-See [Handle Errors](Handle-Errors) for how `ErrorType.Validation` maps to HTTP 400 Bad Request and the recommended HTTP response shape.
+`ValidationBehaviour` runs all validators, collects every failure, then returns the **first** as `IntegrationError("Validation.Error", <first message>, ErrorType.Validation)`. The handler never runs, so no request reaches D365. [Handle Errors](Handle-Errors) maps `ErrorType.Validation` to HTTP 400.
 
-## Validate Entities, Not Just Commands
+> [!NOTE]
+> Only the first failure reaches the caller. Multiple broken `RuleFor` rules surface as a single error — most HTTP clients show one at a time. To report several at once, compose them into one rule with `Must` or a custom message.
 
-The example above validates a `CreateCommand<LedgerJournalHeader>`, but FluentValidation also supports child validators that apply to nested types. Define a reusable entity validator and refer to it from each command validator:
+## Where validation sits in the pipeline
+
+The chain is `Logging → Validation → Caching → Handler`. `ValidationBehaviour` is second, so an invalid request never hits the cache or the handler. [Extend the Pipeline](Extend-the-Pipeline) covers the full order and adding behaviours.
+
+## The framework validators that already fire
+
+`AddIntegratoR` closes IntegratoR's open-generic command and query validators over **every** `IEntity` — the F&O entities and your custom ones — and registers each as a resolvable `IValidator<>`. These fire without any code from you (since v2.0.1):
+
+| Validator | Guards |
+|---|---|
+| `CreateCommandValidator<T>` / `UpdateCommandValidator<T>` / `DeleteCommandValidator<T>` | `Entity` not null |
+| `CreateBatchCommandValidator<T>` / `UpdateBatchCommandValidator<T>` / `DeleteBatchCommandValidator<T>` | batch list not null or empty |
+| `GetByKeyQueryValidator<T>` | `CompositeKey` not null, non-empty, no null elements |
+| `GetByFilterQueryValidator<T>` | `Filter` expression not null |
+
+Send a `CreateCommand<LedgerJournalHeader>(null!)` and the built-in `CreateCommandValidator<LedgerJournalHeader>` rejects it before any handler runs:
+
+```csharp
+Result<LedgerJournalHeader> result =
+    await mediator.Send(new CreateCommand<LedgerJournalHeader>(null!), cancellationToken);
+
+// result.IsFailed
+// result.GetError().Message == "Entity must not be null."
+```
+
+Your `CreateLedgerJournalHeaderValidator` and the framework's `CreateCommandValidator<LedgerJournalHeader>` both run against the same request; their failures aggregate and the first surfaces.
+
+> [!CAUTION]
+> Generic command validation fires only through `AddIntegratoR`, which closes the open-generic validators over each entity. FluentValidation's own assembly scanner skips open generics (see ADR-0001), so `AddApplicationServices` alone leaves `ValidationBehaviour` with an empty validator set and no generic validation runs.
+
+## Reuse an entity validator across commands
+
+Define one validator for the entity and reference it from each command validator with `SetValidator`:
 
 ```csharp
 public sealed class LedgerJournalHeaderValidator : AbstractValidator<LedgerJournalHeader>
@@ -100,39 +131,19 @@ public sealed class CreateLedgerJournalHeaderValidator
 }
 ```
 
-Both validators must be in an assembly registered via `AddConsumerHandlers(...)`.
+Register both validators' assembly through `AddConsumerHandlers`.
 
-## Validate Custom Queries
+## When things go wrong
 
-Queries are validated the same way:
+**Custom validator never runs** — its assembly was not passed to `AddConsumerHandlers`. The framework scans only the assemblies you list plus its own; add yours to the builder call.
 
-```csharp
-public sealed class GetByKeyQueryValidator<T>
-    : AbstractValidator<GetByKeyQuery<T>>
-    where T : class, IEntity
-{
-    public GetByKeyQueryValidator()
-    {
-        RuleFor(x => x.CompositeKey)
-            .NotNull().WithMessage("Composite key is required.")
-            .Must(k => k.Length > 0).WithMessage("Composite key must contain at least one value.");
-    }
-}
-```
+**Validator throws instead of returning a failure** — an exception inside a validator propagates and is not wrapped in a `Result`. Keep validators as pure rule definitions; for async lookups use `MustAsync` and register every dependency the validator injects.
 
-Open-generic validators close transparently as long as the closed generic of the request type matches.
-
-## When Things Go Wrong
-
-**Validator not running** — confirm the validator's assembly was passed to `AddConsumerHandlers`. The framework only scans assemblies listed explicitly.
-
-**Multiple validators on the same request** — all run, all failures are collected, but only the first is surfaced to the consumer. Make rules pre-conditions of each other with `When(...)` if a specific failure should suppress others.
-
-**Validator throws unexpectedly** — exceptions inside a validator propagate (they are not wrapped in `Result`). Validators should be pure rule definitions; if a validator needs async work, use `MustAsync` and ensure all DI dependencies are correctly registered.
+**Composite-key query fails validation before the read** — `GetByKeyQueryValidator<T>` rejects a null or empty `CompositeKey` with `Validation.Error`. Build the key from the entity: `header.GetCompositeKey()` returns `[DataAreaId, JournalBatchNumber!]`.
 
 ## See Also
 
-- [Send Commands](Send-Commands) — commands that flow through the validation pipeline
+- [Send Commands](Send-Commands) — the commands that flow through validation
 - [Handle Errors](Handle-Errors) — `ErrorType.Validation` and the `Validation.Error` code
-- [Extend the Pipeline](Extend-the-Pipeline) — adding custom behaviours alongside `ValidationBehaviour`
+- [Extend the Pipeline](Extend-the-Pipeline) — the behaviour chain around `ValidationBehaviour`
 - [Test with TestKit](Test-with-TestKit) — assert on validation results
