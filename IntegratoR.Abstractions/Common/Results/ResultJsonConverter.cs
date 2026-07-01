@@ -160,6 +160,7 @@ public class ResultGenericJsonConverter : JsonConverter
 /// Newtonsoft.Json converter for the generic <see cref="Result{T}"/> type.
 /// Serialises <c>isSuccess</c>, <c>value</c>, and <c>errors</c>.
 /// </summary>
+/// <typeparam name="T">The value type carried by the <see cref="Result{T}"/>.</typeparam>
 public class ResultJsonConverter<T> : JsonConverter<Result<T>>
 {
     /// <inheritdoc/>

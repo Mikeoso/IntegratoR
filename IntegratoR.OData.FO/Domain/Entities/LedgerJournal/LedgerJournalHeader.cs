@@ -58,22 +58,25 @@ public class LedgerJournalHeader : BaseEntity
     public virtual CurrentOperationsTax PostingLayer { get; set; }
 
     /// <summary>
-    /// Gets or sets a value indicating whether the journal has been posted to the general ledger. Read-only in D365.
+    /// Gets or sets a value indicating whether the journal has been posted to the general ledger.
     /// </summary>
+    /// <remarks>Read-only in D365; excluded from the update payload.</remarks>
     [JsonPropertyName("IsPosted")]
     [ODataField(IgnoreOnUpdate = true)]
     public virtual NoYes IsPosted { get; set; }
 
     /// <summary>
-    /// Gets or sets the system-calculated total of all debit amounts from the journal lines. Read-only in D365.
+    /// Gets or sets the system-calculated total of all debit amounts from the journal lines.
     /// </summary>
+    /// <remarks>Read-only in D365; excluded from the update payload.</remarks>
     [JsonPropertyName("JournalTotalDebit")]
     [ODataField(IgnoreOnUpdate = true)]
     public virtual decimal JournalTotalDebit { get; set; }
 
     /// <summary>
-    /// Gets or sets the system-calculated total of all credit amounts from the journal lines. Read-only in D365.
+    /// Gets or sets the system-calculated total of all credit amounts from the journal lines.
     /// </summary>
+    /// <remarks>Read-only in D365; excluded from the update payload.</remarks>
     [JsonPropertyName("JournalTotalCredit")]
     [ODataField(IgnoreOnUpdate = true)]
     public virtual decimal JournalTotalCredit { get; set; }

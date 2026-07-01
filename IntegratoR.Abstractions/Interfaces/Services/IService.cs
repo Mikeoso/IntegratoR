@@ -8,7 +8,7 @@ namespace IntegratoR.Abstractions.Interfaces.Services;
 /// Defines the generic data-access abstraction for an entity type, exposing CRUD and query operations.
 /// </summary>
 /// <typeparam name="TEntity">The type of the entity, which must implement <see cref="IEntity"/>.</typeparam>
-/// <remarks>This interface is itself the data-access abstraction; do not wrap it in an additional repository layer.</remarks>
+/// <remarks>This interface is itself the data-access abstraction; do not add a wrapping data-access layer over it.</remarks>
 public interface IService<TEntity> where TEntity : IEntity
 {
     /// <summary>

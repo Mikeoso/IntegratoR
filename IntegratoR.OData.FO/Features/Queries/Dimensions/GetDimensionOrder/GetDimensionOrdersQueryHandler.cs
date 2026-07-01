@@ -33,10 +33,7 @@ public class GetDimensionOrdersQueryHandler : IRequestHandler<GetDimensionOrders
         _dimensionIntegrationFormatService = dimensionIntegrationFormatService;
     }
 
-    /// <summary>
-    /// Resolves the active dimension format matching the requested name and hierarchy type and
-    /// returns its ordered segments and delimiter.
-    /// </summary>
+    /// <inheritdoc/>
     /// <param name="request">The query specifying the dimension format name and hierarchy type.</param>
     /// <param name="cancellationToken">A token that cancels the outbound OData requests.</param>
     /// <returns>

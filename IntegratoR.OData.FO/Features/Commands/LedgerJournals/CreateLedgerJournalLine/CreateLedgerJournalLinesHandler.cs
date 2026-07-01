@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 namespace IntegratoR.OData.FO.Features.Commands.LedgerJournals.CreateLedgerJournalLine;
 
 /// <summary>Creates a batch of LedgerJournalLine entities in D365 F&amp;O, emitting domain-specific structured logs. Retained over the generic CreateBatchCommandHandler&lt;T&gt; because it adds journal-context (Count) logging.</summary>
+/// <typeparam name="TEntity">The type of the entity being created.</typeparam>
 public class CreateLedgerJournalLinesHandler<TEntity> : IRequestHandler<CreateLedgerJournalLinesCommand<TEntity>, Result> where TEntity : LedgerJournalLine
 {
     private readonly ILogger<CreateLedgerJournalLinesHandler<TEntity>> _logger;

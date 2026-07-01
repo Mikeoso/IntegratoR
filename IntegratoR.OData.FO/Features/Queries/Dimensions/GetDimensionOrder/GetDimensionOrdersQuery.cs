@@ -7,14 +7,16 @@ namespace IntegratoR.OData.FO.Features.Queries.Dimensions.GetDimensionOrder;
 
 /// <summary>
 /// Represents a cacheable query for the segment order of a D365 F&amp;O financial dimension format,
-/// identified by its <paramref name="DimensionFormat"/> name and <paramref name="HierarchyType"/>.
+/// identified by its <c>DimensionFormat</c> name and <c>HierarchyType</c>.
 /// </summary>
+/// <param name="DimensionFormat">The name of the dimension format to resolve.</param>
+/// <param name="HierarchyType">The hierarchy type that selects the active format.</param>
 public record GetDimensionOrdersQuery(string DimensionFormat, DimensionHierarchyType HierarchyType) : ICacheableQuery<Result<DimensionFormatModel>>
 {
     /// <summary>Gets the cache key derived from the dimension format name and hierarchy type.</summary>
     public string CacheKey => $"{nameof(GetDimensionOrdersQuery)}-{DimensionFormat}-{HierarchyType}";
 
-    /// <summary>Gets the cache duration, 15 minutes.</summary>
+    /// <summary>Gets the cache duration for this query.</summary>
     public TimeSpan? CacheDuration => TimeSpan.FromMinutes(15);
 
     // GenerateCacheKey/GetCacheKeyValues are [Obsolete] on ICacheableQuery but must still be
@@ -34,7 +36,7 @@ public record GetDimensionOrdersQuery(string DimensionFormat, DimensionHierarchy
     }
 #pragma warning restore CS0618 // Type or member is obsolete
 
-    /// <summary>Gets the structured-logging context for this query.</summary>
+    /// <summary>Gets the structured logging context for this query.</summary>
     public IReadOnlyDictionary<string, object> GetLoggingContext()
     {
         return new Dictionary<string, object>
