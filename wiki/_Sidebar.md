@@ -24,7 +24,3 @@
 - [Known Limitations](Known-Limitations)
 - [Troubleshoot Common Issues](Troubleshoot-Common-Issues)
 - [Release Notes and Versioning](Release-Notes-and-Versioning)
-
----
-
-[Source on GitHub](https://github.com/Mikeoso/IntegratoR) · [NuGet](https://www.nuget.org/packages?q=IntegratoR)

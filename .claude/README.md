@@ -33,6 +33,7 @@ Decide with two questions: *is it always needed?* and *is it tied to a recogniza
 | Topic | Owner |
 |-------|-------|
 | C# language / style / naming / testing how-to | `skills/csharp-coding-standards` |
+| GitHub wiki conceptual / how-to / reference prose | `skills/wiki-documentation` (via the `/docs` command) |
 | Public API compatibility & versioning | `rules/api-compatibility.md` + `skills/csharp-api-design` |
 | Architecture, CQRS, serialisation | `rules/architecture.md` |
 | OData / D365 entity & settings conventions | `rules/odata-conventions.md` |

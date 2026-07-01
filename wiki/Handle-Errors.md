@@ -1,93 +1,139 @@
 # Handle Errors
+> Last verified against v2.0.1
 
-The framework uses `FluentResults.Result<T>` as the return shape for every operation that can fail at the business level. Consumer code never wraps framework calls in `try`/`catch` for business-logic errors — the `Result` carries success state, an `IntegrationError` on failure, and an optional original exception.
-
-## Check a Result
+Every operation that can fail returns `FluentResults.Result<T>`. Business failures never throw — the result carries success state, and on failure an `IntegrationError` with a machine-readable `Code`, an `ErrorType`, and the original `Exception` when one was wrapped. Inspect the result rather than wrapping calls in `try`/`catch`.
 
 ```csharp
-Result<LedgerJournalHeader> result = await mediator.Send(
-    new CreateCommand<LedgerJournalHeader>(header),
-    cancellationToken).ConfigureAwait(false);
+var header = new LedgerJournalHeader
+{
+    DataAreaId = "USMF",
+    JournalName = "GenJrn",
+    Description = "April accruals",
+};
+
+Result<LedgerJournalHeader> result = await mediator
+    .Send(new CreateCommand<LedgerJournalHeader>(header), cancellationToken)
+    .ConfigureAwait(false);
 
 if (result.IsSuccess)
 {
     LedgerJournalHeader created = result.Value;
     logger.LogInformation("Created journal {BatchNumber}", created.JournalBatchNumber);
-    return;
 }
-
-IntegrationError? error = result.GetError();
-logger.LogWarning("Create failed: [{Code}] {Message}", error?.Code, error?.Message);
-```
-
-`GetError()` is an extension method (in `IntegratoR.Abstractions.Common.Results`) that returns the first `IntegrationError` from the result's error list, or `null` if no `IntegrationError` exists. Always prefer this over manually searching `result.Errors`.
-
-## Pattern-Match with `Match()`
-
-```csharp
-string message = result.Match(
-    onSuccess: header => $"Created {header.JournalBatchNumber}",
-    onFailure: error => $"Failed: [{error.Code}] {error.Message}");
-```
-
-The non-generic overload handles `Result` (no value):
-
-```csharp
-string message = batchResult.Match(
-    onSuccess: () => "Batch complete",
-    onFailure: error => $"Batch failed: {error.Message}");
-```
-
-`Match` is exhaustive — both delegates must be supplied. If the failed result somehow lacks an `IntegrationError`, the overload synthesises a fallback `IntegrationError("Unknown", <message>, ErrorType.Failure)` so the `onFailure` delegate always receives a non-null error.
-
-## The `IntegrationError` Type
-
-`IntegrationError` extends `FluentResults.Error` with three additional properties:
-
-```csharp
-public class IntegrationError : FluentResults.Error
+else
 {
-    public string Code { get; }            // machine-readable, e.g. "OData.AuthenticationFailed"
-    public ErrorType Type { get; }         // category for HTTP mapping + log-level selection
-    public Exception? Exception { get; }   // original exception, if the failure wrapped one
+    IntegrationError? error = result.GetError();
+    logger.LogWarning("Create failed: [{Type} {Code}]", error?.Type, error?.Code);
 }
 ```
 
-`Code` is freeform — the framework uses dotted-segment codes like `OData.NotFound`, `Validation.Error`, `DimensionParameters.NotFound`. Custom handlers should follow the same convention so HTTP responses and log aggregators can match on prefix.
+`result.GetError()` returns the first `IntegrationError` from the result, or `null` if the result carries none. Use it consistently — never hand-roll a LINQ query over `result.Errors`.
 
-The optional `Exception` is set when the failure originated from an exception (e.g. `ODataClientException`, `MsalServiceException`). The constructor automatically calls `CausedBy(exception)` so `result.Errors[0].Reasons` also surfaces the exception for downstream FluentResults consumers.
+## Read the error
 
-## The `ErrorType` Enum
+`IntegrationError` extends `FluentResults.Error` with three members. Deep-linked source: [IntegrationError.cs](https://github.com/Mikeoso/IntegratoR/blob/main/IntegratoR.Abstractions/Common/Results/IntegrationError.cs).
 
-`ErrorType` categorises errors for HTTP status mapping and log-level selection:
+| Member | What it holds |
+|---|---|
+| `Code` | Machine-readable, dotted-segment string — `Validation.Error`, `Auth.Msal.invalid_client`. Match on the prefix. |
+| `Type` | An `ErrorType` for HTTP-status and log-level mapping. |
+| `Exception` | The wrapped exception when the failure originated from one; otherwise `null`. |
 
-| ErrorType | Meaning | Typical HTTP status | Typical log level |
-|---|---|---|---|
-| `Failure` | General failure (default) | 500 Internal Server Error | Error |
-| `Validation` | Input validation failed in the MediatR pipeline | 400 Bad Request | Warning |
-| `NotFound` | Entity not found by composite key | 404 Not Found | Information |
-| `Conflict` | Duplicate, concurrency conflict, or domain rule violation | 409 Conflict | Warning |
+When an exception is passed, the constructor calls `CausedBy(exception)`, so FluentResults' own `Reasons` chain surfaces it too.
 
-A typical Azure Function handler switches on `error.Type`:
+## The four `ErrorType` values
+
+`ErrorType` has exactly four members. There are no others.
+
+| `ErrorType` | Meaning | Typical HTTP status |
+|---|---|---|
+| `Failure` | General or unexpected failure (the default) | 500 |
+| `Validation` | Input rejected by the `ValidationBehaviour` | 400 |
+| `NotFound` | No entity matched the composite key | 404 |
+| `Conflict` | Duplicate, concurrency clash, or domain-rule breach | 409 |
+
+Map to an HTTP response by switching on `Type`:
 
 ```csharp
+IntegrationError? error = result.GetError();
+
 HttpResponseData response = error?.Type switch
 {
     ErrorType.Validation => req.CreateResponse(HttpStatusCode.BadRequest),
     ErrorType.NotFound   => req.CreateResponse(HttpStatusCode.NotFound),
     ErrorType.Conflict   => req.CreateResponse(HttpStatusCode.Conflict),
-    _                    => req.CreateResponse(HttpStatusCode.InternalServerError)
+    _                    => req.CreateResponse(HttpStatusCode.InternalServerError),
 };
-await response.WriteAsJsonAsync(new { error?.Code, error?.Message }, cancellationToken)
-    .ConfigureAwait(false);
-return response;
 ```
 
-> Never copy `error.Message` raw into the HTTP `ReasonPhrase` — internal codes (tenant IDs, MSAL error codes, D365 inner-error payloads) can leak. Surface a generic message externally and keep the full error in the structured log.
+## Pattern-match with `Match`
 
-## Creating Custom Errors
+`Match` collapses both branches into one expression and always hands `onFailure` a non-null `IntegrationError`. If a failed result somehow carries no `IntegrationError`, `Match` synthesises `IntegrationError("Unknown", <message>, ErrorType.Failure)` so your delegate never dereferences null.
 
-Custom command and query handlers return errors using `Result.Fail`:
+```csharp
+string summary = result.Match(
+    onSuccess: created => $"Created {created.JournalBatchNumber}",
+    onFailure: error => $"Failed: [{error.Type} {error.Code}]");
+```
+
+The non-generic overload matches a valueless `Result` from a batch command:
+
+```csharp
+Result batchResult = await mediator
+    .Send(new CreateBatchCommand<LedgerJournalLine>(lines), cancellationToken)
+    .ConfigureAwait(false);
+
+string summary = batchResult.Match(
+    onSuccess: () => "Batch complete",
+    onFailure: error => $"Batch failed: {error.Code}");
+```
+
+## Concrete D365 rejections
+
+Each downstream rejection reaches you as a failed `Result<T>` with a distinct `Code` and `Type`. None throws.
+
+### Read-only field on update — 403
+
+D365 marks several `LedgerJournalHeader` fields read-only after create: `JournalName`, `IsPosted`, `JournalTotalDebit`, `JournalTotalCredit`, and `AccountingCurrency`. Each carries `[ODataField(IgnoreOnUpdate = true)]`, so the serialiser drops it from the PATCH payload.
+
+> [!WARNING]
+> If even one `IgnoreOnUpdate` field reaches the payload, D365 rejects the **whole** PATCH with HTTP 403 (`ODataSecurityException`, `"update not allowed for field 'X'"`) — not only that field. Audit every field against D365's update semantics before shipping an entity. The failed `Result<T>` surfaces as a `Failure`-typed `IntegrationError` whose `Exception` holds the client exception.
+
+```csharp
+Result<LedgerJournalHeader> result = await mediator
+    .Send(new UpdateCommand<LedgerJournalHeader>(header), cancellationToken)
+    .ConfigureAwait(false);
+
+if (result.IsFailed)
+{
+    IntegrationError? error = result.GetError();
+    // error.Type == ErrorType.Failure; error.Exception carries the ODataClientException (HTTP 403).
+    logger.LogError(error?.Exception, "Update rejected: [{Code}]", error?.Code);
+}
+```
+
+### Validation — 400
+
+The `ValidationBehaviour` runs before the handler and returns the **first** validation failure as a fixed shape — `IntegrationError("Validation.Error", <first message>, ErrorType.Validation)`. Later failures are dropped. See [Add Validation](Add-Validation).
+
+```csharp
+if (result.IsFailed && result.GetError()?.Type == ErrorType.Validation)
+{
+    // Code is always "Validation.Error"; Message is the first FluentValidation failure.
+    return req.CreateResponse(HttpStatusCode.BadRequest);
+}
+```
+
+### Authentication — 401
+
+An OAuth token-acquisition failure returns `IntegrationError("Auth.Msal.{code}", "Token acquisition failed", ErrorType.Failure, ex)`, where `{code}` is the MSAL error code and `ex` is the MSAL exception. On the HTTP path the `ODataAuthenticationHandler` short-circuits with a 401 whose `ReasonPhrase` is the fixed string `"Authentication failed"`. See [Authentication Modes](Authentication-Modes).
+
+> [!WARNING]
+> Never copy `error.Message` or `error.Exception` detail into an HTTP `ReasonPhrase` or response body — tenant IDs, MSAL/AADSTS codes, and D365 inner-error payloads leak that way. Return a generic message to the caller and log the full error server-side only.
+
+## Raise an error from a custom handler
+
+Return a failed result with `Result.Fail` — do not throw for a business rule:
 
 ```csharp
 return Result.Fail<LedgerJournalHeader>(new IntegrationError(
@@ -96,11 +142,9 @@ return Result.Fail<LedgerJournalHeader>(new IntegrationError(
     type: ErrorType.Conflict));
 ```
 
-Wrap an existing exception to preserve the stack:
+Pass the exception when wrapping one, so the stack is preserved:
 
 ```csharp
-using PanoramicData.OData.Client.Exceptions;
-
 catch (ODataClientException ex)
 {
     return Result.Fail<LedgerJournalHeader>(new IntegrationError(
@@ -111,71 +155,26 @@ catch (ODataClientException ex)
 }
 ```
 
-To propagate errors from a downstream call verbatim — preserving every `IError` (including `IntegrationError`) — use the constructor overload that takes a list:
+To propagate a downstream failure verbatim — keeping every `IError`, including the original `IntegrationError` — pass the error list straight through:
 
 ```csharp
-Result<IEnumerable<LedgerJournalHeader>> upstream = await _service.FindAsync(...);
+Result<IEnumerable<LedgerJournalHeader>> upstream = await service
+    .FindAsync(filter, cancellationToken)
+    .ConfigureAwait(false);
+
 if (upstream.IsFailed)
 {
     return Result.Fail<DimensionFormat>(upstream.Errors);
 }
 ```
 
-The handler in `GetDimensionOrdersQueryHandler` uses this pattern so callers see the real underlying cause (auth failure, entity-set-not-found, APIM rejection) rather than a generic wrapper.
+## What still throws
 
-## Validation Errors
-
-Validation failures emitted by the `ValidationBehaviour` use a fixed shape:
-
-```csharp
-new IntegrationError(
-    code: "Validation.Error",
-    message: <first validation failure message>,
-    type: ErrorType.Validation);
-```
-
-The behaviour returns the **first** validation failure rather than the full collection. This keeps client-side handling simple — most clients only care about the first reason. If a validator surfaces multiple rules, only the first reaches the client; the rest are dropped.
-
-## Exceptions That Still Throw
-
-The `Result` pattern covers business-logic failures. True infrastructure exceptions still propagate:
-
-- Network failures the Polly retry policy cannot recover from
-- `NullReferenceException` from genuine bugs
-- `OperationCanceledException` from the cancellation token
-
-The `LoggingBehaviour` catches unhandled exceptions, logs them at `Error` level with the request payload, and re-throws. Polly handles transient HTTP errors before they reach the pipeline (see [Configure Resilience](Configure-Resilience)).
-
-## Format an Error for Logging
-
-A short extension that produces a single-line summary suitable for `LogWarning`/`LogError`:
-
-```csharp
-string Format(IResultBase result)
-{
-    if (result.IsSuccess)
-        return "Success";
-
-    IntegrationError? error = result.GetError();
-    return error is not null
-        ? $"[{error.Type} {error.Code}] {error.Message}"
-        : (result.Errors.FirstOrDefault()?.Message ?? "Unknown error");
-}
-```
-
-For structured logging (App Insights, Seq) prefer separate parameters so `ErrorType` and `ErrorCode` remain queryable:
-
-```csharp
-_logger.LogWarning(
-    error?.Exception,
-    "{Operation} failed: [{ErrorType} {ErrorCode}] {ErrorMessage}",
-    nameof(CreateLedgerJournalHeader),
-    error?.Type, error?.Code, error?.Message);
-```
+`Result<T>` covers business-logic failures. Genuine infrastructure faults still propagate as exceptions: transient network faults Polly cannot recover, `NullReferenceException` from a real bug, and `OperationCanceledException` from the cancellation token. The `LoggingBehaviour` logs an unhandled exception at `Error` level and re-throws; Polly absorbs transient HTTP faults before they reach the pipeline. See [Configure Resilience](Configure-Resilience).
 
 ## See Also
 
-- [Send Commands](Send-Commands) — command return shapes
-- [Run Queries](Run-Queries) — query return shapes (`GetByKeyQuery` returns `NotFound` on miss)
-- [Add Validation](Add-Validation) — how `Validation.Error` is produced
-- [Troubleshoot Common Issues](Troubleshoot-Common-Issues) — common error codes and their resolutions
+- [Send Commands](Send-Commands)
+- [Run Queries](Run-Queries)
+- [Add Validation](Add-Validation)
+- [Troubleshoot Common Issues](Troubleshoot-Common-Issues)

@@ -1,209 +1,175 @@
 # Extend the Pipeline
+> Last verified against v2.0.1
 
-The MediatR pipeline is the central extension point. Custom commands, custom queries, and custom pipeline behaviours all plug in without modifying framework code.
-
-## When to Add a Custom Command
-
-The generic `CreateCommand<T>` / `UpdateCommand<T>` / `DeleteCommand<T>` shape covers the common CRUD cases. Reach for a custom command when:
-
-- The operation invokes a D365 OData **bound action** (e.g. post a journal, release a sales order).
-- Multiple service calls need to be composed atomically.
-- Entity-specific logging context or pre-validation logic must run before the underlying CRUD operation.
-- The wire payload shape differs from the entity's serialised form (e.g. needs a wrapping envelope).
-
-## Define a Custom Command
+The MediatR pipeline is the extension point. Add your own commands, queries, pipeline behaviours, and validators in a consumer assembly, then hand that assembly to `AddConsumerHandlers` so the framework discovers them.
 
 ```csharp
+using System.Reflection;
 using FluentResults;
+using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.Abstractions.Interfaces.Commands;
+using MediatR;
 
-public record PostLedgerJournalCommand(
-    string DataAreaId,
-    string JournalBatchNumber)
-    : ICommand<Result<PostedJournalReceipt>>;
-
-public sealed record PostedJournalReceipt(string Voucher, DateTime PostedAt);
-```
-
-`ICommand<TResponse>` is `IRequest<TResponse> + IContext`. `IContext` carries the `GetLoggingContext()` method that the `LoggingBehaviour` uses for structured-log enrichment — overriding it lets a command emit additional structured properties:
-
-```csharp
-public record PostLedgerJournalCommand(
-    string DataAreaId,
-    string JournalBatchNumber)
+// 1. Define a custom command — a record implementing ICommand<TResponse>.
+public record PostLedgerJournalCommand(string DataAreaId, string JournalBatchNumber)
     : ICommand<Result<PostedJournalReceipt>>
 {
+    // ICommand carries IContext; override GetLoggingContext to enrich the structured log scope.
     public IReadOnlyDictionary<string, object> GetLoggingContext() => new Dictionary<string, object>
     {
         ["EntityType"] = nameof(LedgerJournalHeader),
         ["DataAreaId"] = DataAreaId,
-        ["JournalBatchNumber"] = JournalBatchNumber
+        ["JournalBatchNumber"] = JournalBatchNumber,
     };
 }
-```
 
-For a fire-and-forget command (no return value), use the non-generic `ICommand`:
+public sealed record PostedJournalReceipt(string Voucher, DateTime PostedAt);
 
-```csharp
-public record ArchiveJournalCommand(string DataAreaId, string JournalBatchNumber)
-    : ICommand;
-```
-
-The handler returns `Task<Result>` rather than `Task<Result<T>>`.
-
-## Implement the Handler
-
-```csharp
+// 2. Implement the handler — return Result<T>, never throw for a business failure.
 public sealed class PostLedgerJournalCommandHandler
     : IRequestHandler<PostLedgerJournalCommand, Result<PostedJournalReceipt>>
 {
-    private readonly IODataClientAdapter _adapter;
-    private readonly ILogger<PostLedgerJournalCommandHandler> _logger;
-
-    public PostLedgerJournalCommandHandler(
-        IODataClientAdapter adapter,
-        ILogger<PostLedgerJournalCommandHandler> logger)
-    {
-        _adapter = adapter;
-        _logger = logger;
-    }
-
     public async Task<Result<PostedJournalReceipt>> Handle(
         PostLedgerJournalCommand request,
         CancellationToken cancellationToken)
     {
-        _logger.LogInformation(
-            "Posting journal {DataAreaId}/{BatchNumber}",
-            request.DataAreaId, request.JournalBatchNumber);
-
-        // Compose the OData bound action call, deserialise the receipt,
-        // and return Result<T>. Exceptions are caught and wrapped as IntegrationError.
-        Result<PostedJournalReceipt> actionResult = await CallBoundActionAsync(request, cancellationToken)
+        Result<PostedJournalReceipt> action = await CallBoundActionAsync(request, cancellationToken)
             .ConfigureAwait(false);
 
-        if (actionResult.IsFailed)
-        {
-            // The bound action rejected the request — surface a typed failure, never throw.
-            return Result.Fail(new IntegrationError(
-                "OData.RequestFailed",
-                "The bound action returned HTTP 400.",
-                ErrorType.Failure));
-        }
+        return action;
+    }
+}
 
-        return actionResult;
+// 3. Register the assembly in the AddIntegratoR builder.
+services.AddIntegratoR(configuration, integrator =>
+    integrator.AddConsumerHandlers(Assembly.GetExecutingAssembly()));
+
+// 4. Send it through IMediator like any other command.
+Result<PostedJournalReceipt> result = await mediator.Send(
+    new PostLedgerJournalCommand("USMF", "B0001"),
+    cancellationToken).ConfigureAwait(false);
+```
+
+`ICommand<TResponse>` is `IRequest<TResponse>` plus `IContext`. Use the non-generic `ICommand` for a command that reports only success or failure; its handler returns `Task<Result>`.
+
+`AddConsumerHandlers` folds the assembly into `AddIntegratoR`'s single combined MediatR scan, so the framework's generic `CreateCommand<T>`/`UpdateCommand<T>`/`DeleteCommand<T>`/`GetByKeyQuery<T>`/`GetByFilterQuery<T>` handlers also close over any entity you declare there — including subclasses of framework entities — with no extra registration.
+
+## Handle the failure path
+
+A custom handler surfaces a D365 rejection as a failed `Result<T>` — it does not throw. Branch on `result.IsFailed` and read `result.GetError()`.
+
+```csharp
+if (result.IsFailed)
+{
+    IntegrationError? error = result.GetError();
+    // e.g. Code "OData.RequestFailed", Type ErrorType.Failure when the bound action returns HTTP 400.
+    return Results.Problem(error?.Message);
+}
+
+PostedJournalReceipt receipt = result.Value;
+```
+
+Inside the handler, wrap a rejected downstream call in an `IntegrationError` rather than letting an exception escape:
+
+```csharp
+if (action.IsFailed)
+{
+    return Result.Fail(new IntegrationError(
+        "OData.RequestFailed",
+        "The bound action returned HTTP 400.",
+        ErrorType.Failure));
+}
+```
+
+`ErrorType` has four members: `Failure`, `Validation`, `NotFound`, `Conflict`. See [Handle Errors](Handle-Errors) for the full mapping.
+
+## Add a custom query
+
+Queries follow the same shape with `IQuery<TResponse>`:
+
+```csharp
+public record GetOpenJournalCountQuery(string DataAreaId) : IQuery<Result<int>>
+{
+    public IReadOnlyDictionary<string, object> GetLoggingContext() =>
+        new Dictionary<string, object> { ["DataAreaId"] = DataAreaId };
+}
+```
+
+Pair it with `IRequestHandler<GetOpenJournalCountQuery, Result<int>>` in the consumer assembly. To cache the response, implement `ICacheableQuery<TResponse>` instead and set `CacheKey` — see [Cache Query Results](Cache-Query-Results).
+
+## Add a custom validator
+
+Write an `AbstractValidator<T>` for your command or query in the consumer assembly. `AddConsumerHandlers` registers it, and the `ValidationBehaviour` runs it before the handler.
+
+```csharp
+using FluentValidation;
+
+public sealed class PostLedgerJournalCommandValidator
+    : AbstractValidator<PostLedgerJournalCommand>
+{
+    public PostLedgerJournalCommandValidator()
+    {
+        RuleFor(command => command.DataAreaId).NotEmpty().Length(1, 4);
+        RuleFor(command => command.JournalBatchNumber).NotEmpty();
     }
 }
 ```
 
-The handler's assembly must be passed to `AddConsumerHandlers(...)` so MediatR discovers it:
+A validation failure short-circuits the pipeline with a failed `Result` carrying `IntegrationError` code `Validation.Error` and `ErrorType.Validation`. See [Add Validation](Add-Validation).
+
+## Add a custom pipeline behaviour
+
+Register an `IPipelineBehavior<TRequest, TResponse>` after `AddIntegratoR` and it runs after the three built-in behaviours.
 
 ```csharp
-services.AddIntegratoR(configuration, integrator =>
-{
-    integrator.AddConsumerHandlers(Assembly.GetExecutingAssembly());
-});
-```
-
-A custom command can be invoked through `IMediator.Send(...)` like any other:
-
-```csharp
-Result<PostedJournalReceipt> result = await mediator.Send(
-    new PostLedgerJournalCommand("USMF", "JBN-000431"),
-    cancellationToken).ConfigureAwait(false);
-```
-
-## Add a Custom Pipeline Behaviour
-
-The three built-in behaviours are registered inside `AddApplicationServices` in the canonical order **Logging → Validation → Caching → Handler**. Custom behaviours register alongside them via standard MediatR DI:
-
-```csharp
-using FluentResults;
 using MediatR;
 
 public sealed class IdempotencyBehaviour<TRequest, TResponse>
     : IPipelineBehavior<TRequest, TResponse>
     where TRequest : IRequest<TResponse>
-    where TResponse : IResultBase
 {
-    private readonly IIdempotencyStore _store;  // consumer-defined type — not shipped by the framework
+    private readonly IIdempotencyStore _store; // consumer-defined; not shipped by the framework
 
-    public IdempotencyBehaviour(IIdempotencyStore store)
-    {
-        _store = store;
-    }
+    public IdempotencyBehaviour(IIdempotencyStore store) => _store = store;
 
     public async Task<TResponse> Handle(
         TRequest request,
         RequestHandlerDelegate<TResponse> next,
         CancellationToken cancellationToken)
     {
-        // Custom cross-cutting concern — check + record idempotency token, then call next()
+        // Cross-cutting concern — record the idempotency token, then call the next step.
         return await next().ConfigureAwait(false);
     }
 }
 ```
 
-Register the behaviour in the consumer's DI wiring:
+Register it in the same `IServiceCollection`:
 
 ```csharp
-services.AddTransient(
-    typeof(IPipelineBehavior<,>),
-    typeof(IdempotencyBehaviour<,>));
+services.AddIntegratoR(configuration, integrator =>
+    integrator.AddConsumerHandlers(Assembly.GetExecutingAssembly()));
+
+services.AddTransient(typeof(IPipelineBehavior<,>), typeof(IdempotencyBehaviour<,>));
 ```
 
-> The order behaviours execute depends on registration order. Behaviours registered **after** `AddIntegratoR` run **after** the built-in behaviours (Logging → Validation → Caching → Custom → Handler). To run a custom behaviour before validation, register it before calling `AddIntegratoR` — note that this requires manual MediatR registration since `AddIntegratoR` calls `AddApplicationServices` which sets the default chain.
+## Understand the execution order
 
-## Custom Query
+`AddIntegratoR` registers the three built-in behaviours in this order:
 
-Custom queries follow the same pattern with `IQuery<TResponse>`:
+**Logging → Validation → Caching → Handler.**
 
-```csharp
-public record GetOpenJournalCountQuery(string DataAreaId)
-    : IQuery<Result<int>>;
-```
+Registration is onion-nested: the first behaviour registered wraps every later one. So `Logging` is outermost (it times and records the whole request), `Validation` short-circuits before `Caching` and the handler, and `Caching` serves a cached hit without invoking the handler.
 
-Pair with `IRequestHandler<GetOpenJournalCountQuery, Result<int>>` in the consumer assembly. Make the query implement `ICacheableQuery<TResponse>` to opt into the cache layer — see [Cache Query Results](Cache-Query-Results).
+Because `AddIntegratoR` registers all three first, a behaviour you register **after** it runs **inside** the built-ins — after `Caching`, immediately around the handler:
 
-## Custom Validators
+`Logging → Validation → Caching → YourBehaviour → Handler`
 
-Custom validators for custom commands or queries are discovered by `AddConsumerHandlers(...)` automatically. See [Add Validation](Add-Validation) for the validator authoring pattern.
-
-## Use the Built-In Services Directly
-
-Sometimes the cleanest extension is **not** a new command but a direct call to `IService<T>` from a custom service or handler:
-
-```csharp
-public sealed class JournalReconciliationService
-{
-    private readonly IService<LedgerJournalHeader> _service;
-
-    public JournalReconciliationService(IService<LedgerJournalHeader> service)
-    {
-        _service = service;
-    }
-
-    public async Task<Result<int>> CountUnpostedAsync(
-        string dataAreaId,
-        CancellationToken cancellationToken)
-    {
-        Result<IEnumerable<LedgerJournalHeader>> result = await _service.FindAsync(
-            h => h.DataAreaId == dataAreaId && h.IsPosted == NoYes.No,
-            cancellationToken).ConfigureAwait(false);
-
-        return result.IsSuccess
-            ? Result.Ok(result.Value.Count())
-            : Result.Fail<int>(result.Errors);
-    }
-}
-```
-
-`IService<TEntity>` is registered transparently by `AddIntegratoR` for every `IEntity` type — both built-in F&O entities and consumer-defined entities (provided the entity's assembly is reachable). The methods on `IService<T>` mirror the generic command and query handlers.
-
-The same pattern works for `IODataBatchService<T>` (bulk operations) and `IODataService<T>` (the typed PanoramicData-flavoured surface). All three are registered against the same concrete `ODataService<T>` implementation.
+> [!CAUTION]
+> Registration order fixes execution order, and getting it wrong fails silently. Register a behaviour that must reject a request (an auth or idempotency gate) **after** `AddIntegratoR` and it runs after `Caching` — a cached response is returned before your gate ever executes, so the gate looks wired but never fires. To run a behaviour before `Validation`, register it on the `IServiceCollection` **before** calling `AddIntegratoR`.
 
 ## See Also
 
-- [Send Commands](Send-Commands) — when the generic shape is sufficient
-- [Run Queries](Run-Queries) — when a custom query reads better than a long LINQ expression
-- [Add Validation](Add-Validation) — validators for custom commands and queries
-- [Cache Query Results](Cache-Query-Results) — opt custom queries into the cache layer
+- [Send Commands](Send-Commands) — when the generic `CreateCommand<T>`/`UpdateCommand<T>`/`DeleteCommand<T>` shape is enough
+- [Add Validation](Add-Validation) — validator authoring and the `Validation.Error` failure
+- [Cache Query Results](Cache-Query-Results) — opt a custom query into the caching behaviour
+- [Understand the Architecture](Understand-the-Architecture) — the pipeline model and dependency direction

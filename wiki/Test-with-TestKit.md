@@ -1,113 +1,139 @@
 # Test with TestKit
+> Last verified against v2.0.1
 
-`IntegratoR.TestKit` is a shared test-support library that provides `Result<T>`-aware assertions, fakes for the cache and HTTP layers, and pre-built test entities. The TestKit is used by the framework's own tests and is published as a NuGet package for consumers to use in their own test suites.
-
-> The TestKit is **not** auto-registered by `AddIntegratoR`. Add a `<PackageReference Include="IntegratoR.TestKit" />` to test projects only.
-
-The framework's tests use xUnit v3, FluentAssertions, and NSubstitute. The TestKit assertions extend FluentAssertions — using a different assertion library is possible but the result-aware extensions only work with FluentAssertions.
-
-## Assert on `Result` and `Result<T>`
-
-The TestKit extends FluentAssertions with custom assertions that produce clear failure messages:
+`IntegratoR.TestKit` gives test projects `Result<T>`-aware assertions, FIFO HTTP and cache fakes, and pre-built entities so a handler test reads like the behaviour it pins. Add a `<PackageReference Include="IntegratoR.TestKit" />` to test projects only — `AddIntegratoR` does not register it.
 
 ```csharp
+using FluentResults;
+using IntegratoR.Abstractions.Common.CQRS.Commands;
+using IntegratoR.Abstractions.Common.Results;
+using IntegratoR.OData.FO.Domain.Entities.LedgerJournal;
 using IntegratoR.TestKit.Assertions;
+using NSubstitute;
+using Xunit;
 
-// Successful result
-result.Should().BeSuccessful();
+[Fact]
+public async Task CreateHandler_ReturnsPersistedHeader()
+{
+    var header = new LedgerJournalHeader
+    {
+        DataAreaId = "USMF",
+        JournalName = "GenJrnl",
+        Description = "Month-end accrual"
+    };
 
-// Failed result
-result.Should().BeFailed();
+    IService<LedgerJournalHeader> service = Substitute.For<IService<LedgerJournalHeader>>();
+    service.AddAsync(header, Arg.Any<CancellationToken>())
+        .Returns(Result.Ok(header));
 
-// Specific error code
-result.Should().HaveErrorCode("OData.NotFound");
+    var handler = new CreateCommandHandler<LedgerJournalHeader>(service);
+    Result<LedgerJournalHeader> result =
+        await handler.Handle(new CreateCommand<LedgerJournalHeader>(header), CancellationToken.None);
 
-// Specific error type
-result.Should().HaveErrorType(ErrorType.Validation);
-
-// Successful result with a specific value (generic Result<T> only)
-result.Should().HaveValue(expectedEntity);
+    result.Should().BeSuccessful();
+    result.Should().HaveValue(header);
+}
 ```
 
-`BeSuccessful()` on a failed result produces a message like *"Expected result to be successful, but it failed with: [OData.NotFound] Entity not found"* — the failure message embeds the error code and message so the test failure is self-describing.
+The five assertions live in `IntegratoR.TestKit.Assertions` and chain off `.Should()`: `BeSuccessful()`, `BeFailed()`, `HaveErrorCode(string)`, `HaveErrorType(ErrorType)`, and `HaveValue(T)` (generic `Result<T>` only). `HaveErrorCode` and `HaveErrorType` read the first `IntegrationError` on the result, so they fail with a clear message if the result carries a plain `Result.Fail("...")`.
 
-The naming is intentional — `BeSuccessful` / `BeFailed` (not `BeSuccess` / `BeFailure`). Tests that use the older shape will not compile against the current TestKit.
+## Handle the failure path
 
-## Fake `ICacheService`
-
-`FakeCacheService` is an in-memory `ICacheService` implementation suitable for verifying the `CachingBehaviour` interaction in tests:
+Assert the rejection the same way you assert success — chain `BeFailed()` into the code or type. This pins the `Validation` error a create raises when `JournalName` is missing:
 
 ```csharp
+[Fact]
+public async Task CreateHandler_SurfacesValidationError()
+{
+    var header = new LedgerJournalHeader { DataAreaId = "USMF", JournalName = "GenJrnl", Description = "x" };
+
+    IService<LedgerJournalHeader> service = Substitute.For<IService<LedgerJournalHeader>>();
+    service.AddAsync(header, Arg.Any<CancellationToken>())
+        .Returns(Result.Fail(new IntegrationError(
+            "Validation.Error", "JournalName is required", ErrorType.Validation)));
+
+    var handler = new CreateCommandHandler<LedgerJournalHeader>(service);
+    Result<LedgerJournalHeader> result =
+        await handler.Handle(new CreateCommand<LedgerJournalHeader>(header), CancellationToken.None);
+
+    result.Should().BeFailed().And.HaveErrorType(ErrorType.Validation);
+    result.Should().HaveErrorCode("Validation.Error");
+}
+```
+
+`BeSuccessful()` on a failed result reports the embedded error — *"Expected result to be successful, but it failed with: JournalName is required"* — so a test failure names the cause without extra logging.
+
+## Stub HTTP with FakeHttpMessageHandler
+
+`FakeHttpMessageHandler` returns queued responses in FIFO order and records what was sent. Construct it parameterless, queue one response per expected call, then call `CreateClient()`:
+
+```csharp
+using System.Net;
 using IntegratoR.TestKit.Fakes;
 
+var handler = new FakeHttpMessageHandler();
+handler.Queue(HttpStatusCode.OK, """{"value":[{"dataAreaId":"USMF"}]}""");   // (status, body)
+handler.Queue(new HttpResponseMessage(HttpStatusCode.NoContent));            // pre-built message
+
+HttpClient client = handler.CreateClient();
+
+HttpResponseMessage first = await client.GetAsync(new Uri("https://host/data/LedgerJournalHeaders"));
+first.StatusCode.Should().Be(HttpStatusCode.OK);
+
+// Inspect what the code under test sent — bodies captured eagerly, survive request disposal.
+handler.SentRequests.Should().HaveCount(1);
+handler.SentRequestBodies[0].Should().BeNull();   // GET has no body
+```
+
+`SentRequests` and `SentRequestBodies` are index-aligned; a request with no content yields a `null` body. Queue a response for every request the code makes.
+
+> [!CAUTION]
+> `FakeHttpMessageHandler` throws `InvalidOperationException` — "No more queued responses" — when the code makes more requests than you queued. Queue one response per expected call, including each item of a batch write (composite-key batch Update/Delete issue one request per item).
+
+## Fake the cache
+
+`FakeCacheService` is an in-memory `ICacheService` for `CachingBehaviour` tests. It stores entries forever — `CacheDuration` is ignored — and exposes `Count`, `Contains`, and `Clear` for inspection:
+
+```csharp
 var cache = new FakeCacheService();
 
-// Run code that exercises CachingBehaviour against this cache
-await handler.Handle(query, cancellationToken);
+await cache.SetAsync("LedgerJournalHeaders-USMF", header);   // no CancellationToken on ICacheService
 
-// Inspect the cache directly
-cache.Contains("MyQuery-key").Should().BeTrue();
+cache.Contains("LedgerJournalHeaders-USMF").Should().BeTrue();
 cache.Count.Should().Be(1);
-
-// Reset between tests
-cache.Clear();
+cache.Clear();   // reset between tests
 ```
 
-The fake stores entries forever — `CacheDuration` is ignored. Tests asserting on duration semantics need to mock `ICacheService` more deeply or use the production `DistributedCacheService` against a `MemoryDistributedCache`.
+To assert duration or eviction semantics, run the production `DistributedCacheService` against a `MemoryDistributedCache` instead — `FakeCacheService` cannot express them.
 
-## Fake `HttpMessageHandler`
+## Use the pre-built test entities
 
-`FakeHttpMessageHandler` is a simple stub for HTTP-level tests:
+Four entities in `IntegratoR.TestKit.Doubles.Entities` cover generic-handler and serialisation tests without pulling a full D365 entity into the fixture. Each inherits the non-generic `BaseEntity` and overrides `GetCompositeKey()`.
 
-```csharp
-using IntegratoR.TestKit.Fakes;
-using System.Net;
-
-var handler = new FakeHttpMessageHandler(
-    new HttpResponseMessage(HttpStatusCode.OK)
-    {
-        Content = new StringContent("""{"value":[]}""")
-    });
-
-var httpClient = new HttpClient(handler);
-```
-
-The fake returns the configured response for every request. Tests that need different responses per call should use NSubstitute against `HttpMessageHandler` directly or stack multiple fakes.
-
-## Test Entities
-
-The TestKit ships four pre-built entities for scenarios where introducing a real D365 entity into a test would be noisy:
-
-| Entity | Composite key | Purpose |
+| Entity | `GetCompositeKey()` | Use for |
 |---|---|---|
-| `TestEntity` | `(Id, PartitionKey)` | Standard composite-key entity for generic command/query tests |
-| `TestEntityWithODataAttributes` | `(Id, PartitionKey)` | Entity with `[ODataField]` annotations for serialisation-stripping tests |
-| `TestEntityWithD365Attributes` | `(Id, PartitionKey)` | Entity with both `[ODataField]` and D365 CSDL-derived annotations (`AllowEdit`, `AllowEditOnCreate`) |
-| `TestSingleKeyEntity` | `(Id)` | Entity with a single key — for non-D365 simple-key tests |
+| `TestEntity` | `[Id, PartitionKey]` | Generic command/query handler tests |
+| `TestEntityWithODataAttributes` | `[Id]` | `[ODataField(IgnoreOnCreate/IgnoreOnUpdate)]` payload-stripping tests |
+| `TestEntityWithD365Attributes` | `[DataAreaId, JournalBatchNumber!]` | `AllowEdit`/`AllowEditOnCreate`/`IsRequired` runtime-enforcement tests |
+| `TestSingleKeyEntity` | `[Id]` | Single-key handling (no array-length ≥ 2 assumption) |
 
-`TestEntityWithODataAttributes` is the right choice when testing that `ODataService<T>.AddAsync` correctly strips `IgnoreOnCreate = true` fields from the payload. `TestSingleKeyEntity` is for verifying that single-key composite-key handling does not assume an array length ≥ 2.
-
-## Build Test Entities
-
-`TestEntityBuilder` constructs `TestEntity` instances with sensible defaults:
+`TestEntityBuilder` builds `TestEntity` from a static `Default()` factory with fixed values — `Id "test-id"`, `PartitionKey "test-partition"`, `Name "Test Entity"`, `Description null` — then chain `With…` overrides for only what the test cares about:
 
 ```csharp
 using IntegratoR.TestKit.Builders;
 
-TestEntity entity = new TestEntityBuilder()
-    .Default()
+TestEntity entity = TestEntityBuilder.Default()   // static factory, not new TestEntityBuilder()
     .WithName("Custom Name")
     .WithPartitionKey("partition-1")
     .Build();
 ```
 
-`Default()` populates every property with a reasonable test value (typically derived from the test method name + a random suffix). Override only the properties the test actually cares about — this keeps the test signal-to-noise high.
+> [!NOTE]
+> `Default()` is a **static** factory returning a fresh builder with hardcoded values — call `TestEntityBuilder.Default()`, not `new TestEntityBuilder().Default()`. Values are constant across runs (no random suffix), so two builders with the same overrides produce equal entities.
 
-The builder pattern is implemented per-property as `With<PropertyName>(value)`. Test authors writing custom entities should follow the same convention so test fixtures stay consistent across the suite.
+## Wire MediatR in a handler test
 
-## Wire MediatR in Tests
-
-For tests of a custom handler, register only the pieces the handler needs:
+Register only what the handler resolves, then send through `IMediator`:
 
 ```csharp
 ServiceCollection services = new();
@@ -119,7 +145,7 @@ ServiceProvider provider = services.BuildServiceProvider();
 IMediator mediator = provider.GetRequiredService<IMediator>();
 ```
 
-For integration tests of `AddIntegratoR` itself, build a `ConfigurationBuilder` with in-memory settings and call `AddIntegratoR(configuration)`:
+For a full-stack test of registration itself, build an in-memory `IConfiguration` and call the one public entry point, `AddIntegratoR` — not the internal `AddODataClient`/`AddApplicationServices` composition steps:
 
 ```csharp
 IConfiguration configuration = new ConfigurationBuilder()
@@ -134,49 +160,23 @@ IConfiguration configuration = new ConfigurationBuilder()
 services.AddIntegratoR(configuration);
 ```
 
-## Project Structure
+## What to test, what to skip
 
-The framework's test projects mirror the source project structure under `tests/`:
+Pin behaviour; skip tests that mirror structure a compiler already guarantees.
 
-```
-tests/
-├── IntegratoR.Abstractions.Tests/
-├── IntegratoR.Application.Tests/
-├── IntegratoR.OData.Tests/
-├── IntegratoR.OData.FO.Tests/
-├── IntegratoR.Hosting.Tests/
-├── IntegratoR.TestKit/         (the shared TestKit library)
-└── IntegratoR.TestKit.Tests/   (tests for the TestKit itself)
-```
+- Pipeline behaviours (logging, validation, caching) — real cross-cutting logic.
+- Handlers with real composition or error handling.
+- Serialisation contracts (`[ODataField]`, `[JsonPropertyName]`, `Result<T>` round-trip).
+- LINQ-to-OData filter translation — one test per supported shape.
+- Regression pins for fixed bugs (composite-key URL construction, BaseAddress normalisation, enum qualified-type form).
 
-Consumer test projects should reference the TestKit as a NuGet package — `ProjectReference` only works when building the framework alongside the consumer.
+Skip POCO getters/setters, DI-registration checks that every interface resolves, and pass-through delegation.
 
-## Run Tests
-
-```bash
-dotnet test                                                     # all tests across the solution
-dotnet test tests/IntegratoR.OData.Tests                        # one project
-dotnet test --filter "FullyQualifiedName~ClassName.MethodName"  # one test
-```
-
-The test suite as of v1.3.5 has 523 tests across 8 test projects, with three skipped (MSAL tests that require live credentials).
-
-## What to Test, What to Skip
-
-The repository follows a "value-leading" test discipline — tests that prove behaviour earn their keep, tests that mirror trivial structure are skipped:
-
-- ✅ Pipeline behaviours (logging, validation, caching) — exercises real cross-cutting logic
-- ✅ Custom handlers with non-trivial composition or error handling
-- ✅ Serialisation contracts (`[ODataField]`, `[JsonPropertyName]`, `Result<T>` round-trip)
-- ✅ LINQ-to-OData filter translation (one test per supported shape)
-- ✅ Regression pins for fixed bugs (composite-key URL construction, BaseAddress normalisation, enum qualified-type form)
-- ❌ POCO property getters/setters
-- ❌ DI registration verifying every interface resolves
-- ❌ Trivial pass-through delegation
+Run the suite with `dotnet test`; scope to one project with `dotnet test tests/IntegratoR.OData.Tests` or one test with `dotnet test --filter "FullyQualifiedName~ClassName.MethodName"`.
 
 ## See Also
 
-- [Handle Errors](Handle-Errors) — `Result<T>` shape that the assertions target
-- [Add Validation](Add-Validation) — testing validator behaviour through the pipeline
-- [Cache Query Results](Cache-Query-Results) — `FakeCacheService` usage patterns
-- [Extend the Pipeline](Extend-the-Pipeline) — testing custom commands and behaviours
+- [Handle Errors](Handle-Errors)
+- [Add Validation](Add-Validation)
+- [Cache Query Results](Cache-Query-Results)
+- [Extend the Pipeline](Extend-the-Pipeline)

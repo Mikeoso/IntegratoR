@@ -1,27 +1,26 @@
 # Getting Started
+> Last verified against v2.0.1
 
-This guide walks through adding IntegratoR to a fresh Azure Functions isolated-worker project and sending a first command to D365 Finance & Operations. The walkthrough takes about ten minutes and produces a project that can read and write live data.
+By the end of this page you will have an Azure Functions isolated-worker host that sends a `CreateCommand<LedgerJournalHeader>` to D365 F&O and reads back the server-assigned `JournalBatchNumber`.
 
-> **Prerequisites**
->
-> - .NET 10 SDK with the `preview` quality channel installed
-> - An Azure Functions isolated-worker project (the in-process model is **not** supported)
-> - A D365 F&O environment with an Azure AD app registration that has OData access
-> - Either an OAuth client secret or an Azure API Management subscription key
+## Prerequisites
 
-## 1. Install the Package
+- .NET 10 SDK (preview channel).
+- An Azure Functions isolated-worker project. The in-process model is not supported.
+- A D365 F&O environment plus an Azure AD app registration with OData access.
+- An OAuth client secret, or an Azure API Management subscription key.
 
-A single NuGet reference brings in the full framework:
+## 1. Install
 
 ```bash
 dotnet add package IntegratoR.Hosting
 ```
 
-`IntegratoR.Hosting` is the composition root. It pulls in `IntegratoR.Application`, `IntegratoR.OData`, `IntegratoR.OData.FO`, and `IntegratoR.Abstractions` as transitive dependencies, along with MediatR, FluentResults, FluentValidation, and Polly.
+`IntegratoR.Hosting` is the composition root; it pulls in the Application, OData, OData.FO, and Abstractions layers transitively.
 
-## 2. Add Configuration
+## 2. Configure
 
-Add an `ODataSettings` section to `local.settings.json` (or application settings in Azure). The structure is nested — connection settings at the root, authentication under `Authentication`, and resilience under `Resilience`.
+Add an `ODataSettings` section to `local.settings.json`. Connection settings sit at the root, credentials under `Authentication`, resilience under `Resilience`. The placeholders below come from your D365 environment and Azure AD app registration.
 
 ```json
 {
@@ -45,13 +44,7 @@ Add an `ODataSettings` section to `local.settings.json` (or application settings
 }
 ```
 
-The `Mode` property defaults to `ApiKey` for APIM-fronted environments. Direct service-to-service calls to D365 use `OAuth` and require the four `OAuth.*` fields. See [Configure OData](Configure-OData) for the full settings reference, and [Authentication Modes](Authentication-Modes) for the API Management alternative.
-
-> On Azure App Settings, JSON nesting is expressed with double underscores: `ODataSettings__Authentication__OAuth__ClientId`. The `Mode` field accepts the string `"OAuth"` or `"ApiKey"`.
-
-## 3. Wire Up the Host
-
-The minimal `Program.cs` for an isolated-worker host:
+Wire the framework with one line in `Program.cs`:
 
 ```csharp
 using System.Reflection;
@@ -62,11 +55,9 @@ var host = new HostBuilder()
     .ConfigureFunctionsWorkerDefaults()
     .ConfigureServices((context, services) =>
     {
-        Assembly clientAssembly = Assembly.GetExecutingAssembly();
-
         services.AddIntegratoR(context.Configuration, integrator =>
         {
-            integrator.AddConsumerHandlers(clientAssembly);
+            integrator.AddConsumerHandlers(Assembly.GetExecutingAssembly());
         });
     })
     .Build();
@@ -74,29 +65,14 @@ var host = new HostBuilder()
 host.Run();
 ```
 
-`AddIntegratoR` is the single composition entry point. The call registers the Application layer (MediatR pipeline behaviours in the order **Logging → Validation → Caching → Handler**, the cache service, the OAuth authenticator), the generic OData HTTP client with Polly resilience policies, and the D365 F&O entity handlers. `AddConsumerHandlers(...)` scans the supplied assembly for MediatR handlers and FluentValidation validators defined in the consumer project.
+`AddIntegratoR` is the only entry point you call. It registers the MediatR pipeline, the OData client with Polly resilience, the OAuth authenticator, and every bundled D365 F&O handler. `AddConsumerHandlers` closes the generic handlers and validators over any entities defined in your own assembly.
 
-A production-ready host that also wires Azure Key Vault, Application Insights, and the Newtonsoft `Result<T>` converter is shown in [Set Up Azure Functions Host](Set-Up-Azure-Functions-Host).
+> [!NOTE]
+> On Azure App Settings, express JSON nesting with double underscores: `ODataSettings__Authentication__OAuth__ClientId`. `Mode` accepts the string `"OAuth"` or `"ApiKey"` and has no safe default — set it explicitly.
 
-## 4. Use a Bundled Entity
+## 3. Send your first command
 
-D365 F&O entities are plain C# classes that derive from `BaseEntity<TKey>`. The framework already ships `LedgerJournalHeader` (and many other F&O entities) in `IntegratoR.OData.FO`, so the first walkthrough needs no custom class — just add the `using`:
-
-```csharp
-using IntegratoR.OData.FO.Domain.Entities.LedgerJournal;
-```
-
-The bundled `LedgerJournalHeader` already carries the attributes that make it work end-to-end:
-
-1. **`[Table("LedgerJournalHeaders")]`** maps the class to the OData entity set in D365 F&O (entity sets are plural).
-2. **`BaseEntity<TKey>`** declares the abstract `GetCompositeKey()` the framework uses for composite-key URL construction and structured logging.
-3. **`[ODataField(IgnoreOnCreate = true)]`** excludes the server-generated `JournalBatchNumber` from the POST payload — the value is populated on the entity returned from D365 after creation.
-
-D365 F&O's wire format uses camelCase for legacy X++ system fields (e.g. `dataAreaId`) and PascalCase for everything else. The bundled entities pin the wire name explicitly via `[JsonPropertyName]`. To map your own entities — or to see the full attribute reference — see [Define Entities](Define-Entities).
-
-## 5. Send the First Command
-
-Inject `IMediator` into an Azure Function and send a `CreateCommand<T>`:
+`LedgerJournalHeader` ships in `IntegratoR.OData.FO`, so no custom class is needed. Inject `IMediator`, build the entity with a real company (`DataAreaId "USMF"`), and send a `CreateCommand<LedgerJournalHeader>`. Leave `JournalBatchNumber` unset — it carries `[ODataField(IgnoreOnCreate = true)]` because D365 assigns it from a number sequence.
 
 ```csharp
 using FluentResults;
@@ -123,15 +99,20 @@ public sealed class CreateJournalFunction(IMediator mediator, ILogger<CreateJour
             Description = "Monthly accruals — March 2026"
         };
 
-        Result<LedgerJournalHeader> result = await mediator.Send(
-            new CreateCommand<LedgerJournalHeader>(header),
-            cancellationToken).ConfigureAwait(false);
+        Result<LedgerJournalHeader> result = await mediator
+            .Send(new CreateCommand<LedgerJournalHeader>(header), cancellationToken)
+            .ConfigureAwait(false);
+```
 
+## 4. Verify the result
+
+Every framework operation returns `Result<T>`. Business failures never throw — inspect `result.IsSuccess` and read the typed `IntegrationError` through `result.GetError()`.
+
+```csharp
         if (result.IsSuccess)
         {
-            logger.LogInformation(
-                "Created journal {BatchNumber}",
-                result.Value.JournalBatchNumber);
+            // D365 populates JournalBatchNumber on the returned entity.
+            logger.LogInformation("Created journal {BatchNumber}", result.Value.JournalBatchNumber);
 
             HttpResponseData ok = req.CreateResponse(HttpStatusCode.Created);
             await ok.WriteAsJsonAsync(result.Value, cancellationToken).ConfigureAwait(false);
@@ -139,9 +120,7 @@ public sealed class CreateJournalFunction(IMediator mediator, ILogger<CreateJour
         }
 
         IntegrationError? error = result.GetError();
-        logger.LogWarning(
-            "Create failed: [{Code}] {Message}",
-            error?.Code, error?.Message);
+        logger.LogWarning("Create failed: [{Code}] {Message}", error?.Code, error?.Message);
 
         HttpResponseData fail = req.CreateResponse(HttpStatusCode.BadRequest);
         await fail.WriteAsJsonAsync(new { error?.Code, error?.Message }, cancellationToken).ConfigureAwait(false);
@@ -150,47 +129,34 @@ public sealed class CreateJournalFunction(IMediator mediator, ILogger<CreateJour
 }
 ```
 
-Every framework operation returns `Result<T>` from FluentResults. Business-level errors never throw — the consumer inspects `result.IsSuccess` and reads the typed `IntegrationError` via `result.GetError()`. See [Handle Errors](Handle-Errors) for the full error model.
+On success, `result.Value.JournalBatchNumber` holds the number sequence value D365 assigned. On failure, `error.Code` and `error.Type` tell you what happened: bad OAuth credentials surface as code `Auth.Msal.{code}` with `ErrorType.Failure`; a validation failure surfaces as `Validation.Error` with `ErrorType.Validation`.
 
-## What Just Happened
+> [!WARNING]
+> An OAuth token-acquisition failure short-circuits the HTTP pipeline with **401** and the generic `ReasonPhrase "Authentication failed"` — no tenant IDs or MSAL codes leak to the caller. The full MSAL detail stays server-side in the logged `IntegrationError`.
 
-When `mediator.Send(...)` was called, the request passed through the MediatR pipeline in this order:
+## What just happened
 
-1. **`LoggingBehaviour`** logged the command type and started a duration measurement.
-2. **`ValidationBehaviour`** ran any registered FluentValidation validators for `CreateCommand<LedgerJournalHeader>`; with no validators registered, this is a pass-through.
-3. **`CachingBehaviour`** checked for an `ICacheableQuery<T>` marker (commands are never cached, so this is a pass-through).
-4. **`CreateCommandHandler<LedgerJournalHeader>`** called `ODataService<LedgerJournalHeader>.AddAsync(...)`, which serialised the entity (excluding `JournalBatchNumber` because of `[ODataField(IgnoreOnCreate = true)]`) and POSTed it to `https://your-environment.operations.dynamics.com/data/LedgerJournalHeaders`.
+`mediator.Send(...)` ran the request through the pipeline in a fixed order, then the OData layer talked to D365:
 
-Before the request reached D365:
+1. `LoggingBehaviour` logged the command type and started the duration timer.
+2. `ValidationBehaviour` ran the FluentValidation validators registered for `CreateCommand<LedgerJournalHeader>`.
+3. `CachingBehaviour` checked for an `ICacheableQuery<T>` marker; commands are never cached, so it passed through.
+4. `CreateCommandHandler<LedgerJournalHeader>` serialised the entity (omitting `JournalBatchNumber`) and POSTed it to the `LedgerJournalHeaders` set.
 
-- The **`ODataAuthenticationHandler`** acquired an OAuth bearer token via MSAL and added it as the `Authorization` header. Tokens are cached for the duration of their lifetime with a 5-minute proactive refresh window.
-- The **Polly retry policy** wrapped the call. If D365 returned 408, 429, or 5xx, the call would have been retried with exponential backoff plus jitter (default: 3 attempts).
-- The **Polly circuit breaker** monitored consecutive transient failures. After 5 in a row it would open for 30 seconds, failing all subsequent requests fast.
+Before the request reached D365, the `ODataAuthenticationHandler` acquired an OAuth bearer token via MSAL (cached with proactive refresh), and Polly wrapped the call with retry on transient status codes and a circuit breaker. The response deserialised into a fresh `LedgerJournalHeader` — `JournalBatchNumber` populated — wrapped in a successful `Result<T>`.
 
-The response was deserialised into a fresh `LedgerJournalHeader` (with the server-assigned `JournalBatchNumber` populated) and wrapped in `Result.Ok(...)`. The handler returned, behaviours unwound (logging the success and duration), and the function got back the `Result<T>`.
+## Run the full sample
 
-## When Things Go Wrong
+`IntegratoR.SampleFunction` is a clone-and-run host with two HTTP triggers that exercise the pipeline against a live D365 sandbox:
 
-**"No service for type `IRequestHandler<CreateCommand<LedgerJournalHeader>, Result<LedgerJournalHeader>>`":** the entity type is not visible to the MediatR closed-generic registration. Either the entity lives in `IntegratoR.OData.FO` (in which case `AddIntegratoR` already handles it) or the consumer needs to call `integrator.AddConsumerHandlers(typeof(MyEntity).Assembly)` for the assembly that contains the custom entity.
+- `POST smoke/ledger-journal` runs create, get-by-key, filter, update, and delete across `LedgerJournalHeader` and `LedgerJournalLine`, returning a per-step JSON breakdown.
+- `POST smoke/financial-dimensions` runs `GetDimensionOrdersQuery` against the dimension metadata entities.
 
-**`result.IsFailed` with `error.Code == "OData.AuthenticationFailed"`:** the OAuth credentials are wrong, expired, or the service principal lacks API access on the D365 environment. Verify `ClientId`, `ClientSecret`, `TenantId`, and `Resource` in `ODataSettings.Authentication.OAuth`. Secrets expire — production deployments should source the secret from Azure Key Vault as shown in [Set Up Azure Functions Host](Set-Up-Azure-Functions-Host).
-
-**`HttpRequestException` at host startup mentioning a relative URL:** `ODataSettings.Url` is missing, empty, or not a fully-qualified absolute URL. The framework throws an `ArgumentException` at DI resolution time with a clear message — re-check the configuration source.
-
-**HTTP 404 from D365 with a malformed key segment:** the entity's `[Table(...)]` attribute references the wrong entity set name (singular vs plural is a common cause — D365 entity sets are plural). See [Troubleshoot Common Issues](Troubleshoot-Common-Issues).
-
-## Try the Live Smoke Test
-
-The repository ships two HTTP triggers in `IntegratoR.SampleFunction` that exercise the full pipeline against a real D365 sandbox — useful for verifying that a fresh setup actually works:
-
-- `POST /api/smoke/ledger-journal` exercises create/get/filter/update on `LedgerJournalHeader` and `LedgerJournalLine`.
-- `POST /api/smoke/financial-dimensions` runs `GetDimensionOrdersQuery` against the dimension metadata entities.
-
-Both are read-only (financial-dimensions) or self-cleaning (ledger-journal best-effort) and return a per-step JSON breakdown. See [Run Smoke Tests](Run-Smoke-Tests) for request bodies and expected responses.
+See [Run Smoke Tests](Run-Smoke-Tests) for request bodies and expected responses.
 
 ## See Also
 
-- [Configure OData](Configure-OData) — full settings reference
-- [Define Entities](Define-Entities) — `BaseEntity<TKey>`, attributes, composite keys
-- [Send Commands](Send-Commands) — Create / Update / Delete plus batch
-- [Set Up Azure Functions Host](Set-Up-Azure-Functions-Host) — production wiring
+- [Configure OData](Configure-OData)
+- [Define Entities](Define-Entities)
+- [Send Commands](Send-Commands)
+- [Set Up Azure Functions Host](Set-Up-Azure-Functions-Host)

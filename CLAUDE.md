@@ -64,6 +64,7 @@ Route work before starting (this replaces the former `.claude/rules/skill-routin
 | Non-trivial feature, restructuring, or design touching architecture | Plan mode + interview — focused questions with options, get approval before implementing |
 | Writing, reviewing, or refactoring C# (handlers, services, entities, commands/queries, tests) | `csharp-coding-standards` skill |
 | Writing, reviewing, or trimming C# doc comments (`///` XML docs) or inline `//` comments | `csharp-documentation` skill |
+| Writing, editing, restructuring, or deploying **wiki** pages (`/wiki` → `.wiki.git`) — conceptual/how-to/reference prose | `wiki-documentation` skill |
 | Changing the public/published API surface of a library (signatures, visibility, serialised output, `[Obsolete]`) | `csharp-api-design` skill |
 | Write / add / plan / review tests | `test-planning` skill (auto-triggers) → briefs the `test-writer` agent. Skip trivial structural tests (DI registration, config binding, POCO properties) |
 | Review code changes — correctness, quality, architecture, test coverage | `code-reviewer` agent |
@@ -71,7 +72,7 @@ Route work before starting (this replaces the former `.claude/rules/skill-routin
 | Third-party library API/usage (Polly, MediatR, FluentValidation, FluentResults, PanoramicData.OData.Client, xUnit, NSubstitute) | `context7-docs` skill |
 | Microsoft Learn docs — .NET / Azure concepts, limits, config | `microsoft-docs` skill |
 | Microsoft SDK signatures or code samples | `microsoft-code-reference` skill |
-| Generate or update the IntegratoR wiki | `/docs` (alias `/documentation`) command |
+| Generate or update the IntegratoR wiki | `/docs` (alias `/documentation`) command — drives the `wiki-documentation` skill |
 | Draft a PR description (summary, risks, rollback, reviewer focus) for the branch | `/dotnet-pr` command |
 | Audit package hygiene — deprecated / outdated dependencies before a bump | `/nuget-hygiene` command |
 | Consolidate session learnings into memory | `/dream` skill |

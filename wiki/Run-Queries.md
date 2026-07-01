@@ -1,12 +1,17 @@
 # Run Queries
 
-Queries retrieve records from D365 F&O without modifying them. The framework provides two generic query types — by composite key and by LINQ filter expression — plus an opt-in caching layer for queries that hit slow or rarely-changing data.
+> Last verified against v2.0.1
 
-## Get a Record by Key
+Read records from D365 F&O with two generic queries — by composite key and by LINQ filter — sent through `IMediator`. Both return a `Result<T>`; neither mutates the server. For `$orderby`, `$select`, `$expand`, paging, and `$count`, drop to the typed `IODataService<TEntity>` methods.
 
 ```csharp
+using FluentResults;
+using IntegratoR.Abstractions.Common.CQRS.Queries;
+using IntegratoR.OData.FO.Domain.Entities.LedgerJournal;
+
+// Read one LedgerJournalHeader by its composite key [DataAreaId, JournalBatchNumber].
 Result<LedgerJournalHeader> result = await mediator.Send(
-    new GetByKeyQuery<LedgerJournalHeader>(["USMF", "JBN-000431"]),
+    new GetByKeyQuery<LedgerJournalHeader>(["USMF", "B0001"]),
     cancellationToken).ConfigureAwait(false);
 
 if (result.IsSuccess)
@@ -15,13 +20,30 @@ if (result.IsSuccess)
 }
 ```
 
-`GetByKeyQuery<TEntity>(object[] CompositeKey)` is a `record` with a single positional parameter — the key values in the same order returned by `TEntity.GetCompositeKey()`. For `LedgerJournalHeader` the order is `[DataAreaId, JournalBatchNumber]`; for `LedgerJournalLine` it is `[DataAreaId, JournalBatchNumber, LineNumber]`.
+`GetByKeyQuery<TEntity>(object[] CompositeKey)` is a `record` whose single positional parameter carries the key values in the order `TEntity.GetCompositeKey()` returns them. For `LedgerJournalHeader` that order is `[DataAreaId, JournalBatchNumber]`; for `LedgerJournalLine` it is `[DataAreaId, JournalBatchNumber, LineNumber]`. Read the entity source before you build a key — see [Define Entities](Define-Entities).
 
-The framework builds an OData URL of the form `<Url>/<TableName>(field1='value1',field2='value2')`. Because D365 entity sets often use composite keys with mixed CLR types, the values are coerced to their OData literal form (strings quoted, integers bare, decimals with `M` suffix, dates as `datetimeoffset`).
+## Handle the failure path
 
-> The composite-key read path uses a `$filter`-based bypass internally rather than relying on the OData `(key=value, ...)` segment. Both reads and writes go through owned, first-party bypasses in `ODataClientAdapter` — reads via this `$filter` path, and writes (Update / Delete) via a raw-`HttpClient` keyed-URL bypass (since v2.0.0). Both use the named `"ODataClient"` client, so they carry the same authentication, Polly resilience, and `BaseAddress` as every other request. See [Send Commands](Send-Commands) for the write side.
+A missing key is a failed `Result`, not an exception — the never-throw model holds for reads too. Branch on `result.IsFailed` and read the `IntegrationError` off `result.GetError()`.
 
-## Filter Records
+```csharp
+Result<LedgerJournalHeader> result = await mediator.Send(
+    new GetByKeyQuery<LedgerJournalHeader>(["USMF", "does-not-exist"]),
+    cancellationToken).ConfigureAwait(false);
+
+if (result.IsFailed)
+{
+    IntegrationError? error = result.GetError();
+    // error?.Type == ErrorType.NotFound for a key D365 has no record for.
+    // error?.Code and error?.Message carry the machine-readable detail.
+}
+```
+
+`ErrorType` has four members: `Failure`, `Validation`, `NotFound`, `Conflict`. A key lookup that D365 cannot resolve fails with `ErrorType.NotFound`. See [Handle Errors](Handle-Errors) for the full mapping.
+
+## Filter with a LINQ expression
+
+`GetByFilterQuery<TEntity>(Expression<Func<TEntity, bool>> Filter)` takes a LINQ expression tree and returns `Result<IEnumerable<TEntity>>`. Write strongly-typed predicates — never raw OData filter strings.
 
 ```csharp
 Result<IEnumerable<LedgerJournalHeader>> result = await mediator.Send(
@@ -31,50 +53,91 @@ Result<IEnumerable<LedgerJournalHeader>> result = await mediator.Send(
           && h.IsPosted == NoYes.No),
     cancellationToken).ConfigureAwait(false);
 
-if (result.IsSuccess)
+if (result.IsFailed)
+{
+    IntegrationError? error = result.GetError();
+}
+else
 {
     foreach (LedgerJournalHeader header in result.Value)
     {
-        // Process each matching journal
+        // Process each matching journal.
     }
 }
 ```
 
-`GetByFilterQuery<TEntity>(Expression<Func<TEntity, bool>> Filter)` takes a LINQ expression tree. The framework's translator emits the D365-compatible OData `$filter` query parameter:
+A filter with no matches is a **successful** `Result` carrying an empty collection — not a `NotFound` failure. Only a transport or translation problem produces a failed `Result` here.
+
+## What the translator emits
+
+The predicate above translates to this D365-compatible `$filter`:
 
 ```
 $filter=dataAreaId eq 'USMF' and JournalName eq 'GenJrn' and IsPosted eq Microsoft.Dynamics.DataEntities.NoYes'No'
 ```
 
-Three translator capabilities matter for D365 work:
+Three translator behaviours matter for D365 work:
 
-- **`[JsonPropertyName]` honoured** — PascalCase CLR `DataAreaId` emits camelCase wire `dataAreaId` (since v1.3.3).
-- **Enum constants emit the qualified-type form** — `h.IsPosted == NoYes.No` emits `IsPosted eq Microsoft.Dynamics.DataEntities.NoYes'No'`, not the integer form D365 rejects (since v1.3.5; covers both top-level predicates and `Any`/`All` lambda bodies).
-- **Composite predicates with `&&` and `||`** preserve operator precedence with appropriate parenthesisation.
+- **`[JsonPropertyName]` is honoured** across filter, select, expand, and orderby. The PascalCase CLR property `DataAreaId` emits its camelCase wire name `dataAreaId`, so a legacy X++ field sorts and filters correctly.
+- **Enum constants emit the qualified-type form.** `h.IsPosted == NoYes.No` emits `IsPosted eq Microsoft.Dynamics.DataEntities.NoYes'No'`, not the integer `1` that D365 F&O OData v4 rejects. This covers both top-level predicates and `Any`/`All` lambda bodies.
+- **`&&` and `||`** preserve operator precedence with parenthesisation.
 
-## Supported Filter Shapes
+> [!NOTE]
+> The translator is a copy-and-patch fork of PanoramicData.OData.Client's parser, because the upstream reads `MemberInfo.Name` and ignores `[JsonPropertyName]`. It is intentionally narrow: a LINQ shape outside the matrix below throws `NotSupportedException` at translation time, favouring predictable D365 output over full LINQ coverage.
+
+### Supported filter shapes
 
 | LINQ shape | Emitted OData |
 |---|---|
 | `h => h.Prop == "x"` | `Prop eq 'x'` |
 | `h => h.Prop != "x"` | `Prop ne 'x'` |
-| `h => h.IsActive == NoYes.Yes` | `IsActive eq Microsoft.Dynamics.DataEntities.NoYes'Yes'` |
-| `h => h.Amount > 100m` | `Amount gt 100M` |
+| `h => h.IsPosted == NoYes.Yes` | `IsPosted eq Microsoft.Dynamics.DataEntities.NoYes'Yes'` |
+| `h => h.Amount > 100m` | `Amount gt 100` |
 | `h => h.A == "x" && h.B == "y"` | `A eq 'x' and B eq 'y'` |
-| `h => h.A == "x' \|\| h.B == "y"` | `A eq 'x' or B eq 'y'` |
+| `h => h.A == "x" \|\| h.B == "y"` | `A eq 'x' or B eq 'y'` |
 | `h => h.A.StartsWith("X")` | `startswith(A, 'X')` |
 | `h => h.A.Contains("X")` | `contains(A, 'X')` |
 | `h => string.IsNullOrEmpty(h.A)` | `(A eq null or A eq '')` |
 | `h => h.Lines.Any(l => l.X == "y")` | `Lines/any(l: l/X eq 'y')` |
 | `h => h.Lines.All(l => l.X == "y")` | `Lines/all(l: l/X eq 'y')` |
-| `h => h.Lines.Any()` | `Lines/any()` |
 | `h => collection.Contains(h.A)` | `A in ('a','b','c')` |
 
-Complex LINQ shapes that fall outside this matrix may throw `NotSupportedException` at translation time. The translator is intentionally narrow — it favours predictable D365-compatible output over comprehensive LINQ coverage.
+## Order, page, and count with IODataService
 
-## Cache Query Results
+`GetByFilterQuery` covers a flat filtered read. For `$orderby`, `$select`, `$expand`, and paging, resolve `IODataService<TEntity>` and call `QueryAsync` from your own handler. Use the typed `orderBy` overload — it takes an ordered list of `(KeySelector, Descending)` tuples and honours `[JsonPropertyName]` on each key selector.
 
-For data that changes infrequently (configuration metadata, dimension formats, reference data), make the query implement `ICacheableQuery<TResponse>`:
+```csharp
+Result<IEnumerable<LedgerJournalHeader>> result = await service.QueryAsync(
+    filter: h => h.DataAreaId == "USMF" && h.IsPosted == NoYes.No,
+    orderBy: [(h => h.JournalBatchNumber, Descending: true)],
+    expand: null,
+    select: null,
+    skip: 0,
+    top: 50,
+    cancellationToken: cancellationToken).ConfigureAwait(false);
+
+if (result.IsFailed)
+{
+    IntegrationError? error = result.GetError();
+}
+```
+
+> [!WARNING]
+> Do not use the older `QueryAsync` overload whose `orderBy` is a `Func<IQueryable<TEntity>, IOrderedQueryable<TEntity>>` — it is `[Obsolete]` and **silently drops** the ordering (the sort never reaches the OData query). Pass the `IReadOnlyList<(Expression<Func<TEntity, object>> KeySelector, bool Descending)>` overload instead.
+
+Count matching records server-side with `CountAsync`, which emits `$count` and returns only the integer — no rows cross the wire.
+
+```csharp
+Result<int> count = await service.CountAsync(
+    h => h.DataAreaId == "USMF" && h.IsPosted == NoYes.No,
+    cancellationToken).ConfigureAwait(false);
+
+int openJournals = count.IsSuccess ? count.Value : 0;
+```
+
+## Cache a slow read
+
+For data that changes rarely — dimension formats, reference data — make the query implement `ICacheableQuery<TResponse>`. Supply `CacheKey` and `CacheDuration`; the `CachingBehaviour` reads and writes the cache around the handler.
 
 ```csharp
 using FluentResults;
@@ -89,10 +152,6 @@ public record GetDimensionOrdersQuery(string DimensionFormat, DimensionHierarchy
 
     public TimeSpan? CacheDuration => TimeSpan.FromMinutes(15);
 
-    public string GenerateCacheKey() => CacheKey;
-
-    public object[] GetCacheKeyValues() => [nameof(GetDimensionOrdersQuery), DimensionFormat, HierarchyType];
-
     public IReadOnlyDictionary<string, object> GetLoggingContext() => new Dictionary<string, object>
     {
         { "DimensionFormat", DimensionFormat },
@@ -101,43 +160,24 @@ public record GetDimensionOrdersQuery(string DimensionFormat, DimensionHierarchy
 }
 ```
 
-`ICacheableQuery<T>` already extends `IQuery<T>`, so you implement only `ICacheableQuery` — and because `IQuery` derives from `IContext`, a cacheable query must supply all five members shown above.
+The `CachingBehaviour` returns a cached `Result<T>` on a `CacheKey` hit and otherwise runs the handler, caching only a successful result for `CacheDuration` — failed results are never cached, so the next call retries. Set `CacheDuration` to `null` on an instance to skip the cache even when the type opts in. See [Cache Query Results](Cache-Query-Results) for distributed-cache wiring.
 
-The `CachingBehaviour` in the MediatR pipeline:
+> [!NOTE]
+> `CacheKey` is the only key member you implement. The `GenerateCacheKey()` and `GetCacheKeyValues()` members on `ICacheableQuery<T>` are `[Obsolete]` — the behaviour uses `CacheKey` directly and both are removed in the next MAJOR.
 
-1. Checks the cache for an entry matching `CacheKey`. If present and not expired, returns the cached `Result<T>` without calling the handler.
-2. If absent, calls the handler. If the result is successful, caches it for `CacheDuration`. Failed results are **never** cached — the next call retries.
+## Compose a custom query
 
-Set `CacheDuration` to `null` on a per-instance basis to bypass caching even when the query type opts in. See [Cache Query Results](Cache-Query-Results) for distributed-cache wiring, eviction patterns, and cache-key best practices.
-
-## Pipeline Flow for Queries
-
-Queries run through the same `Logging → Validation → Caching → Handler` pipeline as commands, with the `CachingBehaviour` returning a cache hit when the query implements `ICacheableQuery` — see [Extend the Pipeline](Extend-the-Pipeline) for the canonical ordering. The handler calls `ODataService<TEntity>.FindByKeyAsync` / `FindAsync` / `FindAll` depending on the query type.
-
-## Custom Queries
-
-When the generic `GetByKeyQuery` / `GetByFilterQuery` shape is not enough — for example, a query that needs to compose two service calls or apply a domain projection — define a `record` that implements `IQuery<TResponse>`:
+When the generic shapes are not enough — composing two service calls, or applying a domain projection — define a `record` implementing `IQuery<TResponse>` and a handler.
 
 ```csharp
-using FluentResults;
-using IntegratoR.Abstractions.Interfaces.Queries;
+public record GetOpenJournalCountQuery(string DataAreaId) : IQuery<Result<int>>;
 
-public record GetOpenJournalCountQuery(string DataAreaId)
-    : IQuery<Result<int>>;
-```
-
-Pair with a handler implementing `IRequestHandler<GetOpenJournalCountQuery, Result<int>>`:
-
-```csharp
 public sealed class GetOpenJournalCountQueryHandler
     : IRequestHandler<GetOpenJournalCountQuery, Result<int>>
 {
     private readonly IService<LedgerJournalHeader> _service;
 
-    public GetOpenJournalCountQueryHandler(IService<LedgerJournalHeader> service)
-    {
-        _service = service;
-    }
+    public GetOpenJournalCountQueryHandler(IService<LedgerJournalHeader> service) => _service = service;
 
     public async Task<Result<int>> Handle(GetOpenJournalCountQuery request, CancellationToken cancellationToken)
     {
@@ -152,20 +192,19 @@ public sealed class GetOpenJournalCountQueryHandler
 }
 ```
 
-Register the handler's assembly via `AddConsumerHandlers(...)`. Make the query implement `ICacheableQuery<TResponse>` if it makes sense to cache.
+Register the handler's assembly through `AddIntegratoR` with `AddConsumerHandlers(...)` in the configure delegate — that closes your generic handlers and validators over the framework's. See [Send Commands](Send-Commands).
 
-## Return Types
+## Return types at a glance
 
-| Query | Return type |
-|---|---|
-| `GetByKeyQuery<TEntity>` | `Result<TEntity>` — `Value` is the single matching entity |
-| `GetByFilterQuery<TEntity>` | `Result<IEnumerable<TEntity>>` — `Value` is the matched collection (possibly empty) |
-
-A `GetByKeyQuery` for a non-existent key returns `Result.Fail` with `ErrorType.NotFound`. A `GetByFilterQuery` with no matches returns `Result.Ok(Enumerable.Empty<TEntity>())` — empty matches are a successful query.
+| Query | Return type | Empty / missing |
+|---|---|---|
+| `GetByKeyQuery<TEntity>` | `Result<TEntity>` | Missing key → `Result.Fail` with `ErrorType.NotFound` |
+| `GetByFilterQuery<TEntity>` | `Result<IEnumerable<TEntity>>` | No matches → `Result.Ok` with an empty collection |
+| `IODataService<T>.CountAsync` | `Result<int>` | No matches → `Result.Ok(0)` |
 
 ## See Also
 
-- [Define Entities](Define-Entities) — composite key shape and `[JsonPropertyName]` translator behaviour
-- [Cache Query Results](Cache-Query-Results) — `ICacheableQuery`, in-memory vs distributed cache
-- [Handle Errors](Handle-Errors) — `Result<T>` and `IntegrationError`
-- [Send Commands](Send-Commands) — modify the records this query returned
+- [Define Entities](Define-Entities)
+- [Send Commands](Send-Commands)
+- [Handle Errors](Handle-Errors)
+- [Cache Query Results](Cache-Query-Results)

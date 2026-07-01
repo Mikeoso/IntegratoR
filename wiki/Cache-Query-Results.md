@@ -1,10 +1,8 @@
 # Cache Query Results
 
-Caching is implemented as a MediatR pipeline behaviour. A query opts into caching by implementing `ICacheableQuery<TResponse>`. The `CachingBehaviour` intercepts the request, checks the configured `ICacheService`, and either returns the cached `Result<T>` or runs the handler and stores its successful response.
+> Last verified against v2.0.1
 
-> **Prerequisites:** a configured OData client and a distributed cache (`IDistributedCache`) registered through `AddIntegratoR` — see [Set Up Azure Functions Host](Set-Up-Azure-Functions-Host) for both. Without a registered `IDistributedCache`, the `CachingBehaviour` has no backing store and every request falls through to the handler.
-
-## Make a Query Cacheable
+Cache a read-only query by implementing `ICacheableQuery<TResponse>` on it. The `CachingBehaviour` pipeline step checks the cache before the handler runs, and stores the handler's response on a miss. Caching works out of the box — `AddIntegratoR` registers an in-memory cache, so a cacheable query is served from cache without any extra wiring.
 
 ```csharp
 using FluentResults;
@@ -12,133 +10,145 @@ using IntegratoR.Abstractions.Interfaces.Queries;
 using IntegratoR.OData.FO.Domain.Enums.Dimensions;
 using IntegratoR.OData.FO.Domain.Models.FinancialDimensions;
 
-public record GetDimensionOrdersQuery(string DimensionFormat, DimensionHierarchyType HierarchyType)
+// A cacheable query supplies two members: CacheKey and CacheDuration.
+public record GetDimensionFormatQuery(string DimensionFormat, DimensionHierarchyType HierarchyType)
     : ICacheableQuery<Result<DimensionFormat>>
 {
-    public string CacheKey => $"{nameof(GetDimensionOrdersQuery)}-{DimensionFormat}-{HierarchyType}";
+    public string CacheKey => $"{nameof(GetDimensionFormatQuery)}-{DimensionFormat}-{HierarchyType}";
 
     public TimeSpan? CacheDuration => TimeSpan.FromMinutes(15);
 
-    public string GenerateCacheKey() => CacheKey;
-
-    public object[] GetCacheKeyValues() => [nameof(GetDimensionOrdersQuery), DimensionFormat, HierarchyType];
-
     public IReadOnlyDictionary<string, object> GetLoggingContext() => new Dictionary<string, object>
     {
-        { "DimensionFormat", DimensionFormat },
-        { "HierarchyType", HierarchyType.ToString() }
+        ["DimensionFormat"] = DimensionFormat,
+        ["HierarchyType"] = HierarchyType.ToString(),
     };
 }
 ```
 
-`ICacheableQuery<T>` already extends `IQuery<T>`, so you implement only `ICacheableQuery` — do not also list `IQuery<...>` in the declaration. Because `IQuery` derives from `IContext`, a cacheable query must implement five members:
-
-| Member | Purpose |
-|---|---|
-| `string CacheKey { get; }` | Unique key under which the response is stored. Typically delegates to `GenerateCacheKey()`. |
-| `TimeSpan? CacheDuration { get; }` | How long the response is cached. `null` bypasses caching for this specific instance. |
-| `string GenerateCacheKey()` | Builds the cache key from `GetCacheKeyValues()`. |
-| `object[] GetCacheKeyValues()` | Values that uniquely identify this query instance. Used as input for `GenerateCacheKey()`. |
-| `IReadOnlyDictionary<string, object> GetLoggingContext()` | Structured context fields surfaced by `LoggingBehaviour` (required by `IContext`, the base of every `IQuery`). |
-
-A common implementation pattern: concatenate the query type name with a stable serialised form of the key values. The framework does not enforce a specific format — only that two queries with different parameters yield two different `CacheKey` strings.
-
-## Pipeline Flow
-
-The `CachingBehaviour<TRequest, TResponse>` runs after logging and validation in the pipeline — see [Extend the Pipeline](Extend-the-Pipeline) for the canonical ordering. On each request:
-
-1. If the request is **not** `ICacheableQuery<TResponse>`, pass straight through to the next behaviour.
-2. Resolve `CacheKey`. Call `_cacheService.GetAsync<TResponse>(cacheKey)`.
-3. If the cache returns a non-null value, log a cache hit at `Debug` and return immediately (the handler does **not** run).
-4. If the cache misses, run the handler, get the `Result<T>`.
-5. Cache the result **only if successful** (`response.IsSuccess == true`). Failed results are never cached so the next call retries.
-
-Failure-non-caching is intentional. A `NotFound` or `AuthenticationFailed` response on the first call must not poison the cache.
-
-## Bypass Cache for a Specific Instance
-
-Setting `CacheDuration` to `null` on a particular query instance bypasses the cache even when the query type opts in:
+Send it through `IMediator` as you would any query. The first call runs the handler and caches the successful `Result<T>`; the second call for the same `CacheKey` returns the cached response and the handler never runs.
 
 ```csharp
-public record GetFreshDimensionFormatQuery(string dimensionFormat, DimensionHierarchyType hierarchyType, bool ForceRefresh)
-    : ICacheableQuery<Result<DimensionFormat>>
+var query = new GetDimensionFormatQuery("Sachkontodimensionen", DimensionHierarchyType.DataEntityLedgerDimensionFormat);
+
+Result<DimensionFormat> first = await mediator.Send(query, cancellationToken);   // cache miss -> handler runs
+Result<DimensionFormat> second = await mediator.Send(query, cancellationToken);  // cache hit  -> handler skipped
+
+if (second.IsSuccess)
 {
-    public string CacheKey =>
-        $"GetDimensionOrdersQuery-{dimensionFormat}-{hierarchyType}";
-
-    public TimeSpan? CacheDuration => ForceRefresh ? null : TimeSpan.FromMinutes(15);
-
-    public object[] GetCacheKeyValues() => [dimensionFormat, hierarchyType, ForceRefresh];
-    public string GenerateCacheKey() => CacheKey;
+    // second.Value.Segments -> ["MainAccount", "A_Kostenstelle", "C_Profitcenter"]
 }
 ```
 
-`CacheDuration` is read **after** the cache lookup. A `null` value still permits a cache hit on this call — it only prevents storing the response. Consumers wanting to force a fresh fetch should additionally vary `CacheKey` (include a versioning input) so the lookup misses.
+`ICacheableQuery<TResponse>` already extends `IQuery<TResponse>`, so declare only `ICacheableQuery` — never list `IQuery<...>` as well. `GetLoggingContext()` comes from the shared `IContext` base and is the same member every command and query carries.
 
-## In-Memory vs Distributed Cache
+> [!NOTE]
+> `ICacheableQuery` also declares `GenerateCacheKey()` and `GetCacheKeyValues()`, but both are `[Obsolete]` (since v1.4.0) and the behaviour reads `CacheKey` directly. Do not build new keys through them; `GetDimensionOrdersQuery` still implements them only to satisfy the interface until the next MAJOR removes them.
 
-The framework registers `ICacheService` against a concrete implementation that wraps `IDistributedCache`. The choice of in-memory vs distributed is determined by which `IDistributedCache` the consumer registers in DI:
+## Handle the failure path
+
+Only successful results are cached. A failed `Result<T>` — a `NotFound`, a validation rejection, an authentication failure — flows back to the caller and is never stored, so the next call retries the handler rather than replaying the error.
 
 ```csharp
-// In-memory (process-local; resets on host restart)
-services.AddDistributedMemoryCache();
+Result<DimensionFormat> result = await mediator.Send(query, cancellationToken);
 
-// Redis (shared across worker instances)
-services.AddStackExchangeRedisCache(options =>
+if (result.IsFailed)
 {
-    options.Configuration = "your-redis-connection-string";
-    options.InstanceName = "IntegratoR:";
-});
+    IntegrationError? error = result.GetError();
+    // Missing singleton parameter row in this company:
+    //   error?.Code -> "DimensionParameters.NotFound"
+    //   error?.Type -> ErrorType.NotFound
+    return result;
+}
 ```
 
-The framework calls `IDistributedCache` indirectly via `DistributedCacheService` (in `IntegratoR.Application`). The service serialises responses with `System.Text.Json` and registers the `Result<T>` STJ converter so `Result` instances round-trip correctly.
+Failure-non-caching is deliberate: a transient D365 outage or a `NotFound` on the first call must not poison the cache for the entries that follow.
 
-> The STJ `Result<T>` converters are wired automatically by `AddIntegratoR`. Consumers using Newtonsoft.Json elsewhere in the host (e.g. for HTTP request bodies) need to wire the Newtonsoft converters separately — see [Set Up Azure Functions Host](Set-Up-Azure-Functions-Host).
+## Bypass the cache for one instance
 
-## Cache Key Best Practices
+Return `null` from `CacheDuration` to skip caching for a specific query instance while the query type stays cacheable. `CacheDuration` is read after the lookup, so a `null` still allows a cache hit — it only prevents storing the response.
 
-- **Include every input that varies the response.** Two queries that produce different results must have different cache keys, otherwise one returns the other's stale value.
-- **Use a stable serialisation.** Object hashes (`Object.GetHashCode()`) are not stable across runtime restarts. Prefer string interpolation or `JsonSerializer.Serialize(GetCacheKeyValues())`.
-- **Prefix with the query type name.** `GetDimensionOrdersQuery-...` is preferable to a bare key — multi-query caches stay diagnosable.
-- **Avoid PII in keys.** Cache keys leak into logs at `Debug` level. Use stable identifiers (entity IDs, codes) rather than names or descriptions.
+```csharp
+public record GetDimensionFormatQuery(string DimensionFormat, DimensionHierarchyType HierarchyType, bool ForceRefresh)
+    : ICacheableQuery<Result<DimensionFormat>>
+{
+    public string CacheKey => $"{nameof(GetDimensionFormatQuery)}-{DimensionFormat}-{HierarchyType}";
 
-## Cache Duration Guidance
+    public TimeSpan? CacheDuration => ForceRefresh ? null : TimeSpan.FromMinutes(15);
 
-| Data type | Suggested duration |
-|---|---|
-| Dimension formats, parameters, reference data | 15 minutes to 1 hour |
-| User-specific configuration | 5 minutes |
-| Per-request lookups (within one operation) | Use a scoped service, not the cache |
-| Anything that changes per business transaction | Do not cache |
+    public IReadOnlyDictionary<string, object> GetLoggingContext() => new Dictionary<string, object>
+    {
+        ["DimensionFormat"] = DimensionFormat,
+    };
+}
+```
 
-The 15-minute default used by `GetDimensionOrdersQuery` is calibrated for D365 environments where dimension setup changes infrequently. Adjust per query based on the underlying data's volatility.
+To force a fresh fetch that also misses the lookup, vary `CacheKey` as well (fold a version token into it) so the behaviour cannot return an already-stored response.
 
-## Observability
+## Choose between in-memory and distributed cache
 
-The behaviour emits at `Debug` level:
+`AddIntegratoR` registers `InMemoryCacheService` as the `ICacheService`, backed by `IMemoryCache` with a **30-minute default** duration when `CacheDuration` is `null`. This is the default and needs no configuration.
 
-- `"Cache HIT for key {CacheKey}. Returning cached response."` — handler skipped
-- `"Cache MISS for key {CacheKey}. Executing handler."` — handler ran
-- `"Handler executed successfully. Caching response with key {CacheKey} for {CacheDuration}"` — response cached
+**Keep the in-memory default for a single-instance host.** Switch to `DistributedCacheService` only when cache consistency across scaled-out worker instances matters — it shares one Redis-backed store, so every instance sees the same entries.
 
-Hit/miss ratios are useful for tuning `CacheDuration`. A constant miss rate suggests the duration is too short for the access pattern; a 100 % hit rate suggests caching is unnecessary (the handler is never being exercised).
+```csharp
+// In-memory (default): already wired by AddIntegratoR. Process-local; resets on host restart.
+builder.Services.AddIntegratoR(configuration);
 
-## Testing Cache Behaviour
+// Distributed (opt-in): register an IDistributedCache, then replace ICacheService.
+// Do this AFTER AddIntegratoR so the later registration wins.
+builder.Services.AddIntegratoR(configuration);
+builder.Services.AddStackExchangeRedisCache(options =>
+{
+    options.Configuration = redisConnectionString;
+    options.InstanceName = "IntegratoR:";
+});
+builder.Services.AddSingleton<ICacheService, DistributedCacheService>();
+```
 
-The `IntegratoR.TestKit` ships `FakeCacheService` for in-memory verification:
+`DistributedCacheService` serialises each response with `System.Text.Json` and calls `.AddResultConverters()` on its own serialiser options, so a cached `Result<T>` round-trips through Redis with its error shape intact. You register nothing extra for that.
+
+- **Choose in-memory when** the host is a single instance, or the cached data is cheap to recompute after a restart (dimension formats, reference lookups).
+- **Choose distributed when** the host scales out and instances must agree on cached values, or a restart must not cold-start every cache.
+
+> [!NOTE]
+> `DistributedCacheService` and the Durable Functions data converter both feed the same `Result<T>` System.Text.Json converters; `AddIntegratoR` keeps that wiring in lockstep. Newtonsoft.Json paths in your host (HTTP request bodies) are wired separately — see [Set Up Azure Functions Host](Set-Up-Azure-Functions-Host).
+
+## Write a stable cache key
+
+The behaviour trusts `CacheKey` completely: two instances that share a key share a cached value. Build the key so it varies with every input that varies the response.
+
+```csharp
+// DON'T: an unstable key. Object.GetHashCode() differs across restarts, so the cache never hits.
+public string CacheKey => $"dim-{GetHashCode()}";
+
+// DO: a stable, type-prefixed key from the query's own inputs.
+public string CacheKey => $"{nameof(GetDimensionFormatQuery)}-{DimensionFormat}-{HierarchyType}";
+```
+
+- Include every input that changes the result; omit anything that does not.
+- Prefix with the query type name so a shared cache stays diagnosable.
+- Keep identifiers, not names or descriptions — cache keys surface in `Debug` logs, so avoid personal data.
+
+## Verify the cache in tests
+
+`IntegratoR.TestKit` ships `FakeCacheService`, an in-memory `ICacheService` with `Contains`, `Count`, and `Clear` helpers. Register it as the `ICacheService`, run the handler through the pipeline, then assert the entry landed under the expected key.
 
 ```csharp
 var cache = new FakeCacheService();
-// ... wire it as ICacheService, run the handler ...
-cache.Contains("GetDimensionOrdersQuery-Sachkontodimensionen-DataEntityLedgerDimensionFormat").Should().BeTrue();
+services.AddSingleton<ICacheService>(cache);
+// ... build the provider, send the query via IMediator ...
+
+cache.Contains("GetDimensionFormatQuery-Sachkontodimensionen-DataEntityLedgerDimensionFormat")
+    .Should().BeTrue();
 cache.Count.Should().Be(1);
 ```
 
-See [Test with TestKit](Test-with-TestKit).
+`FakeCacheService` stores entries forever and ignores `CacheDuration`. To assert expiry semantics, run `DistributedCacheService` against a `MemoryDistributedCache` instead.
 
 ## See Also
 
-- [Run Queries](Run-Queries) — the query types that can opt into caching
-- [Set Up Azure Functions Host](Set-Up-Azure-Functions-Host) — registering an `IDistributedCache` implementation
-- [Test with TestKit](Test-with-TestKit) — `FakeCacheService` and cache-related assertions
-- [Handle Errors](Handle-Errors) — only successful `Result` instances are cached
+- [Run Queries](Run-Queries) — the query types that opt into caching
+- [Extend the Pipeline](Extend-the-Pipeline) — where `CachingBehaviour` sits in the order
+- [Handle Errors](Handle-Errors) — only successful `Result<T>` responses are cached
+- [Test with TestKit](Test-with-TestKit) — `FakeCacheService` and its assertions
