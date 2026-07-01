@@ -166,7 +166,7 @@ public static class IntegratoRServiceCollectionExtensions
         Assembly[] entityAssemblies)
     {
         List<Type> openValidators = validatorAssemblies
-            .SelectMany(assembly => assembly.GetTypes())
+            .SelectMany(GetLoadableTypes)
             .Where(type => type is { IsAbstract: false, IsGenericTypeDefinition: true }
                            && type.GetGenericArguments().Length == 1
                            && GetValidatedRequestType(type) is not null)
@@ -174,7 +174,7 @@ public static class IntegratoRServiceCollectionExtensions
             .ToList();
 
         List<Type> entityTypes = entityAssemblies
-            .SelectMany(assembly => assembly.GetTypes())
+            .SelectMany(GetLoadableTypes)
             .Where(type => type is { IsAbstract: false, IsGenericTypeDefinition: false }
                            && typeof(IEntity).IsAssignableFrom(type))
             .Distinct()
@@ -199,6 +199,20 @@ public static class IntegratoRServiceCollectionExtensions
                 // AddIntegratoR is called twice and never double-registers the same validator.
                 services.TryAddEnumerable(ServiceDescriptor.Transient(serviceType, implementationType));
             }
+        }
+    }
+
+    // A consumer assembly may reference a type it cannot load; Assembly.GetTypes() would then throw
+    // ReflectionTypeLoadException and crash AddIntegratoR. Fall back to the types that DID load.
+    private static IEnumerable<Type> GetLoadableTypes(Assembly assembly)
+    {
+        try
+        {
+            return assembly.GetTypes();
+        }
+        catch (ReflectionTypeLoadException ex)
+        {
+            return ex.Types.Where(type => type is not null)!;
         }
     }
 
