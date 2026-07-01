@@ -11,11 +11,12 @@
 
 ## Entity Patterns
 
-- Entities inherit from `BaseEntity<TKey>` and must implement `GetCompositeKey()`.
+- Entities inherit from the non-generic `BaseEntity` and must implement `GetCompositeKey()`. (`BaseEntity<TKey>` is `[Obsolete]` — the `TKey` parameter was never used; removed next MAJOR.)
 - D365 uses composite keys: typically `DataAreaId` + business key.
 - `[Table("EntitySetName")]` maps to OData entity sets.
 - `[ODataField(IgnoreOnCreate = true)]` for server-generated fields (e.g., `JournalBatchNumber`, `LineNumber`).
-- `[ODataField(IgnoreOnUpdate = true)]` for immutable fields.
+- `[ODataField(IgnoreOnUpdate = true)]` for fields that are **read-only on update** in D365 — not only immutable business keys but also server-computed / status fields. If ANY such field is present in the update payload, D365 rejects the **whole** PATCH with an `ODataSecurityException` (HTTP 403, `"update not allowed for field 'X'"`), not just that field. Verified against live JFI (2026-07-01): `LedgerJournalHeader` needed `AccountingCurrency`, `IsPosted`, `JournalTotalDebit`, `JournalTotalCredit`, and `JournalName` marked `IgnoreOnUpdate`. When adding an entity, audit every field against D365's update semantics.
+- Composite-key **writes** (Update/Delete/batch) are live via an owned raw-`HttpClient` bypass in `ODataClientAdapter` (D365 returns `204 No Content` on a composite-key PATCH, so `ODataService.UpdateAsync` returns the caller's entity — a successful `Result<TEntity>` never carries a null `Value`).
 - Before writing code examples with D365 entities, read the entity source to check which fields have `IgnoreOnCreate`/`IgnoreOnUpdate`.
 
 ## Property Naming and `[JsonPropertyName]`

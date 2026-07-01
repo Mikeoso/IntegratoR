@@ -41,17 +41,17 @@ public class LedgerJournalHeader : BaseEntity<string>
 Three contracts make this entity work end-to-end:
 
 1. **`[Table("LedgerJournalHeaders")]`** maps the class to the D365 OData entity set. The name is **case-sensitive** and almost always **plural** — `LedgerJournalHeader` is the entity, `LedgerJournalHeaders` is the entity set.
-2. **`BaseEntity<TKey>`** declares the abstract `GetCompositeKey()` that handlers use for composite-key URL construction and reflection-based structured logging via `GetLoggingContext()`.
+2. **`BaseEntity`** declares the abstract `GetCompositeKey()` that handlers use for composite-key URL construction and reflection-based structured logging via `GetLoggingContext()`.
 3. **`[Key]` plus `GetCompositeKey()`** define which properties form the primary key and the order in which the framework passes them to OData reads.
 
 A hand-written entity's properties need **not** be `virtual` — the `virtual` requirement applies only when the entity will be subclassed and its properties overridden (see [Extend a Built-in Entity](#extend-a-built-in-entity) below).
 
-## BaseEntity\<TKey\>
+## BaseEntity
 
-`BaseEntity<TKey>` is an abstract base class in `IntegratoR.Abstractions.Domain.Entities`. The single type parameter is the primary-key data type — most D365 entities use `string` (the wire type for `DataAreaId`), but `int`, `long`, and `Guid` are equally valid:
+`BaseEntity` is the non-generic abstract base class in `IntegratoR.Abstractions.Domain.Entities`. Inherit it and implement `GetCompositeKey()` — the key is returned as an `object[]`, so one base class serves every key shape:
 
 ```csharp
-public class DimensionParameters : BaseEntity<int>
+public class DimensionParameters : BaseEntity
 {
     [Key]
     [JsonPropertyName("Key")]
@@ -61,7 +61,9 @@ public class DimensionParameters : BaseEntity<int>
 }
 ```
 
-`BaseEntity<TKey>` implements `IEntity` and `IContext`. Custom entities almost never need to extend either interface directly — inheriting from `BaseEntity` is sufficient.
+`BaseEntity` implements `IEntity` and `IContext`, so custom entities almost never need to extend either interface directly.
+
+> The older generic `BaseEntity<TKey>` is `[Obsolete]` — its `TKey` type parameter was never used (keys flow through `object[]`). It still compiles but is removed in the next MAJOR; derive new entities from the non-generic `BaseEntity`.
 
 ## Composite Keys
 
@@ -96,13 +98,15 @@ public decimal JournalTotalDebit { get; set; }      // fully read-only, calculat
 | Flag | Effect | Typical use |
 |---|---|---|
 | `IgnoreOnCreate = true` | Property is excluded from the POST payload | Number-sequence fields, computed totals, server defaults |
-| `IgnoreOnUpdate = true` | Property is excluded from the PATCH payload | Primary-key parts, immutable business keys |
+| `IgnoreOnUpdate = true` | Property is excluded from the PATCH payload | Primary-key parts, immutable business keys, and server-computed / read-only fields |
 
 The framework reads the attribute via reflection inside `ODataService<T>.AddAsync` / `UpdateAsync` and strips the matching properties from the JSON body. The consumer code can populate the full entity (including fields the server will overwrite); the framework filters at serialisation time.
 
 ### Common Pitfall
 
 Setting a field marked `IgnoreOnCreate = true` and then calling `CreateCommand<T>` silently drops the value. The record creates successfully but with the server's default instead of the supplied value. When in doubt, read the entity source for the `[ODataField]` annotations before populating the entity.
+
+Conversely, if an update payload contains **any** field D365 treats as read-only on update, D365 rejects the **entire** PATCH with an `ODataSecurityException` (HTTP 403, `"update not allowed for field 'X'"`) — not just that field. This covers server-computed and status fields, not only business keys (on `LedgerJournalHeader`: `AccountingCurrency`, `IsPosted`, `JournalTotalDebit`/`JournalTotalCredit`, and `JournalName`). Mark every such field `[ODataField(IgnoreOnUpdate = true)]` so it is stripped from the PATCH body. Verified against live JFI (v2.0.1).
 
 ### CSDL-Driven Annotations
 

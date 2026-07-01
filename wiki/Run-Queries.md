@@ -19,7 +19,7 @@ if (result.IsSuccess)
 
 The framework builds an OData URL of the form `<Url>/<TableName>(field1='value1',field2='value2')`. Because D365 entity sets often use composite keys with mixed CLR types, the values are coerced to their OData literal form (strings quoted, integers bare, decimals with `M` suffix, dates as `datetimeoffset`).
 
-> The composite-key read path uses a `$filter`-based bypass internally rather than the OData `(key=value, ...)` segment, because PanoramicData.OData.Client lacks a composite-key write API. Reads work transparently; writes have a [Known Limitation](Known-Limitations#composite-key-writes).
+> The composite-key read path uses a `$filter`-based bypass internally rather than relying on the OData `(key=value, ...)` segment. Both reads and writes go through owned, first-party bypasses in `ODataClientAdapter` — reads via this `$filter` path, and writes (Update / Delete) via a raw-`HttpClient` keyed-URL bypass (since v2.0.0). Both use the named `"ODataClient"` client, so they carry the same authentication, Polly resilience, and `BaseAddress` as every other request. See [Send Commands](Send-Commands) for the write side.
 
 ## Filter Records
 

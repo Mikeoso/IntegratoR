@@ -41,7 +41,7 @@ Result<LedgerJournalHeader> result = await mediator.Send(
 
 `UpdateCommand<TEntity>` sends a PATCH to the composite-key URL. Fields marked `IgnoreOnUpdate` or with `AllowEdit = false` are excluded from the payload. The composite key on the entity must be fully populated — the framework reads `GetCompositeKey()` to build the key segment.
 
-> The composite-key URL for the update path has a known limitation in the current PanoramicData.OData.Client release — see [Known Limitations](Known-Limitations#composite-key-writes) for the parked workaround design. Reads via `GetByKeyQuery<T>` use a different code path that already handles composite keys via the `Filter()` bypass.
+> Composite-key writes work (since v2.0.0). When `ODataClientAdapter` sees a composite (dictionary) key it issues the PATCH through an owned, first-party raw-`HttpClient` bypass that builds the keyed URL manually — e.g. `LedgerJournalHeaders(dataAreaId='USMF',JournalBatchNumber='B0001')` — through the named `"ODataClient"` client, so the write carries the same authentication, Polly resilience, and `BaseAddress` as every other request. This mirrors the read-path bypass that `GetByKeyQuery<T>` already used.
 
 ## Delete a Record
 
@@ -51,7 +51,7 @@ Result<LedgerJournalHeader> result = await mediator.Send(
     cancellationToken).ConfigureAwait(false);
 ```
 
-The composite key on the entity must be populated. The same composite-key write limitation noted above applies.
+The composite key on the entity must be populated. `DeleteCommand<TEntity>` issues the DELETE through the same owned composite-key bypass described above.
 
 ## Batch Operations
 
