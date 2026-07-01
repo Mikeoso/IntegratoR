@@ -11,8 +11,8 @@ using PanoramicData.OData.Client.Exceptions;
 namespace IntegratoR.OData.Common.Services;
 
 /// <summary>
-/// Wraps PanoramicData's <see cref="ODataClient"/> to implement <see cref="IODataClientAdapter"/>,
-/// providing a mockable abstraction for unit testing.
+/// Provides a mockable adapter over PanoramicData's <see cref="ODataClient"/> that implements
+/// <see cref="IODataClientAdapter"/>.
 /// </summary>
 public class ODataClientAdapter : IODataClientAdapter
 {
@@ -34,23 +34,26 @@ public class ODataClientAdapter : IODataClientAdapter
     private readonly IHttpClientFactory? _httpClientFactory;
 
     /// <summary>
-    /// Creates an adapter over PanoramicData's <see cref="ODataClient"/> without a named-client
-    /// factory. Composite-key write operations (Update/Delete/BatchUpdate/BatchDelete on an
-    /// <see cref="IDictionary{TKey, TValue}"/> key) are NOT supported through this constructor and
+    /// Initializes a new instance of the <see cref="ODataClientAdapter"/> class without a named-client factory.
+    /// </summary>
+    /// <param name="client">The underlying PanoramicData OData client.</param>
+    /// <remarks>
+    /// Composite-key write operations (Update/Delete/BatchUpdate/BatchDelete on an
+    /// <see cref="IDictionary{TKey, TValue}"/> key) are not supported through this constructor and
     /// throw <see cref="InvalidOperationException"/>; production DI always uses the two-argument
     /// constructor. Retained for guard tests that never issue HTTP traffic.
-    /// </summary>
+    /// </remarks>
     public ODataClientAdapter(ODataClient client)
     {
         _client = client;
     }
 
     /// <summary>
-    /// Creates an adapter over PanoramicData's <see cref="ODataClient"/> with the named-client
-    /// factory required by the composite-key write bypass. The factory must resolve the
-    /// <c>"ODataClient"</c> named client so raw composite-key requests carry the same
-    /// authentication, Polly resilience, and base address as PanoramicData's own traffic.
+    /// Initializes a new instance of the <see cref="ODataClientAdapter"/> class with the named-client
+    /// factory required by the composite-key write bypass.
     /// </summary>
+    /// <param name="client">The underlying PanoramicData OData client.</param>
+    /// <param name="httpClientFactory">The factory that must resolve the <c>"ODataClient"</c> named client so raw composite-key requests carry the same authentication, Polly resilience, and base address as PanoramicData's own traffic.</param>
     public ODataClientAdapter(ODataClient client, IHttpClientFactory httpClientFactory)
     {
         _client = client;
@@ -77,6 +80,10 @@ public class ODataClientAdapter : IODataClientAdapter
     }
 
     /// <inheritdoc />
+    /// <exception cref="ArgumentException">
+    /// Thrown when <paramref name="key"/> is a composite-key dictionary that is empty or contains a
+    /// field name that is not a valid OData property identifier.
+    /// </exception>
     public async Task<TEntity?> FindByKeyAsync<TEntity>(
         string entitySet,
         object key,
@@ -194,6 +201,14 @@ public class ODataClientAdapter : IODataClientAdapter
     }
 
     /// <inheritdoc />
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when <paramref name="key"/> is a composite-key dictionary but the adapter was created
+    /// without an <see cref="IHttpClientFactory"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Thrown when a composite-key dictionary is empty or contains a field name that is not a valid
+    /// OData property identifier.
+    /// </exception>
     public async Task<TEntity> UpdateAsync<TEntity>(
         string entitySet,
         object key,
@@ -223,6 +238,14 @@ public class ODataClientAdapter : IODataClientAdapter
     }
 
     /// <inheritdoc />
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when <paramref name="key"/> is a composite-key dictionary but the adapter was created
+    /// without an <see cref="IHttpClientFactory"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Thrown when a composite-key dictionary is empty or contains a field name that is not a valid
+    /// OData property identifier.
+    /// </exception>
     public async Task DeleteAsync(
         string entitySet,
         object key,

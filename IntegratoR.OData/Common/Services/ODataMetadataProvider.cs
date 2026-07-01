@@ -6,12 +6,7 @@ using Microsoft.Extensions.Logging;
 namespace IntegratoR.OData.Common.Services;
 
 /// <summary>
-/// Provides D365 F&O metadata from a local XML file instead of fetching it via HTTP.
-/// This approach offers several advantages:
-/// - Avoids DTD processing security issues
-/// - Faster application startup (no metadata download)
-/// - Enables offline development
-/// - Metadata changes are version-controlled
+/// Provides D365 F&amp;O OData metadata from a local XML file rather than fetching it over HTTP.
 /// </summary>
 [Obsolete("since v1.4.0; unused — D365 $metadata is not loaded at runtime; removed next MAJOR")]
 public class ODataMetadataProvider
@@ -19,20 +14,20 @@ public class ODataMetadataProvider
     private readonly ILogger<ODataMetadataProvider> _logger;
     private string? _cachedMetadata;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="ODataMetadataProvider"/> class.
+    /// </summary>
+    /// <param name="logger">The logger for diagnostic output.</param>
     public ODataMetadataProvider(ILogger<ODataMetadataProvider> logger)
     {
         _logger = logger;
     }
 
     /// <summary>
-    /// Loads and sanitizes the metadata XML from the specified file path.
-    /// Removes DTD declarations to prevent security issues.
+    /// Loads and sanitises the metadata XML from the specified file path, stripping DTD declarations.
     /// </summary>
-    /// <param name="metadataFilePath">Relative or absolute path to the metadata.xml file</param>
-    /// <returns>
-    /// A <see cref="Result{T}"/> containing the clean metadata XML string without DTD declarations on success,
-    /// or an error if the file cannot be found or processed.
-    /// </returns>
+    /// <param name="metadataFilePath">The relative or absolute path to the metadata XML file.</param>
+    /// <returns>A successful <see cref="Result{T}"/> carrying the DTD-free metadata XML, or a failure carrying an <see cref="IntegrationError"/> when the file is missing or cannot be parsed.</returns>
     public Result<string> LoadMetadata(string metadataFilePath)
     {
         if (_cachedMetadata != null)
@@ -41,7 +36,6 @@ public class ODataMetadataProvider
             return Result.Ok(_cachedMetadata);
         }
 
-        // Resolve the full path
         var resolvedPath = ResolveMetadataPath(metadataFilePath);
 
         if (!File.Exists(resolvedPath))
@@ -63,7 +57,6 @@ public class ODataMetadataProvider
 
         try
         {
-            // Read the file content
             var xmlContent = File.ReadAllText(resolvedPath);
 
             // Remove DTD declarations to prevent security issues
@@ -99,7 +92,6 @@ public class ODataMetadataProvider
     /// </summary>
     private string ResolveMetadataPath(string configuredPath)
     {
-        // If absolute path, use directly
         if (Path.IsPathRooted(configuredPath))
         {
             _logger.LogDebug("Using absolute path: {Path}", configuredPath);
@@ -180,7 +172,6 @@ public class ODataMetadataProvider
             using var stringReader = new StringReader(xmlContent);
             using var xmlReader = XmlReader.Create(stringReader, settings);
 
-            // Just parse through it to validate
             while (xmlReader.Read()) { }
 
             _logger.LogDebug("Metadata XML validation successful");
@@ -200,8 +191,7 @@ public class ODataMetadataProvider
     }
 
     /// <summary>
-    /// Clears the cached metadata, forcing a reload on next access.
-    /// Useful for development or when metadata file is updated.
+    /// Clears the cached metadata, forcing a reload on the next access.
     /// </summary>
     public void ClearCache()
     {

@@ -47,7 +47,7 @@ namespace IntegratoR.OData.Common.Filters;
 
 /// <summary>
 /// Translates strongly-typed LINQ expressions into raw OData query strings, honouring
-/// <see cref="JsonPropertyNameAttribute"/> on entity properties.
+/// <see cref="System.Text.Json.Serialization.JsonPropertyNameAttribute"/> on entity properties.
 /// </summary>
 internal static class IntegratoRODataExpressionTranslator
 {
@@ -85,7 +85,7 @@ internal static class IntegratoRODataExpressionTranslator
 
     /// <summary>
     /// Converts a strongly-typed order-by specification into an OData <c>$orderby</c> clause,
-    /// honouring <see cref="JsonPropertyNameAttribute"/> on each key selector's member path.
+    /// honouring <see cref="System.Text.Json.Serialization.JsonPropertyNameAttribute"/> on each key selector's member path.
     /// Emits <c>path</c> for ascending and <c>path desc</c> for descending, joined with <c>, </c>.
     /// </summary>
     /// <exception cref="NotSupportedException">
@@ -566,7 +566,7 @@ internal static class IntegratoRODataExpressionTranslator
     /// <summary>
     /// Builds the slash-separated OData property path from a <see cref="MemberExpression"/>.
     /// **PATCHED**: each segment is resolved through <see cref="ResolveJsonName"/> instead of
-    /// reading <c>MemberInfo.Name</c> directly, so <see cref="JsonPropertyNameAttribute"/> is honoured.
+    /// reading <c>MemberInfo.Name</c> directly, so <see cref="System.Text.Json.Serialization.JsonPropertyNameAttribute"/> is honoured.
     /// </summary>
     private static string GetMemberPath(MemberExpression member)
     {
@@ -778,7 +778,7 @@ internal static class IntegratoRODataExpressionTranslator
 
     /// <summary>
     /// Extracts expand path info from an expression. **PATCHED**: each segment uses
-    /// <see cref="ResolveJsonName"/> so navigation paths honour <see cref="JsonPropertyNameAttribute"/>.
+    /// <see cref="ResolveJsonName"/> so navigation paths honour <see cref="System.Text.Json.Serialization.JsonPropertyNameAttribute"/>.
     /// </summary>
     private static ExpandPathInfo? GetExpandPathInfoFromExpression(Expression expression)
     {
@@ -1160,7 +1160,7 @@ internal static class IntegratoRODataExpressionTranslator
 
     /// <summary>
     /// Walks the member chain inside a lambda body. **PATCHED**: each segment uses
-    /// <see cref="ResolveJsonName"/> so lambda paths honour <see cref="JsonPropertyNameAttribute"/>.
+    /// <see cref="ResolveJsonName"/> so lambda paths honour <see cref="System.Text.Json.Serialization.JsonPropertyNameAttribute"/>.
     /// </summary>
     private static string GetLambdaMemberPath(MemberExpression member, ParameterExpression lambdaParam, string odataParamName)
     {

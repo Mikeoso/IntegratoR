@@ -3,19 +3,10 @@ using Microsoft.Extensions.Options;
 namespace IntegratoR.OData.Domain.Settings;
 
 /// <summary>
-/// Validates <see cref="ODataSettings"/> at startup (via <c>ValidateOnStart</c>) and on first use,
-/// turning dangerous or incomplete configuration into a clear, fail-fast error instead of a silent
-/// runtime failure.
+/// Validates <see cref="ODataSettings"/> at startup and on first use, failing fast on dangerous or incomplete configuration.
 /// </summary>
 /// <remarks>
-/// Two classes of misconfiguration are rejected:
-/// <list type="bullet">
-///   <item><description>An authentication header smuggled into
-///   <see cref="ODataApiManagementSettings.DefaultHeaders"/> (the framework owns the auth header;
-///   a duplicate/forged one in DefaultHeaders is a security risk per the security rules).</description></item>
-///   <item><description>An authentication mode without its required credentials (ApiKey without a
-///   subscription key, or OAuth without complete client-credentials).</description></item>
-/// </list>
+/// Rejects an authentication header carried in <see cref="ODataApiManagementSettings.DefaultHeaders"/> (the framework owns the auth header) and an authentication mode without its required credentials.
 /// </remarks>
 public sealed class ODataSettingsValidator : IValidateOptions<ODataSettings>
 {

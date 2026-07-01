@@ -27,7 +27,7 @@ public interface IODataClientAdapter
     /// <param name="key">
     /// Either a scalar key value (for single-key entities) or an
     /// <see cref="IDictionary{TKey, TValue}"/> of <c>wireName → value</c> pairs for composite
-    /// keys. For composite keys, each dictionary key must be the <b>OData wire name</b> of the
+    /// keys. For composite keys, each dictionary key must be the OData wire name of the
     /// property — i.e. what would appear in a <c>$filter</c> expression — not the CLR property
     /// name. Framework callers obtain these names from entity reflection via
     /// <c>PropertyNameResolver</c> (which honours <c>[JsonPropertyName]</c>). Wire names must
@@ -44,11 +44,19 @@ public interface IODataClientAdapter
     /// <summary>
     /// Queries entities with optional filter, expand, select, order-by, skip, and top parameters.
     /// </summary>
+    /// <param name="entitySet">The OData entity set to query.</param>
+    /// <param name="filter">An optional predicate applied as the OData <c>$filter</c> option.</param>
+    /// <param name="expand">An optional navigation expression applied as the OData <c>$expand</c> option.</param>
+    /// <param name="select">An optional projection expression applied as the OData <c>$select</c> option.</param>
     /// <param name="orderBy">
     /// Optional ordered list of <c>(keySelector, descending)</c> tuples translated into an OData
     /// <c>$orderby</c> clause. Each key selector honours <c>[JsonPropertyName]</c> on the member
     /// path, so D365 camelCase wire names (e.g. <c>dataAreaId</c>) sort correctly.
     /// </param>
+    /// <param name="skip">The number of entities to skip, applied as the OData <c>$skip</c> option.</param>
+    /// <param name="top">The maximum number of entities to return, applied as the OData <c>$top</c> option.</param>
+    /// <param name="cancellationToken">A token that cancels the outbound OData request.</param>
+    /// <returns>The entities matching the specified query options.</returns>
     Task<IEnumerable<TEntity>> FindEntriesAsync<TEntity>(
         string entitySet,
         Expression<Func<TEntity, bool>>? filter = null,
@@ -70,7 +78,7 @@ public interface IODataClientAdapter
     /// <see cref="IDictionary{TKey, TValue}"/> of <c>wireName → value</c> pairs for composite
     /// keys. Composite (dictionary) keys are routed through a raw-HttpClient bypass that PATCHes
     /// the keyed URL <c>EntitySet(field=literal,…)</c>, because PanoramicData's <c>Key(object)</c>
-    /// path cannot bind a dictionary. Each dictionary key must be the <b>OData wire name</b>
+    /// path cannot bind a dictionary. Each dictionary key must be the OData wire name
     /// (what appears in a <c>$filter</c>), obtained from entity reflection via
     /// <c>PropertyNameResolver</c>, and must match <c>^[A-Za-z_][A-Za-z0-9_.]*$</c>.
     /// </param>
@@ -92,7 +100,7 @@ public interface IODataClientAdapter
     /// <see cref="IDictionary{TKey, TValue}"/> of <c>wireName → value</c> pairs for composite
     /// keys. Composite (dictionary) keys are routed through a raw-HttpClient bypass that DELETEs
     /// the keyed URL <c>EntitySet(field=literal,…)</c>, because PanoramicData's <c>Key(object)</c>
-    /// path cannot bind a dictionary. Each dictionary key must be the <b>OData wire name</b>
+    /// path cannot bind a dictionary. Each dictionary key must be the OData wire name
     /// (what appears in a <c>$filter</c>), obtained from entity reflection via
     /// <c>PropertyNameResolver</c>, and must match <c>^[A-Za-z_][A-Za-z0-9_.]*$</c>.
     /// </param>

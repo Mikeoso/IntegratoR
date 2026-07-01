@@ -1,13 +1,13 @@
 namespace IntegratoR.OData.Common.Annotations;
 
 /// <summary>
-/// Provides declarative, property-level metadata to control serialization behavior
+/// Provides declarative, property-level metadata to control serialisation behaviour
 /// for D365 F&amp;O OData create (POST) and update (PATCH) operations.
 /// </summary>
 /// <remarks>
 /// <para>
 /// Properties from the D365 CSDL <c>$metadata</c> annotations drive the <see cref="AllowEdit"/> and
-/// <see cref="AllowEditOnCreate"/> flags. When set, these are the <b>source of truth</b> from D365
+/// <see cref="AllowEditOnCreate"/> flags. When set, these are the source of truth from D365
 /// and take precedence over <see cref="IgnoreOnCreate"/>/<see cref="IgnoreOnUpdate"/>.
 /// </para>
 /// <para>
