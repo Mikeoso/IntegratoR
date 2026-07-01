@@ -84,10 +84,10 @@ Result<LedgerJournalHeader> result = await mediator.Send(
 
 if (result.IsFailed)
 {
-    IntegrationError error = result.GetError();
-    // Breaker open: error.Type == ErrorType.Failure; the Polly
-    // BrokenCircuitException is carried on error.Exception.
-    logger.LogWarning("Journal create failed: {Code}", error.Code);
+    IntegrationError? error = result.GetError();
+    // Breaker open: error?.Type == ErrorType.Failure; the Polly
+    // BrokenCircuitException is carried on error?.Exception.
+    logger.LogWarning("Journal create failed: {Code}", error?.Code);
     return;
 }
 

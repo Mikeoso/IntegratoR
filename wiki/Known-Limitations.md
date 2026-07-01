@@ -21,7 +21,7 @@ foreach (string company in companies)
 
     if (result.IsFailed)
     {
-        IError error = result.GetError();
+        IntegrationError? error = result.GetError();
         // IntegrationError { Code, Type }: a D365 read failure surfaces here — inspect and stop or skip.
         break;
     }
@@ -100,7 +100,7 @@ Result result = await mediator.Send(
 
 if (result.IsFailed)
 {
-    IError error = result.GetError();
+    IntegrationError? error = result.GetError();
     // Per-item, not transactional: earlier items may already be committed in D365
     // when a later item fails. Re-read to establish which writes landed.
 }

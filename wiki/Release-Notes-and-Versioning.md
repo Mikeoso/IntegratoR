@@ -115,7 +115,7 @@ Materialise the sequence with `.ToList()` (or `.ToArray()`) before constructing 
 
 The positional record parameters were renamed `dimensionFormat` / `hierarchyType` → `DimensionFormat` / `HierarchyType` to follow the C# convention. Positional callers are unaffected; only named-argument callers must update.
 
-**Before:** `new GetDimensionOrdersQuery(dimensionFormat: "Sachkontodimensionen", hierarchyType: DimensionHierarchyType.LedgerDimension)`
+**Before:** `new GetDimensionOrdersQuery(dimensionFormat: "Sachkontodimensionen", hierarchyType: DimensionHierarchyType.DataEntityLedgerDimensionFormat)`
 
 **After:**
 
@@ -123,7 +123,7 @@ The positional record parameters were renamed `dimensionFormat` / `hierarchyType
 Result<DimensionFormat> result = await mediator.Send(
     new GetDimensionOrdersQuery(
         DimensionFormat: "Sachkontodimensionen",
-        HierarchyType: DimensionHierarchyType.LedgerDimension),
+        HierarchyType: DimensionHierarchyType.DataEntityLedgerDimensionFormat),
     cancellationToken);
 
 if (result.IsFailed && result.GetError() is IntegrationError { Type: ErrorType.NotFound })

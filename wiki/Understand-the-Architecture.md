@@ -69,7 +69,7 @@ Result<LedgerJournalHeader> result =
 
 if (result.IsFailed)
 {
-    IntegrationError error = result.GetError();
+    IntegrationError? error = result.GetError();
     // Code is "{EntityType}.{reason}" — e.g. "LedgerJournalHeader.Conflict" on an HTTP 409 (ErrorType.Conflict).
     return;
 }

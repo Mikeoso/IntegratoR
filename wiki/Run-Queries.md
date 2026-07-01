@@ -33,9 +33,9 @@ Result<LedgerJournalHeader> result = await mediator.Send(
 
 if (result.IsFailed)
 {
-    IntegrationError error = (IntegrationError)result.GetError();
-    // error.Type == ErrorType.NotFound for a key D365 has no record for.
-    // error.Code and error.Message carry the machine-readable detail.
+    IntegrationError? error = result.GetError();
+    // error?.Type == ErrorType.NotFound for a key D365 has no record for.
+    // error?.Code and error?.Message carry the machine-readable detail.
 }
 ```
 
@@ -55,7 +55,7 @@ Result<IEnumerable<LedgerJournalHeader>> result = await mediator.Send(
 
 if (result.IsFailed)
 {
-    IntegrationError error = (IntegrationError)result.GetError();
+    IntegrationError? error = result.GetError();
 }
 else
 {
@@ -118,7 +118,7 @@ Result<IEnumerable<LedgerJournalHeader>> result = await service.QueryAsync(
 
 if (result.IsFailed)
 {
-    IntegrationError error = (IntegrationError)result.GetError();
+    IntegrationError? error = result.GetError();
 }
 ```
 

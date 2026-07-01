@@ -81,7 +81,7 @@ Result<LedgerJournalHeader> result = await mediator.Send(new UpdateCommand<Ledge
 
 if (result.IsFailed)
 {
-    IError error = result.GetError();
+    IntegrationError? error = result.GetError();
     // Code: "LedgerJournalHeader.InvalidKey"
     // Message: "Composite key element at index 1 for field 'JournalBatchNumber' was null; a null key cannot identify an entity."
     // Type: ErrorType.Validation

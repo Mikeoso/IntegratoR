@@ -126,14 +126,14 @@ Result<LedgerJournalHeader> result = await mediator.Send(
 
 if (result.IsFailed)
 {
-    IError error = result.GetError();
+    IntegrationError? error = result.GetError();
     // OAuth mode with a bad secret: the 401 short-circuit surfaces here as a failed Result —
     // Code "Auth.Msal.invalid_client", Message "Token acquisition failed".
     return;
 }
 
 // D365 assigns JournalBatchNumber server-side (IgnoreOnCreate).
-string batch = result.Value.JournalBatchNumber;
+string batch = result.Value.JournalBatchNumber!;
 ```
 
 ## Choose between OAuth and ApiKey

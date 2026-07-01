@@ -64,10 +64,10 @@ Result<LedgerJournalHeader> result =
 
 if (result.IsFailed)
 {
-    IntegrationError error = result.GetError();
-    // error.Code    == "Validation.Error"
-    // error.Type    == ErrorType.Validation
-    // error.Message == "DataAreaId must be exactly 4 characters."
+    IntegrationError? error = result.GetError();
+    // error?.Code    == "Validation.Error"
+    // error?.Type    == ErrorType.Validation
+    // error?.Message == "DataAreaId must be exactly 4 characters."
 }
 ```
 

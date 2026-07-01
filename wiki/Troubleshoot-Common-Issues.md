@@ -18,10 +18,10 @@ Result<LedgerJournalHeader> result = await mediator.Send(
 
 if (result.IsFailed)
 {
-    IntegrationError error = result.GetError();
+    IntegrationError? error = result.GetError();
     // On a stray read-only field the OData layer surfaces the 403 as a failed Result.
-    // error.Type == ErrorType.Failure; error.Code == "LedgerJournalHeader.Unauthorized".
-    // error.Exception is the wrapped ODataClientException — its Message and response body
+    // error?.Type == ErrorType.Failure; error?.Code == "LedgerJournalHeader.Unauthorized".
+    // error?.Exception is the wrapped ODataClientException — its Message and response body
     // carry D365's ODataSecurityException and the "update not allowed for field 'X'" detail.
 }
 ```
@@ -39,10 +39,10 @@ Check the failed `Result<T>` from the OAuth path — its `Code` is `Auth.Msal.{c
 ```csharp
 if (result.IsFailed)
 {
-    IntegrationError error = result.GetError();
-    // error.Code == "Auth.Msal.invalid_client"  (Auth.Msal.{MSAL error code})
-    // error.Type == ErrorType.Failure; error.Message == "Token acquisition failed".
-    // error.Exception carries the full MSAL detail for server-side logging.
+    IntegrationError? error = result.GetError();
+    // error?.Code == "Auth.Msal.invalid_client"  (Auth.Msal.{MSAL error code})
+    // error?.Type == ErrorType.Failure; error?.Message == "Token acquisition failed".
+    // error?.Exception carries the full MSAL detail for server-side logging.
 }
 ```
 
@@ -87,8 +87,8 @@ if (result.IsSuccess)
 }
 else
 {
-    IntegrationError error = result.GetError();
-    // A rejected create fails the Result — inspect error.Code and error.Message for the D365 detail.
+    IntegrationError? error = result.GetError();
+    // A rejected create fails the Result — inspect error?.Code and error?.Message for the D365 detail.
 }
 ```
 
@@ -101,9 +101,9 @@ If you must send a field D365 accepts on create but the framework entity ignores
 ```csharp
 if (result.IsFailed)
 {
-    IntegrationError error = result.GetError();
-    // error.Code == "Validation.Error"; error.Type == ErrorType.Validation.
-    // error.Message is the FIRST failing rule's message — later failures are dropped.
+    IntegrationError? error = result.GetError();
+    // error?.Code == "Validation.Error"; error?.Type == ErrorType.Validation.
+    // error?.Message is the FIRST failing rule's message — later failures are dropped.
 }
 ```
 

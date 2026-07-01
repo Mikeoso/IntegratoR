@@ -54,10 +54,10 @@ Result<DimensionFormat> result = await mediator.Send(query, cancellationToken);
 
 if (result.IsFailed)
 {
-    IntegrationError error = result.GetError();
+    IntegrationError? error = result.GetError();
     // Missing singleton parameter row in this company:
-    //   error.Code -> "DimensionParameters.NotFound"
-    //   error.Type -> ErrorType.NotFound
+    //   error?.Code -> "DimensionParameters.NotFound"
+    //   error?.Type -> ErrorType.NotFound
     return result;
 }
 ```
