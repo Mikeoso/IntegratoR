@@ -87,6 +87,14 @@ public sealed class ODataSettingsValidator : IValidateOptions<ODataSettings>
                 break;
         }
 
+        // Batch chunk size must stay within D365's documented ceiling of 5000 operations per $batch.
+        if (options.Batch.MaxOperationsPerChunk is < 1 or > 5000)
+        {
+            failures.Add(
+                $"ODataSettings.Batch.MaxOperationsPerChunk must be between 1 and 5000 (D365's documented maximum " +
+                $"operations per $batch). The configured value was {options.Batch.MaxOperationsPerChunk}.");
+        }
+
         return failures.Count > 0
             ? ValidateOptionsResult.Fail(failures)
             : ValidateOptionsResult.Success;
