@@ -19,6 +19,8 @@ public sealed class IntegratoRBuilder
     /// generic CRUD/query handlers close over the entity types declared in those assemblies — including
     /// subclasses of framework entities.
     /// </summary>
+    /// <param name="assemblies">The consumer assemblies to scan for handlers and validators.</param>
+    /// <returns>The same builder instance.</returns>
     public IntegratoRBuilder AddConsumerHandlers(params Assembly[] assemblies)
     {
         ConsumerAssemblies.AddRange(assemblies);
@@ -27,8 +29,10 @@ public sealed class IntegratoRBuilder
 
     /// <summary>
     /// Applies programmatic overrides to the OData connection settings after configuration binding.
-    /// Multiple calls are composed; all delegates run in registration order.
     /// </summary>
+    /// <param name="configure">A delegate that overrides the bound <see cref="ODataSettings"/>.</param>
+    /// <returns>The same builder instance.</returns>
+    /// <remarks>Multiple calls are composed; all delegates run in registration order.</remarks>
     public IntegratoRBuilder ConfigureOData(Action<ODataSettings> configure)
     {
         ODataPostConfigure = ODataPostConfigure is null
@@ -39,8 +43,10 @@ public sealed class IntegratoRBuilder
 
     /// <summary>
     /// Applies programmatic overrides to the F&amp;O settings after configuration binding.
-    /// Multiple calls are composed; all delegates run in registration order.
     /// </summary>
+    /// <param name="configure">A delegate that overrides the bound <see cref="FOSettings"/>.</param>
+    /// <returns>The same builder instance.</returns>
+    /// <remarks>Multiple calls are composed; all delegates run in registration order.</remarks>
     public IntegratoRBuilder ConfigureFO(Action<FOSettings> configure)
     {
         FOPostConfigure = FOPostConfigure is null

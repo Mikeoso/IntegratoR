@@ -32,6 +32,9 @@ public static class IntegratoRServiceCollectionExtensions
     /// <summary>
     /// Registers core IntegratoR framework services (Application, OData, F&amp;O) with default settings.
     /// </summary>
+    /// <param name="services">The service collection to add the framework services to.</param>
+    /// <param name="configuration">The configuration to bind the framework settings from.</param>
+    /// <returns>The same service collection so that calls can be chained.</returns>
     public static IServiceCollection AddIntegratoR(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -42,6 +45,10 @@ public static class IntegratoRServiceCollectionExtensions
     /// <summary>
     /// Registers core IntegratoR framework services (Application, OData, F&amp;O) with builder-based configuration.
     /// </summary>
+    /// <param name="services">The service collection to add the framework services to.</param>
+    /// <param name="configuration">The configuration to bind the framework settings from.</param>
+    /// <param name="configure">A delegate that configures the <see cref="IntegratoRBuilder"/>.</param>
+    /// <returns>The same service collection so that calls can be chained.</returns>
     public static IServiceCollection AddIntegratoR(
         this IServiceCollection services,
         IConfiguration configuration,
