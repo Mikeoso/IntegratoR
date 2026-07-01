@@ -1,7 +1,9 @@
+using System.Linq;
 using System.Reflection;
 using System.Text.Json;
 using FluentValidation;
 using IntegratoR.Abstractions.Common.Results.SystemText;
+using IntegratoR.Abstractions.Interfaces.Entity;
 using IntegratoR.Application.Common.Extensions;
 using IntegratoR.Hosting;
 using IntegratoR.OData.Common.Extensions;
@@ -12,6 +14,7 @@ using MediatR;
 using Microsoft.DurableTask.Converters;
 using Microsoft.DurableTask.Worker;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
@@ -106,22 +109,40 @@ public static class IntegratoRServiceCollectionExtensions
         // 6. Register the F&O FluentValidation validators. The F&O layer (AddODataClientFOProxy)
         //    registers its MediatR handlers but not its validators; wiring them here keeps the
         //    FluentValidation.DependencyInjectionExtensions dependency in the composition root.
-        //    This registers the NON-GENERIC GetDimensionOrdersQueryValidator, which then fires in
-        //    the MediatR ValidationBehaviour.
+        //    This registers the NON-GENERIC, concrete validators (e.g. GetDimensionOrdersQueryValidator),
+        //    which fire in the MediatR ValidationBehaviour.
         //
-        //    KNOWN LIMITATION: AddValidatorsFromAssembly's assembly scanner does NOT register
-        //    OPEN-GENERIC validators (it cannot build a closed IValidator<> service type from a
-        //    partially-open generic). This affects BOTH the generic baseline validators in
-        //    IntegratoR.Application (CreateCommandValidator<T> etc.) AND the thin derived per-command
-        //    validators in IntegratoR.OData.FO (CreateLedgerJournalLineCommandValidator<T> etc.).
-        //    Consequently, generic/open-generic command validation does NOT run through the pipeline
-        //    today — a pre-existing framework-wide gap, not introduced here. The derived FO
-        //    validators are still useful and are unit-proven against the concrete FO commands in
-        //    GenericValidatorReuseTests; closing the open-generic pipeline gap is deferred (it needs
-        //    a per-entity closed-validator registration mechanism, out of scope for PR-C).
+        //    AddValidatorsFromAssembly's scanner does NOT register OPEN-GENERIC validators (it cannot
+        //    build a closed IValidator<> service type from a partially-open generic). The generic
+        //    baseline validators (CreateCommandValidator<T> etc.) and the F&O-derived per-command
+        //    validators are therefore closed and registered explicitly in step 6b below.
         services.AddValidatorsFromAssembly(
             typeof(IntegratoR.OData.FO.Domain.Entities.LedgerJournal.LedgerJournalHeader).Assembly,
             includeInternalTypes: true);
+
+        // 6b. Close the OPEN-GENERIC command/query validators over every discovered entity type and
+        //     register the resulting CLOSED IValidator<> so they actually fire in ValidationBehaviour.
+        //     Step 6 (and AddApplicationServices) cannot: the FluentValidation scanner skips open
+        //     generics, so mediator.Send(new CreateCommand<TEntity>(...)) would otherwise resolve an
+        //     EMPTY IEnumerable<IValidator<CreateCommand<TEntity>>> and generic command validation
+        //     would silently never run. Entities come from the F&O assembly AND consumer assemblies (a
+        //     consumer's CreateCommand<ConsumerEntity> needs its validator too); the open-generic
+        //     validators come from IntegratoR.Application (baseline) and IntegratoR.OData.FO (derived).
+        //     (The F&O-derived per-command validators are also closed and registered here as a benign
+        //     side-effect — nothing dispatches those FO-specific commands through the mediator today,
+        //     and TryAddEnumerable keeps the registration harmless.) See open-todos #15.
+        RegisterClosedGenericValidators(
+            services,
+            validatorAssemblies:
+            [
+                typeof(IntegratoR.Application.Features.Common.Validators.CreateCommandValidator<>).Assembly,
+                typeof(IntegratoR.OData.FO.Domain.Entities.LedgerJournal.LedgerJournalHeader).Assembly,
+            ],
+            entityAssemblies:
+            [
+                typeof(IntegratoR.OData.FO.Domain.Entities.LedgerJournal.LedgerJournalHeader).Assembly,
+                .. builder.ConsumerAssemblies,
+            ]);
 
         // 7. Register consumer FluentValidation validators. Consumer MediatR handlers — including
         //    the closed generic CRUD/query handlers for consumer entities — are already registered
@@ -133,5 +154,122 @@ public static class IntegratoRServiceCollectionExtensions
         }
 
         return services;
+    }
+
+    // Open-generic validators (AbstractValidator<TRequest<TArg>>) are skipped by FluentValidation's
+    // assembly scanner because there is no closed IValidator<> service type to bind. This closes each
+    // over every discovered entity that satisfies its generic constraints and registers the resulting
+    // closed IValidator<> so ValidationBehaviour resolves and runs them.
+    private static void RegisterClosedGenericValidators(
+        IServiceCollection services,
+        Assembly[] validatorAssemblies,
+        Assembly[] entityAssemblies)
+    {
+        List<Type> openValidators = validatorAssemblies
+            .SelectMany(GetLoadableTypes)
+            .Where(type => type is { IsAbstract: false, IsGenericTypeDefinition: true }
+                           && type.GetGenericArguments().Length == 1
+                           && GetValidatedRequestType(type) is not null)
+            .Distinct()
+            .ToList();
+
+        List<Type> entityTypes = entityAssemblies
+            .SelectMany(GetLoadableTypes)
+            .Where(type => type is { IsAbstract: false, IsGenericTypeDefinition: false }
+                           && typeof(IEntity).IsAssignableFrom(type))
+            .Distinct()
+            .ToList();
+
+        foreach (Type openValidator in openValidators)
+        {
+            Type parameter = openValidator.GetGenericArguments()[0];
+
+            foreach (Type entity in entityTypes)
+            {
+                if (!SatisfiesConstraints(parameter, entity))
+                {
+                    continue;
+                }
+
+                Type implementationType = openValidator.MakeGenericType(entity);
+                Type requestType = GetValidatedRequestType(implementationType)!;    // e.g. CreateCommand<TEntity> (closed)
+                Type serviceType = typeof(IValidator<>).MakeGenericType(requestType);
+
+                // TryAddEnumerable dedupes on (service, implementation) so the pass is idempotent when
+                // AddIntegratoR is called twice and never double-registers the same validator.
+                services.TryAddEnumerable(ServiceDescriptor.Transient(serviceType, implementationType));
+            }
+        }
+    }
+
+    // A consumer assembly may reference a type it cannot load; Assembly.GetTypes() would then throw
+    // ReflectionTypeLoadException and crash AddIntegratoR. Fall back to the types that DID load.
+    private static IEnumerable<Type> GetLoadableTypes(Assembly assembly)
+    {
+        try
+        {
+            return assembly.GetTypes();
+        }
+        catch (ReflectionTypeLoadException ex)
+        {
+            return ex.Types.Where(type => type is not null)!;
+        }
+    }
+
+    // Returns the TRequest of the nearest AbstractValidator<TRequest> in the inheritance chain, or
+    // null when the type does not derive from AbstractValidator<>.
+    private static Type? GetValidatedRequestType(Type validatorType)
+    {
+        for (Type? current = validatorType.BaseType; current is not null; current = current.BaseType)
+        {
+            if (current.IsGenericType && current.GetGenericTypeDefinition() == typeof(AbstractValidator<>))
+            {
+                return current.GetGenericArguments()[0];
+            }
+        }
+
+        return null;
+    }
+
+    // Whether 'candidate' satisfies every generic constraint declared on 'genericParameter', so
+    // MakeGenericType(candidate) will not throw. Lets one pass cover baseline validators (constraint
+    // IEntity) and F&O-derived validators (constraint LedgerJournalHeader/Line) without exceptions.
+    private static bool SatisfiesConstraints(Type genericParameter, Type candidate)
+    {
+        GenericParameterAttributes attributes =
+            genericParameter.GenericParameterAttributes & GenericParameterAttributes.SpecialConstraintMask;
+
+        if (attributes.HasFlag(GenericParameterAttributes.ReferenceTypeConstraint) && candidate.IsValueType)
+        {
+            return false;
+        }
+
+        if (attributes.HasFlag(GenericParameterAttributes.NotNullableValueTypeConstraint) && !candidate.IsValueType)
+        {
+            return false;
+        }
+
+        if (attributes.HasFlag(GenericParameterAttributes.DefaultConstructorConstraint)
+            && !candidate.IsValueType
+            && candidate.GetConstructor(Type.EmptyTypes) is null)
+        {
+            return false;
+        }
+
+        foreach (Type constraint in genericParameter.GetGenericParameterConstraints())
+        {
+            // Skip constraints that are themselves still open (none in our validators today).
+            if (constraint.ContainsGenericParameters)
+            {
+                continue;
+            }
+
+            if (!constraint.IsAssignableFrom(candidate))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 }

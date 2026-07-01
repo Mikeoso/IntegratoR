@@ -38,8 +38,11 @@ public class LedgerJournalHeader : BaseEntity
     /// <summary>
     /// The identifier for the Journal Name setup. This is a crucial field as it governs the journal's behavior,
     /// including default values, number sequences, posting restrictions, and workflow configurations.
+    /// It is set at creation and read-only thereafter — D365 rejects updating it with an
+    /// ODataSecurityException — so it is excluded from the update payload.
     /// </summary>
     [JsonPropertyName("JournalName")]
+    [ODataField(IgnoreOnUpdate = true)]
     public virtual required string JournalName { get; set; }
 
     /// <summary>
@@ -66,24 +69,30 @@ public class LedgerJournalHeader : BaseEntity
     /// A read-only status flag indicating whether the journal has been successfully posted to the general ledger.
     /// </summary>
     [JsonPropertyName("IsPosted")]
+    [ODataField(IgnoreOnUpdate = true)]
     public virtual NoYes IsPosted { get; set; }
 
     /// <summary>
     /// A read-only, system-calculated field showing the total of all debit amounts from the journal lines.
     /// </summary>
     [JsonPropertyName("JournalTotalDebit")]
+    [ODataField(IgnoreOnUpdate = true)]
     public virtual decimal JournalTotalDebit { get; set; }
 
     /// <summary>
     /// A read-only, system-calculated field showing the total of all credit amounts from the journal lines.
     /// </summary>
     [JsonPropertyName("JournalTotalCredit")]
+    [ODataField(IgnoreOnUpdate = true)]
     public virtual decimal JournalTotalCredit { get; set; }
 
     /// <summary>
-    /// The accounting currency of the legal entity, which is the base currency for the journal's transactions. This is typically a read-only field.
+    /// The accounting currency of the legal entity, which is the base currency for the journal's transactions.
+    /// This is a read-only field in D365 — updating it is rejected with an ODataSecurityException, so it is
+    /// excluded from the update payload.
     /// </summary>
     [JsonPropertyName("AccountingCurrency")]
+    [ODataField(IgnoreOnUpdate = true)]
     public virtual string? AccountingCurrency { get; set; }
 
     /// <summary>

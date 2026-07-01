@@ -183,6 +183,31 @@ public class ODataServiceTests
     }
 
     /// <summary>
+    /// Regression: a composite-key PATCH that returns 204 No Content makes the adapter yield null.
+    /// The update still succeeded, so UpdateAsync must return the caller's entity rather than a
+    /// successful Result carrying a null Value (which previously NRE'd consumers reading it).
+    /// </summary>
+    [Fact]
+    public async Task UpdateAsync_AdapterReturnsNull_ReturnsSuccessWithInputEntity()
+    {
+        // Arrange — the adapter returns null, mimicking a 204 No Content response with no body.
+        var entity = TestEntityBuilder.Default().Build();
+        _client.UpdateAsync<TestEntity>(
+            Arg.Any<string>(),
+            Arg.Any<object>(),
+            Arg.Any<object>(),
+            Arg.Any<CancellationToken>())
+            .Returns((TestEntity)null!);
+
+        // Act
+        var result = await _sut.UpdateAsync(entity, CancellationToken.None);
+
+        // Assert
+        result.Should().BeSuccessful();
+        result.Value.Should().BeSameAs(entity);
+    }
+
+    /// <summary>
     /// Verifies that UpdateAsync with a null entity returns a validation error immediately.
     /// </summary>
     [Fact]

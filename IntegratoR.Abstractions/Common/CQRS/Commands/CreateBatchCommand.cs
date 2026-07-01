@@ -20,9 +20,11 @@ namespace IntegratoR.Abstractions.Common.CQRS.Commands
         /// </summary>
         public virtual IReadOnlyDictionary<string, object> GetLoggingContext()
         {
+            // Null-safe: a null Entities collection is an invalid command that ValidationBehaviour
+            // will reject; LoggingBehaviour runs first, so this must not throw.
             return new Dictionary<string, object>
             {
-                { "Count", Entities.Count }
+                { "Count", Entities?.Count ?? 0 }
             };
         }
     }

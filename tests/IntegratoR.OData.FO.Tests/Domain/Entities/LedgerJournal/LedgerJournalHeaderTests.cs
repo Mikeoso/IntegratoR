@@ -1,4 +1,6 @@
+using System.Reflection;
 using FluentAssertions;
+using IntegratoR.OData.Common.Annotations;
 using IntegratoR.OData.FO.Domain.Entities.LedgerJournal;
 using Xunit;
 
@@ -81,5 +83,28 @@ public class LedgerJournalHeaderTests
         context.Should().ContainKey(nameof(LedgerJournalHeader.JournalBatchNumber));
         context.Should().ContainKey(nameof(LedgerJournalHeader.JournalName));
         context.Should().ContainKey(nameof(LedgerJournalHeader.Description));
+    }
+
+    /// <summary>
+    /// Regression pin (live JFI smoke test 2026-07-01): these header fields are read-only in D365 —
+    /// updating any of them is rejected with an ODataSecurityException ("update not allowed for
+    /// field …", HTTP 403). They must carry <c>[ODataField(IgnoreOnUpdate = true)]</c> so
+    /// <c>CreatePayload</c> excludes them from the update payload.
+    /// </summary>
+    [Theory]
+    [InlineData(nameof(LedgerJournalHeader.JournalName))]
+    [InlineData(nameof(LedgerJournalHeader.AccountingCurrency))]
+    [InlineData(nameof(LedgerJournalHeader.IsPosted))]
+    [InlineData(nameof(LedgerJournalHeader.JournalTotalDebit))]
+    [InlineData(nameof(LedgerJournalHeader.JournalTotalCredit))]
+    public void ReadOnlyField_CarriesIgnoreOnUpdate(string propertyName)
+    {
+        PropertyInfo? property = typeof(LedgerJournalHeader).GetProperty(propertyName);
+
+        property.Should().NotBeNull();
+        ODataFieldAttribute? attribute = property!.GetCustomAttribute<ODataFieldAttribute>();
+
+        attribute.Should().NotBeNull($"{propertyName} is read-only in D365 and must be excluded from update payloads");
+        attribute!.IgnoreOnUpdate.Should().BeTrue();
     }
 }

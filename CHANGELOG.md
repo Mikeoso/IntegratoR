@@ -8,7 +8,17 @@ Versions are computed automatically by [GitVersion](https://gitversion.net/) in 
 
 ## [Unreleased]
 
-> **Next release: 2.0.0 (MAJOR).** The architecture-review fix series (PRs #131–135) shipped breaking public-API changes (see **Changed — Breaking**) that were mis-tagged `+semver: minor`; `GitVersion.yml` pins `next-version: 2.0.0` to correct the signal.
+### Added
+- Generic command validation now runs through the MediatR pipeline. `AddIntegratoR` closes the open-generic command/query validators (`CreateCommand<T>`, the batch variants, `GetByKeyQuery`/`GetByFilterQuery`, and the F&O-derived per-command validators) over the discovered entity types and registers them, so validation that was previously never resolved now fires. **Behavioural change:** a `CreateCommand<T>(null)`, a null/empty batch, or an empty composite key now short-circuits with a Validation failure for every consumer instead of reaching the handler.
+
+### Fixed
+- `ODataService.UpdateAsync` returned a successful `Result` with a null `Value` when a composite-key PATCH came back as `204 No Content`; it now returns the written entity.
+- `LedgerJournalHeader` read-only fields (`JournalName`, `AccountingCurrency`, `IsPosted`, `JournalTotalDebit`, `JournalTotalCredit`) are now `[ODataField(IgnoreOnUpdate = true)]`, so D365 no longer rejects the whole update PATCH with an `ODataSecurityException`.
+- The six generic commands' `GetLoggingContext()` are null-safe, so `LoggingBehaviour` (which runs before `ValidationBehaviour`) no longer NREs on a null command payload before validation can reject it.
+
+## [2.0.0] - 2026-06-30
+
+The architecture-review fix series (PRs #131–135) plus post-review remediation, released as a MAJOR (breaking public-API changes — see **Changed — Breaking**).
 
 ### Added
 - Composite-key **write** support (Update / Delete / batch) for D365 F&O entities via a raw-`HttpClient` bypass in `ODataClientAdapter`, closing the long-standing PanoramicData composite-key write limitation.

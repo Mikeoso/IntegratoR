@@ -137,6 +137,80 @@ public sealed class CqrsCommandRecordTests
     }
 
     /// <summary>
+    /// Null-safe regression: a null Entity is a permitted (invalid) state that ValidationBehaviour
+    /// rejects — but LoggingBehaviour reads the logging context FIRST, so GetLoggingContext must NOT
+    /// throw. It returns a fallback carrying the entity type name instead of dereferencing the null.
+    /// </summary>
+    [Fact]
+    public void CreateCommand_GetLoggingContext_NullEntity_ReturnsTypeFallbackWithoutThrowing()
+    {
+        var command = new CreateCommand<TestEntity>(null!);
+
+        var context = command.GetLoggingContext();
+
+        context.Should().ContainKey("EntityType").WhoseValue.Should().Be(nameof(TestEntity));
+    }
+
+    /// <summary>Null-safe counterpart of <see cref="UpdateCommand_GetLoggingContext_DelegatesToEntity"/>.</summary>
+    [Fact]
+    public void UpdateCommand_GetLoggingContext_NullEntity_ReturnsTypeFallbackWithoutThrowing()
+    {
+        var command = new UpdateCommand<TestEntity>(null!);
+
+        var context = command.GetLoggingContext();
+
+        context.Should().ContainKey("EntityType").WhoseValue.Should().Be(nameof(TestEntity));
+    }
+
+    /// <summary>Null-safe counterpart of <see cref="DeleteCommand_GetLoggingContext_DelegatesToEntity"/>.</summary>
+    [Fact]
+    public void DeleteCommand_GetLoggingContext_NullEntity_ReturnsTypeFallbackWithoutThrowing()
+    {
+        var command = new DeleteCommand<TestEntity>(null!);
+
+        var context = command.GetLoggingContext();
+
+        context.Should().ContainKey("EntityType").WhoseValue.Should().Be(nameof(TestEntity));
+    }
+
+    /// <summary>
+    /// Null-safe regression for the batch commands: a null Entities collection must not throw when
+    /// LoggingBehaviour reads the context before validation rejects the command. (All three batch
+    /// commands share this implementation.)
+    /// </summary>
+    [Fact]
+    public void CreateBatchCommand_GetLoggingContext_NullEntities_ReturnsZeroCountWithoutThrowing()
+    {
+        var command = new CreateBatchCommand<TestEntity>(null!);
+
+        var context = command.GetLoggingContext();
+
+        context.Should().ContainKey("Count").WhoseValue.Should().Be(0);
+    }
+
+    /// <summary>Null-safe counterpart for UpdateBatchCommand (shares the batch implementation).</summary>
+    [Fact]
+    public void UpdateBatchCommand_GetLoggingContext_NullEntities_ReturnsZeroCountWithoutThrowing()
+    {
+        var command = new UpdateBatchCommand<TestEntity>(null!);
+
+        var context = command.GetLoggingContext();
+
+        context.Should().ContainKey("Count").WhoseValue.Should().Be(0);
+    }
+
+    /// <summary>Null-safe counterpart for DeleteBatchCommand (shares the batch implementation).</summary>
+    [Fact]
+    public void DeleteBatchCommand_GetLoggingContext_NullEntities_ReturnsZeroCountWithoutThrowing()
+    {
+        var command = new DeleteBatchCommand<TestEntity>(null!);
+
+        var context = command.GetLoggingContext();
+
+        context.Should().ContainKey("Count").WhoseValue.Should().Be(0);
+    }
+
+    /// <summary>
     /// Regression for the multiple-enumeration fix. The batch command ctor now takes
     /// <c>IReadOnlyList&lt;T&gt;</c> and <c>GetLoggingContext()</c> reads the O(1) <c>.Count</c> property
     /// instead of LINQ <c>Count()</c>, so it must not enumerate the sequence. This is pinned with a

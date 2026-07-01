@@ -157,9 +157,15 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
 
                 var payload = CreatePayload(entity, isCreateOperation: false);
 
-                return await _client
+                TEntity? updated = await _client
                     .UpdateAsync<TEntity>(_entitySetName, key, payload, cancellationToken)
                     .ConfigureAwait(false);
+
+                // A composite-key PATCH may return 204 No Content (D365 does not echo the entity), so
+                // the adapter yields null. The update succeeded — return the caller's entity so a
+                // successful Result<TEntity> always carries a non-null value rather than tripping
+                // consumers on a null Value.
+                return updated ?? entity;
             },
             entityKey: () => entity.GetCompositeKey(),
             cancellationToken: cancellationToken);

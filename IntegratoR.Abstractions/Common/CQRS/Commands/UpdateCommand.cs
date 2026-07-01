@@ -20,7 +20,11 @@ namespace IntegratoR.Abstractions.Common.CQRS.Commands
         /// </summary>
         public virtual IReadOnlyDictionary<string, object> GetLoggingContext()
         {
-            return Entity.GetLoggingContext();
+            // Null-safe: the record permits a null Entity (an invalid command that ValidationBehaviour
+            // will reject). LoggingBehaviour runs before validation, so building the logging context
+            // must not throw. Mirrors GetByKeyQuery.GetLoggingContext's null handling.
+            return Entity?.GetLoggingContext()
+                ?? new Dictionary<string, object> { { "EntityType", typeof(TEntity).Name } };
         }
     }
 }
