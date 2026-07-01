@@ -4,15 +4,6 @@ using FluentResults;
 using IntegratoR.Abstractions.Interfaces.Entity;
 using IntegratoR.Abstractions.Interfaces.Services;
 
-// FILE-LEVEL DOCUMENTATION
-// ---------------------------------------------------------------------------------------------
-// <remarks>
-// This file defines an extended repository interface that exposes advanced, OData-specific
-// query capabilities. By building upon the generic IService, it provides a richer, more
-// powerful contract for data retrieval without cluttering the base repository pattern.
-// </remarks>
-// ---------------------------------------------------------------------------------------------
-
 namespace IntegratoR.OData.Interfaces.Services;
 
 /// <summary>

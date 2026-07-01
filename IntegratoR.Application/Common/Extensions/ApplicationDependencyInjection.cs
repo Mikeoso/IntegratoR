@@ -10,16 +10,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace IntegratoR.Application.Common.Extensions;
 
-// FILE-LEVEL DOCUMENTATION
-// ---------------------------------------------------------------------------------------------
-// <remarks>
-// This file defines the Composition Root for the application layer. It follows the principles
-// of Clean Architecture by encapsulating all of the layer's service registrations into a single,
-// cohesive extension method. This keeps the main application startup (e.g., in an Azure Function's
-// Startup.cs or a Program.cs) clean and decoupled from the internal details of this layer.
-// </remarks>
-// ---------------------------------------------------------------------------------------------
-
 /// <summary>
 /// Provides extension methods for configuring and registering the application layer's services
 /// in the dependency injection (DI) container.

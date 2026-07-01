@@ -1,13 +1,5 @@
 using IntegratoR.OData.FO.Domain.Enums.Dimensions;
 
-// FILE-LEVEL DOCUMENTATION
-// ---------------------------------------------------------------------------------------------
-// <remarks>
-// This file defines a strongly-typed configuration class for business-logic-specific settings
-// related to Dynamics 365 Finance & Operations. It separates functional configuration
-// (like financial dimension rules) from technical connection settings.
-// </remarks>
-// ---------------------------------------------------------------------------------------------
 namespace IntegratoR.OData.FO.Domain.Models.Settings;
 
 /// <summary>

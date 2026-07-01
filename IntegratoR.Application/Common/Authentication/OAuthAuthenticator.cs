@@ -9,16 +9,6 @@ using Microsoft.Identity.Client;
 
 namespace IntegratoR.Application.Common.Authentication;
 
-// FILE-LEVEL DOCUMENTATION
-// ---------------------------------------------------------------------------------------------
-// <remarks>
-// This file contains a concrete implementation of the IAuthenticator interface using the
-// Microsoft Authentication Library (MSAL) for .NET. It is designed to handle the OAuth 2.0
-// client credentials grant flow, which is the standard method for service-to-service
-// authentication with Azure AD-protected resources like Dynamics 365 F&O.
-// </remarks>
-// ---------------------------------------------------------------------------------------------
-
 /// <summary>
 /// An authenticator that acquires OAuth 2.0 access tokens from Azure Active Directory
 /// using the MSAL library and provides in-memory caching to optimize performance.

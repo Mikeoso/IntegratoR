@@ -6,15 +6,6 @@ using IntegratoR.Abstractions.Interfaces.Authentication;
 using IntegratoR.OData.Domain.Settings;
 using Microsoft.Extensions.Options;
 
-// FILE-LEVEL DOCUMENTATION
-// ---------------------------------------------------------------------------------------------
-// <remarks>
-// This file defines an HttpClient DelegatingHandler, which acts as middleware in the HTTP
-// request pipeline. This pattern is a clean and powerful way to implement cross-cutting
-// concerns like authentication, ensuring that every outgoing request is properly authenticated
-// without cluttering the data access logic.
-// </remarks>
-// ---------------------------------------------------------------------------------------------
 namespace IntegratoR.OData.Common.Authentication;
 
 /// <summary>

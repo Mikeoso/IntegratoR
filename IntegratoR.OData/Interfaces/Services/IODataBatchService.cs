@@ -1,15 +1,6 @@
 using IntegratoR.Abstractions.Interfaces.Entity;
 using IntegratoR.Abstractions.Interfaces.Services;
 
-// FILE-LEVEL DOCUMENTATION
-// ---------------------------------------------------------------------------------------------
-// <remarks>
-// This file defines a contract for performing high-performance, bulk data modifications.
-// It abstracts the concept of OData batch processing, which is essential for integrations
-// that need to create, update, or delete a large number of records efficiently.
-// </remarks>
-// ---------------------------------------------------------------------------------------------
-
 namespace IntegratoR.OData.Interfaces.Services;
 
 /// <summary>

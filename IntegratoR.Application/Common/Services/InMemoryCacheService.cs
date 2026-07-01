@@ -3,14 +3,6 @@ using Microsoft.Extensions.Caching.Memory;
 
 namespace IntegratoR.Application.Common.Services;
 
-// FILE-LEVEL DOCUMENTATION
-// ---------------------------------------------------------------------------------------------
-// <remarks>
-// This file provides a concrete, in-memory implementation of the ICacheService contract.
-// It serves as a foundational caching mechanism for single-instance environments.
-// </remarks>
-// ---------------------------------------------------------------------------------------------
-
 /// <summary>
 /// A thread-safe, in-memory implementation of the <see cref="ICacheService"/> interface,
 /// utilizing the standard <see cref="IMemoryCache"/>.

@@ -7,16 +7,6 @@ using Microsoft.Extensions.Logging;
 
 namespace IntegratoR.Application.Common.Behaviours;
 
-// FILE-LEVEL DOCUMENTATION
-// ---------------------------------------------------------------------------------------------
-// <remarks>
-// This file defines a critical component for application observability. In a distributed architecture
-// like one using Azure Functions and D365, having consistent, structured, and centralized logging
-// is not a luxury—it's a necessity for debugging and monitoring. This MediatR behavior provides
-// that consistency for every command and query in the system.
-// </remarks>
-// ---------------------------------------------------------------------------------------------
-
 /// <summary>
 /// A MediatR pipeline behavior that provides consistent, structured, and performance-aware logging
 /// for all requests. It logs the start and outcome of each request, measures execution time, and

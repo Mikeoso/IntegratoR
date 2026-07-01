@@ -6,15 +6,6 @@ using Microsoft.Extensions.Logging;
 
 namespace IntegratoR.Application.Common.Behaviours;
 
-// FILE-LEVEL DOCUMENTATION
-// ---------------------------------------------------------------------------------------------
-// <remarks>
-// This file defines a MediatR pipeline behavior, which is a powerful mechanism for implementing
-// cross-cutting concerns in a CQRS architecture. This behavior applies a caching strategy
-// transparently, without requiring any changes to the core query handlers themselves.
-// </remarks>
-// ---------------------------------------------------------------------------------------------
-
 /// <summary>
 /// A MediatR pipeline behavior that transparently adds a caching layer to the query pipeline
 /// for any request that implements the <see cref="ICacheableQuery{TResponse}"/> interface.

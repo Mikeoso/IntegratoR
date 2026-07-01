@@ -2,16 +2,6 @@ using IntegratoR.Abstractions.Interfaces.Queries;
 
 namespace IntegratoR.Abstractions.Interfaces.Queries;
 
-// FILE-LEVEL DOCUMENTATION
-// ---------------------------------------------------------------------------------------------
-// <remarks>
-// This file defines the contract for implementing a caching decorator for CQRS queries.
-// Caching is a critical performance optimization in D365 F&O integrations, especially for data
-// that is read frequently but changes infrequently (e.g., configuration, parameters, financial dimensions).
-// By abstracting the caching logic, we can apply it consistently across the application.
-// </remarks>
-// ---------------------------------------------------------------------------------------------
-
 /// <summary>
 /// Defines a contract for a CQRS query whose response can be cached, improving performance
 /// and reducing load on the D365 F&O OData endpoint.

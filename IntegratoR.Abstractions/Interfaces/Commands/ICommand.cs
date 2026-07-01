@@ -4,20 +4,6 @@ using MediatR;
 
 namespace IntegratoR.Abstractions.Interfaces.Commands;
 
-// FILE-LEVEL DOCUMENTATION
-// ---------------------------------------------------------------------------------------------
-// <remarks>
-// This file defines the core command interfaces for the application's CQRS pattern, built upon the
-// MediatR library. These interfaces represent the "write" side of the architecture, encapsulating all
-// requests that are intended to modify the state of the system (e.g., creating, updating, or deleting
-// data).
-//
-// By routing all state-changing operations through these command interfaces, we create a clear,
-// explicit, and auditable flow of control. This pattern allows us to build a robust processing
-// pipeline using MediatR behaviors for cross-cutting concerns like validation, logging, and transactions.
-// </remarks>
-// ---------------------------------------------------------------------------------------------
-
 /// <summary>
 /// Represents a command that modifies system state and returns a response payload upon completion.
 /// All commands must return a type that implements <see cref="IResult"/> to ensure a standardized response pattern.
