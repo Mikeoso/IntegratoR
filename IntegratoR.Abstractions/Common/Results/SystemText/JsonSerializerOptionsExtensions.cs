@@ -12,12 +12,12 @@ public static class JsonSerializerOptionsExtensions
     /// <summary>
     /// Adds the <see cref="ResultJsonConverterFactory"/> and the non-generic
     /// <see cref="NonGenericResultJsonConverter"/> so any <c>Result</c> or closed
-    /// <c>Result&lt;T&gt;</c> can be serialised and deserialised through this
-    /// <see cref="JsonSerializerOptions"/> instance. The call is idempotent — invoking it more
-    /// than once on the same options instance is a no-op rather than a duplicate registration.
+    /// <c>Result&lt;T&gt;</c> can be serialised through this <see cref="JsonSerializerOptions"/>
+    /// instance.
     /// </summary>
     /// <param name="options">The options to mutate.</param>
-    /// <returns>The same options instance for fluent chaining.</returns>
+    /// <returns>The same <paramref name="options"/> instance for fluent chaining.</returns>
+    /// <remarks>Idempotent — repeated calls on the same options instance add no duplicate converters.</remarks>
     public static JsonSerializerOptions AddResultConverters(this JsonSerializerOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);

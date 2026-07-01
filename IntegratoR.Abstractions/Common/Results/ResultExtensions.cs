@@ -3,15 +3,13 @@ using FluentResults;
 namespace IntegratoR.Abstractions.Common.Results;
 
 /// <summary>
-/// Extension methods that bridge API gaps between the original custom Result pattern
-/// and FluentResults, providing ergonomic access to <see cref="IntegrationError"/>.
+/// Provides ergonomic access to <see cref="IntegrationError"/> on FluentResults results.
 /// </summary>
 public static class ResultExtensions
 {
     /// <summary>
-    /// Returns the first <see cref="IntegrationError"/> from the result's error list,
-    /// or <c>null</c> if the result has no <see cref="IntegrationError"/>.
-    /// Replaces the former <c>result.Error</c> singular accessor.
+    /// Gets the first <see cref="IntegrationError"/> from the result's error list, or
+    /// <see langword="null"/> if the result carries none.
     /// </summary>
     public static IntegrationError? GetError(this IResultBase result)
     {
@@ -19,8 +17,8 @@ public static class ResultExtensions
     }
 
     /// <summary>
-    /// Pattern-matches on a generic <see cref="Result{T}"/>, invoking <paramref name="onSuccess"/>
-    /// with the value when successful, or <paramref name="onFailure"/> with the first
+    /// Pattern-matches on a <see cref="Result{T}"/>, invoking <paramref name="onSuccess"/> with the
+    /// value when successful, or <paramref name="onFailure"/> with the first
     /// <see cref="IntegrationError"/> when failed.
     /// </summary>
     public static TOut Match<T, TOut>(
@@ -38,8 +36,8 @@ public static class ResultExtensions
     }
 
     /// <summary>
-    /// Pattern-matches on a non-generic <see cref="Result"/>, invoking <paramref name="onSuccess"/>
-    /// when successful, or <paramref name="onFailure"/> with the first <see cref="IntegrationError"/>
+    /// Pattern-matches on a <see cref="Result"/>, invoking <paramref name="onSuccess"/> when
+    /// successful, or <paramref name="onFailure"/> with the first <see cref="IntegrationError"/>
     /// when failed.
     /// </summary>
     public static TOut Match<TOut>(

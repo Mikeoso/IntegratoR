@@ -8,32 +8,17 @@ using IntegratoR.Abstractions.Interfaces.Queries;
 namespace IntegratoR.Abstractions.Common.CQRS.Queries;
 
 /// <summary>
-/// Represents a generic query within a CQRS pattern to retrieve a single entity using its primary key.
-/// This query is specifically designed to handle both simple and composite keys.
+/// Represents a generic query to retrieve a single entity by its key, supporting both simple and composite keys.
 /// </summary>
-/// <typeparam name="TEntity">The type of the entity to query, which must be a class implementing <see cref="IEntity{TKey}"/>.</typeparam>
-/// <typeparam name="TKey">The data type of the entity's primary key as defined by the <see cref="IEntity{TKey}"/> interface.</typeparam>
-/// <param name="CompositeKey">An object representing the primary key(s) of the entity to retrieve.</param>
-/// <remarks>
-/// This query provides a flexible mechanism for fetching entities by key, which is crucial for
-/// OData that often feature composite primary keys.
-///
-/// <para><b>Usage Examples:</b></para>
-/// <list type="bullet">
-///   <item>
-///     <description><b>For a simple key:</b> Pass the key value directly. E.g., `new GetByKeyQuery&lt;Customer, string&gt;("CUST-001")`.</description>
-///   </item>
-///   <item>
-///     <description><b>For a composite key:</b> Pass an anonymous object or an <see cref="IDictionary{TKey, TValue}"/> where property names match the key field names of the OData entity.
-///     E.g., `new GetByKeyQuery&lt;SalesOrderLine, long&gt;(new { SalesOrderNumber = "SO-123", LineNumber = 1.0m })`.</description>
-///   </item>
-/// </list>
-///
-/// A query handler will use this <paramref name="CompositeKey"/> object to construct the key segment of an OData URL,
-/// which the underlying implementation can do directly from an anonymous type.
-/// </remarks>
+/// <typeparam name="TEntity">The type of the entity to query.</typeparam>
+/// <param name="CompositeKey">The ordered key segment values that identify the entity, matching D365 F&amp;O composite-key ordering.</param>
+/// <remarks>The handler uses <paramref name="CompositeKey"/> to construct the key segment of the OData URL.</remarks>
 public record GetByKeyQuery<TEntity>(object[] CompositeKey) : IQuery<Result<TEntity>> where TEntity : class, IEntity
 {
+    /// <summary>
+    /// Gets the structured logging context for this query.
+    /// </summary>
+    /// <returns>A context containing the entity type name and the serialised key values.</returns>
     public IReadOnlyDictionary<string, object> GetLoggingContext()
     {
         return new Dictionary<string, object>

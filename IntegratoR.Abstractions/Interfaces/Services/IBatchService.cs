@@ -4,18 +4,10 @@ using IntegratoR.Abstractions.Interfaces.Entity;
 namespace IntegratoR.Abstractions.Interfaces.Services;
 
 /// <summary>
-/// Defines a contract for performing CUD (Create, Update, Delete) operations on multiple
-/// entities in a single batch request.
+/// Defines a contract for performing create, update, and delete operations on multiple entities in a single batch request.
 /// </summary>
 /// <typeparam name="TEntity">The type of the entity for the batch operations.</typeparam>
-/// <remarks>
-/// Batch operations are critical for performance in high-volume integrations: multiple
-/// individual operations are bundled into a single network round-trip and typically executed
-/// within a single transaction, providing an "all-or-nothing" consistency guarantee.
-///
-/// This interface lives in <c>IntegratoR.Abstractions</c> so the generic batch command handlers
-/// in <c>IntegratoR.Application</c> can depend on it without referencing the OData layer.
-/// </remarks>
+/// <remarks>Operations are bundled into a single round-trip and executed atomically, providing an all-or-nothing consistency guarantee.</remarks>
 public interface IBatchService<TEntity> where TEntity : IEntity
 {
     /// <summary>

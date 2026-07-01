@@ -8,21 +8,20 @@ using IntegratoR.Abstractions.Interfaces.Entity;
 namespace IntegratoR.Abstractions.Common.CQRS.Commands
 {
     /// <summary>
-    /// A generic base command for updating a entity.
+    /// Represents a generic command to update an entity.
     /// </summary>
     /// <typeparam name="TEntity">The type of the entity to update.</typeparam>
+    /// <param name="Entity">The entity to update.</param>
     public record UpdateCommand<TEntity>(TEntity Entity) : ICommand<Result<TEntity>>
         where TEntity : IEntity
     {
         /// <summary>
-        /// Provides a default logging context containing the entity type.
-        /// This can be overridden in specific command implementations for more detail.
+        /// Gets the structured logging context for this command.
         /// </summary>
+        /// <returns>The entity's own logging context, or a fallback containing the entity type name when <see cref="Entity"/> is <see langword="null"/>.</returns>
         public virtual IReadOnlyDictionary<string, object> GetLoggingContext()
         {
-            // Null-safe: the record permits a null Entity (an invalid command that ValidationBehaviour
-            // will reject). LoggingBehaviour runs before validation, so building the logging context
-            // must not throw. Mirrors GetByKeyQuery.GetLoggingContext's null handling.
+            // LoggingBehaviour runs before validation, so a null Entity must not throw here.
             return Entity?.GetLoggingContext()
                 ?? new Dictionary<string, object> { { "EntityType", typeof(TEntity).Name } };
         }

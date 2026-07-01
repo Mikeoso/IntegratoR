@@ -5,28 +5,27 @@ using FluentResults;
 namespace IntegratoR.Abstractions.Common.Results;
 
 /// <summary>
-/// Creates failed <see cref="Result"/> / <see cref="Result{TValue}"/> instances from an
-/// <see cref="IError"/> when the concrete result type is only known through a generic type
-/// parameter. The per-type <see cref="MethodInfo"/> for <c>Result.Fail&lt;T&gt;(IError)</c> is
-/// cached so the reflection lookup happens at most once per closed result type.
+/// Creates failed <see cref="Result"/> and <see cref="Result{TValue}"/> instances from an
+/// <see cref="IError"/> when the concrete result type is known only through a generic type parameter.
 /// </summary>
 /// <remarks>
-/// This is the single owned implementation of the cached-reflection failure factory. Both
-/// <c>ValidationBehaviour</c> (in IntegratoR.Application) and <c>ODataExceptionHandler</c> (in
-/// IntegratoR.OData) delegate here; because those are separate assemblies from
-/// IntegratoR.Abstractions the type must be public.
+/// The per-type <see cref="MethodInfo"/> for <c>Result.Fail&lt;T&gt;(IError)</c> is cached so the
+/// reflection lookup happens at most once per closed result type.
 /// </remarks>
 public static class ResultFactory
 {
     private static readonly ConcurrentDictionary<Type, MethodInfo> FailSingleErrorCache = new();
 
     /// <summary>
-    /// Builds a failed <typeparamref name="TResult"/> carrying <paramref name="error"/>. Supports
-    /// the non-generic <see cref="Result"/> and the generic <see cref="Result{TValue}"/>; any other
-    /// <see cref="IResultBase"/> type throws <see cref="NotSupportedException"/>.
+    /// Builds a failed <typeparamref name="TResult"/> carrying <paramref name="error"/>.
     /// </summary>
     /// <typeparam name="TResult">The closed result type to produce.</typeparam>
     /// <param name="error">The error the failed result carries.</param>
+    /// <returns>A failed <typeparamref name="TResult"/> carrying <paramref name="error"/>.</returns>
+    /// <exception cref="NotSupportedException">
+    /// Thrown when <typeparamref name="TResult"/> is neither <see cref="Result"/> nor
+    /// <see cref="Result{TValue}"/>.
+    /// </exception>
     public static TResult FailFromError<TResult>(IError error) where TResult : IResultBase
     {
         Type resultType = typeof(TResult);
