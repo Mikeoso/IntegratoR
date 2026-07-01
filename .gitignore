@@ -61,6 +61,7 @@ CLAUDE.local.md
 .claude/settings.local.json
 .claude/*.local.md
 .claude/worktrees/
+.claude/plans/
 
 # Local tooling config (not committed). context7.json holds a per-project key —
 # keep it local; .mcp.json defines per-developer MCP servers.
