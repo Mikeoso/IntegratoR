@@ -17,48 +17,29 @@ namespace IntegratoR.Application.Common.Extensions;
 internal static class ApplicationDependencyInjection
 {
     /// <summary>
-    /// Scans the application assembly and registers all of its services, including the full
-    /// CQRS pipeline with MediatR, cross-cutting behaviors, and other core application services.
+    /// Registers the application layer's services: the MediatR CQRS pipeline, cross-cutting behaviours, validators, and core services.
     /// </summary>
     /// <param name="services">The <see cref="IServiceCollection"/> to add the services to.</param>
-    /// <returns>The <see cref="IServiceCollection"/> so that additional calls can be chained.</returns>
-    /// <remarks>
-    /// This method is the single entry point for setting up the application layer. It handles:
-    /// 1. **MediatR Pipeline Behaviors:** Registers the cross-cutting concerns that wrap every request.
-    /// 2. **MediatR Handlers:** Scans the assembly to find and register all command and query handlers.
-    /// 3. **Core Services:** Registers essential application services like authentication and caching.
-    /// </remarks>
+    /// <returns>The same <see cref="IServiceCollection"/> so that calls can be chained.</returns>
+    /// <remarks>Pipeline behaviours are registered in execution order (Logging, Validation, Caching); see the architecture documentation for details.</remarks>
     public static IServiceCollection AddApplicationServices(this IServiceCollection services)
     {
-        // Register MediatR pipeline behaviors.
-        // Note: The order of registration is critical as it defines the execution order of the pipeline.
-        // The flow will be: Logging -> Validation -> Caching -> Handler
-        // 1. LoggingBehaviour wraps everything to log the entire process.
-        // 2. ValidationBehaviour runs next to "fail fast" on invalid requests before hitting the cache or handler.
-        // 3. CachingBehaviour runs just before the handler to maximize performance by returning cached data if available.
         services.AddTransient(typeof(IPipelineBehavior<,>), typeof(LoggingBehaviour<,>));
         services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehaviour<,>));
         services.AddTransient(typeof(IPipelineBehavior<,>), typeof(CachingBehaviour<,>));
 
-        // Register all MediatR handlers (for commands and queries) from the current assembly.
         services.AddMediatR(cfg =>
         {
             cfg.RegisterGenericHandlers = true;
             cfg.RegisterServicesFromAssembly(Assembly.GetExecutingAssembly());
         });
 
-        // Register all FluentValidation validators from the application assembly.
         services.AddValidatorsFromAssembly(Assembly.GetExecutingAssembly(), includeInternalTypes: true);
 
-        // Register core application services.
-        // These are registered as Singletons as they are designed to be thread-safe and maintain state (like a cache)
-        // for the lifetime of the application.
-        // Note: InMemoryCacheService is suitable for single-instance apps. For scaled-out apps (e.g., Azure Functions),
-        // replace this with a distributed cache implementation.
+        // InMemoryCacheService suits single-instance apps; replace with a distributed cache for scaled-out deployments.
         services.AddSingleton<ICacheService, InMemoryCacheService>();
         services.AddSingleton<IAuthenticator, OAuthAuthenticator>();
 
-        // Register the underlying IMemoryCache dependency required by the services above.
         services.AddMemoryCache();
 
         return services;

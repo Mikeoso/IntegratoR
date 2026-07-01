@@ -10,19 +10,9 @@ using Microsoft.Identity.Client;
 namespace IntegratoR.Application.Common.Authentication;
 
 /// <summary>
-/// An authenticator that acquires OAuth 2.0 access tokens from Azure Active Directory
-/// using the MSAL library and provides in-memory caching to optimize performance.
+/// Provides an <see cref="IAuthenticator"/> that acquires OAuth 2.0 access tokens from Azure AD via MSAL, with in-memory caching to optimise performance.
 /// </summary>
-/// <remarks>
-/// This implementation is responsible for the entire token lifecycle: checking the cache,
-/// acquiring a new token from Azure AD if necessary, and caching it for future use. The built
-/// <see cref="IConfidentialClientApplication"/> is reused per (clientId, tenantId, resource) so
-/// MSAL's own in-memory token cache is consulted before a network call is made.
-///
-/// **Important Architectural Note:** the proactive-expiry token cache uses <see cref="IMemoryCache"/>,
-/// which is local to a single instance. For scaled-out, multi-instance environments an
-/// <c>IDistributedCache</c>-backed implementation should be used instead.
-/// </remarks>
+/// <remarks>The built <see cref="IConfidentialClientApplication"/> is reused per (clientId, tenantId, resource) so MSAL's own token cache is consulted before a network call. The proactive-expiry token cache uses <see cref="IMemoryCache"/>, which is local to a single instance.</remarks>
 public class OAuthAuthenticator : IAuthenticator
 {
     // Reuse the built confidential-client app per (clientId, tenantId, resource) so MSAL's internal
