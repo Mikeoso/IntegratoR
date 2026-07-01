@@ -28,7 +28,8 @@ public class DistributedCacheService : ICacheService
     }
 
     /// <inheritdoc />
-    /// <exception cref="ArgumentException"><paramref name="cacheKey"/> is <see langword="null"/>, empty, or whitespace.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="cacheKey"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="cacheKey"/> is empty or whitespace.</exception>
     public async Task<T?> GetAsync<T>(string cacheKey)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(cacheKey);
@@ -44,8 +45,8 @@ public class DistributedCacheService : ICacheService
     }
 
     /// <inheritdoc />
-    /// <exception cref="ArgumentException"><paramref name="cacheKey"/> is <see langword="null"/>, empty, or whitespace.</exception>
-    /// <exception cref="ArgumentNullException"><paramref name="value"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="cacheKey"/> is <see langword="null"/> -or- <paramref name="value"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="cacheKey"/> is empty or whitespace.</exception>
     public async Task SetAsync<T>(string cacheKey, T value, TimeSpan? expirationTime = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(cacheKey);
@@ -62,7 +63,8 @@ public class DistributedCacheService : ICacheService
     }
 
     /// <inheritdoc />
-    /// <exception cref="ArgumentException"><paramref name="cacheKey"/> is <see langword="null"/>, empty, or whitespace.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="cacheKey"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="cacheKey"/> is empty or whitespace.</exception>
     public async Task RemoveAsync(string cacheKey)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(cacheKey);
