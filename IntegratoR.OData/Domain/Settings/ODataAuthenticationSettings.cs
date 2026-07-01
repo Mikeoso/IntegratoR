@@ -1,14 +1,14 @@
 namespace IntegratoR.OData.Domain.Settings;
 
 /// <summary>
-/// Authentication settings for the OData client, supporting both OAuth 2.0
-/// and API Management gateway authentication modes.
+/// Represents the authentication settings for the OData client, supporting both OAuth 2.0 and API Management gateway modes.
 /// </summary>
 public class ODataAuthenticationSettings
 {
     /// <summary>
     /// Gets or sets the authentication mode to use for the connection.
     /// </summary>
+    /// <value>The default value is <see cref="AuthenticationMode.ApiKey"/>.</value>
     public AuthenticationMode Mode { get; set; } = AuthenticationMode.ApiKey;
 
     /// <summary>

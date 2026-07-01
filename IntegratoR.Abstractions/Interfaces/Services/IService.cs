@@ -5,36 +5,26 @@ using IntegratoR.Abstractions.Interfaces.Entity;
 namespace IntegratoR.Abstractions.Interfaces.Services;
 
 /// <summary>
-/// Defines the generic data-access abstraction for an entity type, exposing CRUD (Create, Read,
-/// Update, Delete) and query operations.
+/// Defines the generic data-access abstraction for an entity type, exposing CRUD and query operations.
 /// </summary>
 /// <typeparam name="TEntity">The type of the entity, which must implement <see cref="IEntity"/>.</typeparam>
-/// <remarks>
-/// This interface IS the data-access abstraction for an entity type; do not wrap it in an additional
-/// repository layer. It isolates the application and domain layers from the data source's
-/// implementation details.
-///
-/// A concrete implementation (e.g., <c>ODataService&lt;TEntity&gt;</c>) translates these method calls
-/// into specific OData HTTP requests against an OData endpoint.
-/// </remarks>
+/// <remarks>This interface is itself the data-access abstraction; do not add a wrapping data-access layer over it.</remarks>
 public interface IService<TEntity> where TEntity : IEntity
 {
     /// <summary>
-    /// Asynchronously retrieves a single entity by its key, supporting simple or composite keys.
+    /// Asynchronously retrieves a single entity by its simple or composite key.
     /// </summary>
-    /// <param name="keyValues">An object representing the key. For composite keys, use an anonymous object (e.g., new { Key1 = "A", Key2 = 1 }).</param>
+    /// <param name="keyValues">The ordered key field values that identify the entity.</param>
     /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
-    /// <returns>A <see cref="Result{TEntity}"/> containing the entity if found, or a 'NotFound' error.</returns>
-    /// <remarks>This method translates to an OData GET request, handling composite keys like `.../data/SalesOrderLines(SalesOrderNumber='S01', LineNum=1.0m)`.</remarks>
+    /// <returns>A <see cref="Result{TEntity}"/> containing the entity if found, or a <c>NotFound</c> error.</returns>
     Task<Result<TEntity>> GetByKeyAsync(object[] keyValues, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Asynchronously finds a collection of entities that match a specified filter expression.
+    /// Asynchronously finds the entities that match a specified filter expression.
     /// </summary>
-    /// <param name="filter">A LINQ expression tree to filter the entities. If null, all entities are returned.</param>
+    /// <param name="filter">A LINQ expression used to filter the entities; if <see langword="null"/>, all entities are returned.</param>
     /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
-    /// <returns>A <see cref="Result{TValue}"/> containing the collection of found entities.</returns>
-    /// <remarks>The implementation will convert the LINQ expression into an OData `$filter` query string, enabling powerful, type-safe querying of OData Endpoint.</remarks>
+    /// <returns>A <see cref="Result{TValue}"/> containing the matching entities on success, or an error on failure.</returns>
     Task<Result<IEnumerable<TEntity>>> FindAsync(Expression<Func<TEntity, bool>>? filter, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -42,8 +32,7 @@ public interface IService<TEntity> where TEntity : IEntity
     /// </summary>
     /// <param name="entity">The entity to add.</param>
     /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
-    /// <returns>A <see cref="Result{TEntity}"/> containing the created entity as returned by the data source, including any server-generated values.</returns>
-    /// <remarks>This method translates to an OData POST request.</remarks>
+    /// <returns>A <see cref="Result{TEntity}"/> containing the created entity, including any server-generated values.</returns>
     Task<Result<TEntity>> AddAsync(TEntity entity, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -51,16 +40,14 @@ public interface IService<TEntity> where TEntity : IEntity
     /// </summary>
     /// <param name="entity">The entity with its updated values.</param>
     /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
-    /// <returns>A <see cref="Result{TEntity}"/> containing the state of the entity after the update.</returns>
-    /// <remarks>This method translates to an OData PATCH request, only sending the modified properties to D365 F&O.</remarks>
+    /// <returns>A <see cref="Result{TEntity}"/> containing the entity state after the update.</returns>
     Task<Result<TEntity>> UpdateAsync(TEntity entity, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Asynchronously deletes an entity from the data source using its primary key.
+    /// Asynchronously deletes an entity from the data source by its key.
     /// </summary>
-    /// <param name="id">The primary key of the entity to delete.</param>
+    /// <param name="entity">The entity to delete.</param>
     /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
     /// <returns>A non-generic <see cref="Result"/> indicating the success or failure of the deletion.</returns>
-    /// <remarks>This method translates to an OData DELETE request.</remarks>
     Task<Result> DeleteAsync(TEntity entity, CancellationToken cancellationToken = default);
 }

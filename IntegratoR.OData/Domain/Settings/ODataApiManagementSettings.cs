@@ -1,7 +1,7 @@
 namespace IntegratoR.OData.Domain.Settings;
 
 /// <summary>
-/// Settings for API Management gateway authentication and headers.
+/// Represents the API Management gateway authentication and header settings for the OData client.
 /// </summary>
 public class ODataApiManagementSettings
 {
@@ -12,8 +12,8 @@ public class ODataApiManagementSettings
 
     /// <summary>
     /// Gets or sets the name of the HTTP header used to transmit the subscription key.
-    /// Defaults to the Azure API Management standard header.
     /// </summary>
+    /// <value>The default value is <c>Ocp-Apim-Subscription-Key</c>, the Azure API Management standard header.</value>
     public string SubscriptionHeaderKey { get; set; } = "Ocp-Apim-Subscription-Key";
 
     /// <summary>

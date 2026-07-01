@@ -9,21 +9,9 @@ using Microsoft.Extensions.Logging;
 namespace IntegratoR.Application.Features.Common.Queries;
 
 /// <summary>
-/// A reusable, generic MediatR query handler for processing the <see cref="GetByKeyQuery{TEntity, TKey}"/>.
-/// It retrieves a single entity using a key object, making it suitable for entities with both
-/// simple and composite primary keys.
+/// Retrieves a single entity by its key via the <see cref="GetByKeyQuery{TEntity}"/>, supporting both simple and composite D365 F&amp;O keys.
 /// </summary>
-/// <typeparam name="TEntity">The type of the entity being queried. Must be a class that implements <see cref="IEntity{TKey}"/>.</typeparam>
-/// <typeparam name="TKey">The type of the primary key for the entity.</typeparam>
-/// <remarks>
-/// This handler is essential for working with OData endpoints are identified by more
-/// than one field. For example, to fetch a specific sales order line, you need both the sales order
-/// number and the line number.
-///
-/// The handler delegates the data access call to the injected <see cref="IService{TEntity, TKey}"/>,
-/// which is responsible for translating the provided key object into a valid composite key for an
-/// OData URL (e.g., `.../data/SalesOrderLines(SalesOrderNumber='SO-123',LineNumber=1.0m)`).
-/// </remarks>
+/// <typeparam name="TEntity">The type of the entity being queried.</typeparam>
 public class GetByKeyQueryHandler<TEntity> : IRequestHandler<GetByKeyQuery<TEntity>, Result<TEntity>>
     where TEntity : class, IEntity
 {
@@ -31,10 +19,10 @@ public class GetByKeyQueryHandler<TEntity> : IRequestHandler<GetByKeyQuery<TEnti
     private readonly IService<TEntity> _service;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="GetByKeyQueryHandler{TEntity, TKey}"/> class.
+    /// Initializes a new instance of the <see cref="GetByKeyQueryHandler{TEntity}"/> class.
     /// </summary>
     /// <param name="logger">The logger for diagnostics.</param>
-    /// <param name="service">The generic repository/service for the specified entity type.</param>
+    /// <param name="service">The service for the specified entity type.</param>
     public GetByKeyQueryHandler(ILogger<GetByKeyQueryHandler<TEntity>> logger, IService<TEntity> service)
     {
         _logger = logger;
@@ -42,15 +30,11 @@ public class GetByKeyQueryHandler<TEntity> : IRequestHandler<GetByKeyQuery<TEnti
     }
 
     /// <summary>
-    /// Handles the incoming <see cref="GetByKeyQuery{TEntity, TKey}"/> request.
+    /// Asynchronously handles the <see cref="GetByKeyQuery{TEntity}"/> request.
     /// </summary>
     /// <param name="request">The query request, containing the key object for the lookup.</param>
     /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
-    /// <returns>
-    /// A <see cref="Task{TResult}"/> that represents the asynchronous operation.
-    /// The task result contains a <see cref="Result{T}"/> wrapping the found entity on success,
-    /// or a "NotFound" error on failure.
-    /// </returns>
+    /// <returns>A successful <see cref="Result{T}"/> wrapping the found entity, or a failed result carrying the service errors.</returns>
     public async Task<Result<TEntity>> Handle(GetByKeyQuery<TEntity> request, CancellationToken cancellationToken)
     {
         _logger.LogDebug("Handling GetByKeyQuery for {Entity} with key values: {@CompositeKey}", typeof(TEntity).Name, request.CompositeKey);

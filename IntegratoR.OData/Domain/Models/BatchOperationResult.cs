@@ -2,7 +2,6 @@ namespace IntegratoR.OData.Domain.Models;
 
 /// <summary>
 /// Represents the result of a single operation within a batch request.
-/// Provides per-entity error diagnostics when batch operations partially fail.
 /// </summary>
 public sealed record BatchOperationResult
 {

@@ -9,19 +9,9 @@ using Microsoft.Extensions.Logging;
 namespace IntegratoR.Application.Features.Common.Queries;
 
 /// <summary>
-/// A reusable, generic MediatR query handler responsible for processing the <see cref="GetByFilterQuery{TEntity}"/>.
-/// It retrieves a collection of entities of a specified type that match a given filter expression.
+/// Retrieves the entities matching a filter expression via the <see cref="GetByFilterQuery{TEntity}"/>.
 /// </summary>
-/// <typeparam name="TEntity">The type of the entity being queried. Must be a class that implements <see cref="IEntity"/>.</typeparam>
-/// <remarks>
-/// This class leverages C# generics to provide a single implementation for a common data retrieval scenario.
-/// When a request like `GetByFilterQuery&lt;Customer&gt;` is dispatched via MediatR, the dependency injection
-/// container will automatically construct an instance of `GetByFilterQueryHandler&lt;Customer&gt;`
-/// and inject the corresponding `IService&lt;Customer&gt;`.
-///
-/// The handler's role is simply to delegate the data access to the injected service, which in turn
-/// is responsible for translating the LINQ expression into the appropriate OData `$filter` query for D365 F&O.
-/// </remarks>
+/// <typeparam name="TEntity">The type of the entity being queried.</typeparam>
 public class GetByFilterQueryHandler<TEntity> : IRequestHandler<GetByFilterQuery<TEntity>, Result<IEnumerable<TEntity>>>
     where TEntity : class, IEntity
 {
@@ -32,7 +22,7 @@ public class GetByFilterQueryHandler<TEntity> : IRequestHandler<GetByFilterQuery
     /// Initializes a new instance of the <see cref="GetByFilterQueryHandler{TEntity}"/> class.
     /// </summary>
     /// <param name="logger">The logger for diagnostics.</param>
-    /// <param name="service">The generic repository/service for the specified entity type.</param>
+    /// <param name="service">The service for the specified entity type.</param>
     public GetByFilterQueryHandler(ILogger<GetByFilterQueryHandler<TEntity>> logger, IService<TEntity> service)
     {
         _service = service;
@@ -40,15 +30,11 @@ public class GetByFilterQueryHandler<TEntity> : IRequestHandler<GetByFilterQuery
     }
 
     /// <summary>
-    /// Handles the incoming <see cref="GetByFilterQuery{TEntity}"/> request.
+    /// Asynchronously handles the <see cref="GetByFilterQuery{TEntity}"/> request.
     /// </summary>
     /// <param name="request">The query request, containing the filter expression.</param>
     /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
-    /// <returns>
-    /// A <see cref="Task{TResult}"/> that represents the asynchronous operation.
-    /// The task result contains a <see cref="Result{T}"/> wrapping the collection of found entities on success,
-    /// or an error on failure.
-    /// </returns>
+    /// <returns>A successful <see cref="Result{T}"/> wrapping the matching entities, or a failed result carrying the service errors.</returns>
     public async Task<Result<IEnumerable<TEntity>>> Handle(GetByFilterQuery<TEntity> request, CancellationToken cancellationToken)
     {
         _logger.LogDebug("Handling GetByFilterQuery for {EntityType} with filter: {Filter}", typeof(TEntity).Name, request.Filter.ToString());

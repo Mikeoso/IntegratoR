@@ -24,6 +24,9 @@ public static class CsdlParser
     /// <summary>
     /// Loads a CSDL XML file and parses it into a <see cref="CsdlSchema"/>.
     /// </summary>
+    /// <exception cref="System.IO.IOException">The file cannot be read.</exception>
+    /// <exception cref="XmlException">The file is not well-formed XML.</exception>
+    /// <exception cref="InvalidOperationException">The document contains no Schema element.</exception>
     public static CsdlSchema LoadAndParse(string filePath)
     {
         using var stream = File.OpenRead(filePath);
@@ -34,8 +37,10 @@ public static class CsdlParser
 
     /// <summary>
     /// Parses a CSDL XML string into a <see cref="CsdlSchema"/>.
-    /// Uses secure XML settings that ignore DTD declarations to prevent XXE attacks.
     /// </summary>
+    /// <remarks>Uses secure XML settings that ignore DTD declarations to prevent XXE attacks.</remarks>
+    /// <exception cref="XmlException">The string is not well-formed XML.</exception>
+    /// <exception cref="InvalidOperationException">The document contains no Schema element.</exception>
     public static CsdlSchema Parse(string xml)
     {
         using var stringReader = new StringReader(xml);

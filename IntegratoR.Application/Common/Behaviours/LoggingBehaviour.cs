@@ -7,33 +7,12 @@ using Microsoft.Extensions.Logging;
 
 namespace IntegratoR.Application.Common.Behaviours;
 
-// FILE-LEVEL DOCUMENTATION
-// ---------------------------------------------------------------------------------------------
-// <remarks>
-// This file defines a critical component for application observability. In a distributed architecture
-// like one using Azure Functions and D365, having consistent, structured, and centralized logging
-// is not a luxury—it's a necessity for debugging and monitoring. This MediatR behavior provides
-// that consistency for every command and query in the system.
-// </remarks>
-// ---------------------------------------------------------------------------------------------
-
 /// <summary>
-/// A MediatR pipeline behavior that provides consistent, structured, and performance-aware logging
-/// for all requests. It logs the start and outcome of each request, measures execution time, and
-/// intelligently distinguishes between successful operations, controlled failures (via the <see cref="IResult"/> pattern),
-/// and unexpected exceptions.
+/// Provides a MediatR pipeline behaviour that adds structured logging and execution timing to every request.
 /// </summary>
 /// <typeparam name="TRequest">The type of the MediatR request being handled.</typeparam>
 /// <typeparam name="TResponse">The type of the response from the request handler.</typeparam>
-/// <remarks>
-/// This behavior ensures a uniform logging format across the entire application, which is invaluable
-/// for production monitoring. The use of structured logging placeholders (e.g., `{@Request}`) is
-/// specifically designed to integrate with modern logging platforms like **Azure Application Insights**,
-/// Serilog, or Seq. This allows for powerful querying, filtering, and alerting on log data.
-///
-/// By differentiating between `Warning` for controlled failures and `Error` for unhandled exceptions,
-/// it enables more accurate and less noisy operational alerts.
-/// </remarks>
+/// <remarks>A failed <see cref="IResultBase"/> is logged at <see cref="LogLevel.Warning"/>; an unhandled exception is logged at <see cref="LogLevel.Error"/> and rethrown.</remarks>
 public class LoggingBehaviour<TRequest, TResponse> : IPipelineBehavior<TRequest, TResponse>
     where TRequest : IRequest<TResponse>, IContext
 {
@@ -42,17 +21,17 @@ public class LoggingBehaviour<TRequest, TResponse> : IPipelineBehavior<TRequest,
     /// <summary>
     /// Initializes a new instance of the <see cref="LoggingBehaviour{TRequest, TResponse}"/> class.
     /// </summary>
-    /// <param name="logger">The logger instance, injected via dependency injection.</param>
+    /// <param name="logger">The logger instance for diagnostics.</param>
     public LoggingBehaviour(ILogger<LoggingBehaviour<TRequest, TResponse>> logger)
     {
         _logger = logger;
     }
 
     /// <summary>
-    /// Intercepts a request to wrap its execution with comprehensive logging and performance timing.
+    /// Asynchronously wraps request execution with structured logging and timing.
     /// </summary>
-    /// <param name="request">The incoming MediatR request object.</param>
-    /// <param name="next">A delegate representing the next action in the pipeline, which eventually calls the handler.</param>
+    /// <param name="request">The incoming MediatR request.</param>
+    /// <param name="next">A delegate that invokes the next behaviour or the request handler.</param>
     /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
     /// <returns>The response from the next handler in the pipeline.</returns>
     public async Task<TResponse> Handle(TRequest request, RequestHandlerDelegate<TResponse> next, CancellationToken cancellationToken)

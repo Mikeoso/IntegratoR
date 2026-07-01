@@ -17,10 +17,9 @@ using Polly.Retry;
 namespace IntegratoR.OData.Common.Services;
 
 /// <summary>
-/// Generic service implementation for OData operations with comprehensive error handling,
-/// automatic retry policies, and performance tracking.
+/// Provides generic OData CRUD, query, and batch operations with error handling and optional retry.
 /// </summary>
-/// <typeparam name="TEntity">The entity type that implements <see cref="IEntity"/>.</typeparam>
+/// <typeparam name="TEntity">The type of the entity, which must implement <see cref="IEntity"/>.</typeparam>
 public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<TEntity>
     where TEntity : class, IEntity
 {
@@ -33,6 +32,12 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
     private readonly ODataExceptionHandler<TEntity> _exceptionHandler;
     private readonly string _entitySetName;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="ODataService{TEntity}"/> class.
+    /// </summary>
+    /// <param name="client">The OData client adapter used to issue requests.</param>
+    /// <param name="logger">The logger for structured operation logging.</param>
+    /// <param name="retryPolicy">An optional Polly retry policy applied to transient failures; when <see langword="null"/>, no retries are performed.</param>
     public ODataService(
         IODataClientAdapter client,
         ILogger<ODataService<TEntity>> logger,

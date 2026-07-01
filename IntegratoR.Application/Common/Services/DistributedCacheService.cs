@@ -6,18 +6,9 @@ using Microsoft.Extensions.Caching.Distributed;
 namespace IntegratoR.Application.Common.Services;
 
 /// <summary>
-/// A distributed implementation of the <see cref="ICacheService"/> interface,
-/// utilizing the standard <see cref="IDistributedCache"/> abstraction.
+/// Provides an <see cref="ICacheService"/> backed by <see cref="IDistributedCache"/> for scaled-out, multi-instance environments.
 /// </summary>
-/// <remarks>
-/// This service is intended for scaled-out, multi-instance environments (e.g., Azure Functions
-/// on a Consumption or Premium plan) where cache consistency across instances is required.
-/// The underlying provider is configured via DI — typically backed by Azure Cache for Redis
-/// using <c>Microsoft.Extensions.Caching.StackExchangeRedis</c>.
-///
-/// Consumers choose between <see cref="InMemoryCacheService"/> and <see cref="DistributedCacheService"/>
-/// by registering the appropriate implementation against <see cref="ICacheService"/> in the DI container.
-/// </remarks>
+/// <remarks>The underlying provider is configured via DI, typically Azure Cache for Redis; register this implementation instead of <see cref="InMemoryCacheService"/> when cache consistency across instances is required.</remarks>
 public class DistributedCacheService : ICacheService
 {
     private readonly IDistributedCache _cache;
@@ -29,13 +20,16 @@ public class DistributedCacheService : ICacheService
     /// <summary>
     /// Initializes a new instance of the <see cref="DistributedCacheService"/> class.
     /// </summary>
-    /// <param name="cache">The <see cref="IDistributedCache"/> instance provided by the DI container.</param>
+    /// <param name="cache">The distributed cache provided by the DI container.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="cache"/> is <see langword="null"/>.</exception>
     public DistributedCacheService(IDistributedCache cache)
     {
         _cache = cache ?? throw new ArgumentNullException(nameof(cache));
     }
 
     /// <inheritdoc />
+    /// <exception cref="ArgumentNullException"><paramref name="cacheKey"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="cacheKey"/> is empty or whitespace.</exception>
     public async Task<T?> GetAsync<T>(string cacheKey)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(cacheKey);
@@ -51,6 +45,8 @@ public class DistributedCacheService : ICacheService
     }
 
     /// <inheritdoc />
+    /// <exception cref="ArgumentNullException"><paramref name="cacheKey"/> is <see langword="null"/> -or- <paramref name="value"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="cacheKey"/> is empty or whitespace.</exception>
     public async Task SetAsync<T>(string cacheKey, T value, TimeSpan? expirationTime = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(cacheKey);
@@ -67,6 +63,8 @@ public class DistributedCacheService : ICacheService
     }
 
     /// <inheritdoc />
+    /// <exception cref="ArgumentNullException"><paramref name="cacheKey"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="cacheKey"/> is empty or whitespace.</exception>
     public async Task RemoveAsync(string cacheKey)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(cacheKey);

@@ -123,10 +123,9 @@ public sealed class LedgerJournalSmokeTestTrigger
         }
 
         // ---------------------------------------------------------------------------------
-        // 3. Filter by DataAreaId + JournalBatchNumber — THE regression test for v1.3.3.
-        //    This must emit `$filter=JournalBatchNumber eq '...' and dataAreaId eq '...'`
-        //    with camelCase `dataAreaId`. Pre-fix this returned empty results and the
-        //    whole smoke test would stop here.
+        // 3. Filter by DataAreaId + JournalBatchNumber — must emit
+        //    `$filter=JournalBatchNumber eq '...' and dataAreaId eq '...'` with camelCase
+        //    `dataAreaId` (the [JsonPropertyName]-aware translator).
         // ---------------------------------------------------------------------------------
         var filterHeaderResult = await _mediator
             .Send(new GetByFilterQuery<LedgerJournalHeader>(
@@ -203,11 +202,9 @@ public sealed class LedgerJournalSmokeTestTrigger
             onSuccess: r => $"MatchedCount={r.Count()}"));
 
         // ---------------------------------------------------------------------------------
-        // 6. Update header description — exercises the update-payload builder through
-        //    CreatePayload which uses PropertyNameResolver for wire-name resolution.
-        //    Depends on PR-B's composite-key WRITE bypass: without it the UpdateCommand
-        //    against this composite-key entity routes through PanoramicData's single-key
-        //    path and fails (*.NotFound).
+        // 6. Update header description. Depends on the composite-key WRITE bypass: without
+        //    it the UpdateCommand against this composite-key entity routes through
+        //    PanoramicData's single-key path and fails (*.NotFound).
         // ---------------------------------------------------------------------------------
         string? expectedUpdatedDescription = null;
         if (getByKeyResult.IsSuccess)
@@ -232,9 +229,8 @@ public sealed class LedgerJournalSmokeTestTrigger
         }
 
         // ---------------------------------------------------------------------------------
-        // 6A. VerifyHeaderUpdated — re-read the header by its D365 composite key
-        //     ([Company, journalBatchNumber]) and assert the Description change persisted.
-        //     Only meaningful when UpdateHeader ran (expectedUpdatedDescription is set).
+        // 6A. VerifyHeaderUpdated — re-read the header and assert the Description change
+        //     persisted. Only meaningful when UpdateHeader ran (expectedUpdatedDescription set).
         // ---------------------------------------------------------------------------------
         if (expectedUpdatedDescription is not null)
         {
@@ -333,9 +329,8 @@ public sealed class LedgerJournalSmokeTestTrigger
 
         // ---------------------------------------------------------------------------------
         // 6C. Delete lines THEN header. D365 rejects deleting a header that still has child
-        //     lines, so lines must go first. This is now the authoritative cleanup on the
-        //     happy path (BestEffortCleanup is only retained on the early-return failure
-        //     branches above).
+        //     lines, so lines must go first. This is the authoritative cleanup on the happy
+        //     path (BestEffortCleanup is only retained on the early-return failure branches).
         // ---------------------------------------------------------------------------------
         var linesForDelete = await _mediator
             .Send(new GetByFilterQuery<LedgerJournalLine>(

@@ -3,31 +3,10 @@ using Microsoft.Extensions.Caching.Memory;
 
 namespace IntegratoR.Application.Common.Services;
 
-// FILE-LEVEL DOCUMENTATION
-// ---------------------------------------------------------------------------------------------
-// <remarks>
-// This file provides a concrete, in-memory implementation of the ICacheService contract.
-// It serves as a foundational caching mechanism for single-instance environments.
-// </remarks>
-// ---------------------------------------------------------------------------------------------
-
 /// <summary>
-/// A thread-safe, in-memory implementation of the <see cref="ICacheService"/> interface,
-/// utilizing the standard <see cref="IMemoryCache"/>.
+/// Provides a thread-safe, in-memory <see cref="ICacheService"/> backed by <see cref="IMemoryCache"/>.
 /// </summary>
-/// <remarks>
-/// This service is ideal for local development, testing, or simple, single-instance production
-/// deployments. It provides a fast and simple caching solution without external dependencies.
-///
-/// <para><b>IMPORTANT ARCHITECTURAL NOTE:</b></para>
-/// This implementation is **not suitable for scaled-out, multi-instance environments** (e.g., a
-/// production Azure Function App on a Consumption or Premium plan). Each application instance
-/// will have its own private memory, leading to an inconsistent and ineffective cache. For such
-/// scenarios, a distributed cache implementation (e.g., using Azure Cache for Redis) is required.
-///
-/// To ensure thread safety in concurrent scenarios, all access to the underlying cache is
-/// controlled by a <see cref="SemaphoreSlim"/>.
-/// </remarks>
+/// <remarks>Suitable for single-instance deployments; access is serialised through a <see cref="SemaphoreSlim"/>. Not suitable for scaled-out, multi-instance environments, where <see cref="DistributedCacheService"/> should be used instead.</remarks>
 public class InMemoryCacheService : ICacheService
 {
     private readonly IMemoryCache _cache;
@@ -36,7 +15,7 @@ public class InMemoryCacheService : ICacheService
     /// <summary>
     /// Initializes a new instance of the <see cref="InMemoryCacheService"/> class.
     /// </summary>
-    /// <param name="cache">The <see cref="IMemoryCache"/> instance provided by the DI container.</param>
+    /// <param name="cache">The memory cache provided by the DI container.</param>
     public InMemoryCacheService(IMemoryCache cache)
     {
         _cache = cache;
@@ -44,6 +23,7 @@ public class InMemoryCacheService : ICacheService
 
     /// <inheritdoc />
     /// <remarks>This operation is thread-safe.</remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="cacheKey"/> is <see langword="null"/>, empty, or whitespace.</exception>
     public async Task<T?> GetAsync<T>(string cacheKey)
     {
         if (string.IsNullOrWhiteSpace(cacheKey))
@@ -64,6 +44,7 @@ public class InMemoryCacheService : ICacheService
 
     /// <inheritdoc />
     /// <remarks>This operation is thread-safe.</remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="cacheKey"/> is <see langword="null"/>, empty, or whitespace, or <paramref name="value"/> is <see langword="null"/>.</exception>
     public async Task SetAsync<T>(string cacheKey, T value, TimeSpan? expirationTime = null)
     {
         if (string.IsNullOrWhiteSpace(cacheKey))
@@ -96,6 +77,7 @@ public class InMemoryCacheService : ICacheService
 
     /// <inheritdoc />
     /// <remarks>This operation is thread-safe.</remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="cacheKey"/> is <see langword="null"/>, empty, or whitespace.</exception>
     public async Task RemoveAsync(string cacheKey)
     {
         if (string.IsNullOrWhiteSpace(cacheKey))

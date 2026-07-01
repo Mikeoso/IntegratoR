@@ -1,5 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <PropertyGroup>
+    <!-- Ship the XML doc file in the NuGet package so consumers get IntelliSense; activates CS1591. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\IntegratoR.Abstractions\IntegratoR.Abstractions.csproj" />
     <ProjectReference Include="..\IntegratoR.OData\IntegratoR.OData.csproj" />

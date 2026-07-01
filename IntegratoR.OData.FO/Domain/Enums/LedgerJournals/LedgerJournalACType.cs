@@ -1,9 +1,7 @@
 namespace IntegratoR.OData.FO.Domain.Enums.LedgerJournals;
 
 /// <summary>
-/// Defines the account type for a ledger journal line in Dynamics 365 Finance and Operations.
-/// This value determines the business logic, validation, and underlying tables used for the 'Account'
-/// and 'OffsetAccount' fields on the journal line. It corresponds directly to the 'LedgerJournalACType' base enum in X++.
+/// Defines the account type for a ledger journal line in D365 F&amp;O, determining the business logic and underlying tables for the account fields, and maps to the <c>LedgerJournalACType</c> X++ base enum.
 /// </summary>
 public enum LedgerJournalACType
 {

@@ -1,9 +1,7 @@
 namespace IntegratoR.OData.FO.Domain.Enums.Dimensions;
 
 /// <summary>
-/// Specifies the character or character sequence used to separate the segments within a financial dimension string.
-/// This is a critical configuration for correctly parsing and constructing dimension values for integration with D365 F&O.
-/// For example, in the string "618160-001-023", the delimiter is a Hyphen.
+/// Specifies the character or sequence used to separate segments within a financial dimension string for integration with D365 F&amp;O, for example the hyphen in <c>618160-001-023</c>.
 /// </summary>
 public enum DimensionSegmentDelimiter
 {

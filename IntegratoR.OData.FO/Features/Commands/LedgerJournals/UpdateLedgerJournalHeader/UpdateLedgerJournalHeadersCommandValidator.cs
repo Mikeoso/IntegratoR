@@ -3,21 +3,13 @@ using IntegratoR.OData.FO.Domain.Entities.LedgerJournal;
 
 namespace IntegratoR.OData.FO.Features.Commands.LedgerJournals.UpdateLedgerJournalHeader;
 
-/// <summary>
-/// Thin derived validator that re-applies the generic <c>UpdateBatchCommand</c> baseline rules
-/// (entities not null, not empty) under the concrete batch command's closed type
-/// (<c>IValidator&lt;UpdateLedgerJournalHeadersCommand&lt;TEntity&gt;&gt;</c>).
-///
-/// NOTE: currently dormant in the MediatR pipeline — FluentValidation's
-/// <c>AddValidatorsFromAssembly</c> cannot register open-generic validators (see
-/// <c>ServiceCollectionExtensions.cs</c> step 6). Unit-tested directly in
-/// <c>GenericValidatorReuseTests</c>; will fire once a closed-generic validator-registration
-/// mechanism is added.
-/// </summary>
+/// <summary>Validates that <see cref="UpdateLedgerJournalHeadersCommand{TEntity}"/> carries a non-null, non-empty entity collection.</summary>
+/// <typeparam name="TEntity">The <see cref="LedgerJournalHeader"/> type being updated.</typeparam>
 public sealed class UpdateLedgerJournalHeadersCommandValidator<TEntity>
     : AbstractValidator<UpdateLedgerJournalHeadersCommand<TEntity>>
     where TEntity : LedgerJournalHeader
 {
+    /// <summary>Initializes a new instance of the <see cref="UpdateLedgerJournalHeadersCommandValidator{TEntity}"/> class.</summary>
     public UpdateLedgerJournalHeadersCommandValidator()
     {
         RuleFor(x => x.Entities)

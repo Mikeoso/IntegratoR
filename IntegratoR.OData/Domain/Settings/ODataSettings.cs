@@ -1,8 +1,7 @@
 namespace IntegratoR.OData.Domain.Settings;
 
 /// <summary>
-/// Encapsulates all configuration settings required to connect and authenticate with a
-/// D365 F&amp;O OData endpoint, including retry and resilience policies.
+/// Represents all configuration settings required to connect and authenticate with a D365 F&amp;O OData endpoint, including retry and resilience policies.
 /// </summary>
 public class ODataSettings
 {
@@ -15,11 +14,11 @@ public class ODataSettings
     /// <summary>
     /// Gets or sets the timeout in seconds for individual HTTP requests to the OData service.
     /// </summary>
+    /// <value>The default value is <c>120</c>.</value>
     public double Timeout { get; set; } = 120;
 
     /// <summary>
-    /// Gets or sets the path to a local metadata.xml file.
-    /// When specified, the OData client will use this local file instead of fetching metadata from the server.
+    /// Gets or sets the path to a local <c>metadata.xml</c> file to use instead of fetching metadata from the server.
     /// </summary>
     public string? MetadataFilePath { get; set; }
 

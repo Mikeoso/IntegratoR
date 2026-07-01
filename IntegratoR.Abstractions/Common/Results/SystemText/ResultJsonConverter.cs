@@ -17,6 +17,7 @@ namespace IntegratoR.Abstractions.Common.Results.SystemText;
 /// </remarks>
 public sealed class ResultJsonConverterFactory : JsonConverterFactory
 {
+    /// <inheritdoc/>
     public override bool CanConvert(Type typeToConvert)
     {
         return typeToConvert.IsGenericType
@@ -24,6 +25,7 @@ public sealed class ResultJsonConverterFactory : JsonConverterFactory
             && typeToConvert.GetGenericTypeDefinition() == typeof(Result<>);
     }
 
+    /// <inheritdoc/>
     public override JsonConverter CreateConverter(Type typeToConvert, JsonSerializerOptions options)
     {
         Type valueType = typeToConvert.GetGenericArguments()[0];
@@ -46,6 +48,7 @@ public sealed class ResultJsonConverterFactory : JsonConverterFactory
 /// <typeparam name="T">The value type wrapped by <see cref="Result{T}"/>.</typeparam>
 public sealed class ResultJsonConverter<T> : JsonConverter<Result<T>>
 {
+    /// <inheritdoc/>
     public override Result<T>? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
         if (reader.TokenType == JsonTokenType.Null)
@@ -94,6 +97,7 @@ public sealed class ResultJsonConverter<T> : JsonConverter<Result<T>>
         return Result.Fail<T>(errors);
     }
 
+    /// <inheritdoc/>
     public override void Write(Utf8JsonWriter writer, Result<T> value, JsonSerializerOptions options)
     {
         writer.WriteStartObject();
@@ -122,6 +126,7 @@ public sealed class ResultJsonConverter<T> : JsonConverter<Result<T>>
 /// </summary>
 public sealed class NonGenericResultJsonConverter : JsonConverter<Result>
 {
+    /// <inheritdoc/>
     public override Result? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
         if (reader.TokenType == JsonTokenType.Null)
@@ -149,6 +154,7 @@ public sealed class NonGenericResultJsonConverter : JsonConverter<Result>
         return Result.Fail(errors);
     }
 
+    /// <inheritdoc/>
     public override void Write(Utf8JsonWriter writer, Result value, JsonSerializerOptions options)
     {
         writer.WriteStartObject();

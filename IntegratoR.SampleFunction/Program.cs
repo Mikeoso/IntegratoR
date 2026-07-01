@@ -49,14 +49,8 @@ var host = new HostBuilder()
         services.AddApplicationInsightsTelemetryWorkerService();
         services.ConfigureFunctionsApplicationInsights();
 
-        // Configure the Functions Worker's System.Text.Json options so HttpRequestData /
-        // HttpResponseData ReadFromJsonAsync / WriteAsJsonAsync accept string-valued enums
-        // (e.g. "HierarchyType": "DataEntityLedgerDimensionFormat"). Without this, the worker
-        // falls back to the STJ default which only accepts numeric enum values, forcing callers
-        // to look up the underlying integer. The worker's default JsonObjectSerializer reads
-        // from IOptions<JsonSerializerOptions>, so Configure<JsonSerializerOptions> mutates the
-        // live options instance the serializer already holds — no WorkerOptions.Serializer
-        // replacement required.
+        // Let the Worker's JSON accept string-valued enums in request/response bodies. Its
+        // JsonObjectSerializer reads IOptions<JsonSerializerOptions>, so Configure mutates the live instance.
         services.Configure<JsonSerializerOptions>(options =>
         {
             options.Converters.Add(new JsonStringEnumConverter());

@@ -8,8 +8,9 @@ using Microsoft.Extensions.Logging;
 namespace IntegratoR.Application.Features.Common.Commands;
 
 /// <summary>
-/// A generic handler that can process any command inheriting from <see cref="DeleteBatchCommand{TEntity}"/>.
+/// Deletes a batch of entities via the <see cref="DeleteBatchCommand{TEntity}"/>.
 /// </summary>
+/// <typeparam name="TEntity">The type of the entities being deleted.</typeparam>
 public class DeleteBatchCommandHandler<TEntity>
     : IRequestHandler<DeleteBatchCommand<TEntity>, Result>
     where TEntity : class, IEntity
@@ -17,12 +18,23 @@ public class DeleteBatchCommandHandler<TEntity>
     private readonly ILogger<DeleteBatchCommandHandler<TEntity>> _logger;
     private readonly IBatchService<TEntity> _service;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="DeleteBatchCommandHandler{TEntity}"/> class.
+    /// </summary>
+    /// <param name="logger">The logger for diagnostics.</param>
+    /// <param name="service">The batch service for the specified entity type.</param>
     public DeleteBatchCommandHandler(ILogger<DeleteBatchCommandHandler<TEntity>> logger, IBatchService<TEntity> service)
     {
         _logger = logger;
         _service = service;
     }
 
+    /// <summary>
+    /// Asynchronously handles the <see cref="DeleteBatchCommand{TEntity}"/> request.
+    /// </summary>
+    /// <param name="request">The command request, containing the entities to delete.</param>
+    /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
+    /// <returns>A successful <see cref="Result"/>, or a failed result carrying the batch service errors.</returns>
     public async Task<Result> Handle(DeleteBatchCommand<TEntity> request, CancellationToken cancellationToken)
     {
         _logger.LogInformation("Deleting {Count} {EntityType} entities in batch.", request.Entities.Count, typeof(TEntity).Name);

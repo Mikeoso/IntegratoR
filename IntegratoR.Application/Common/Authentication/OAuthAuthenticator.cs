@@ -9,30 +9,10 @@ using Microsoft.Identity.Client;
 
 namespace IntegratoR.Application.Common.Authentication;
 
-// FILE-LEVEL DOCUMENTATION
-// ---------------------------------------------------------------------------------------------
-// <remarks>
-// This file contains a concrete implementation of the IAuthenticator interface using the
-// Microsoft Authentication Library (MSAL) for .NET. It is designed to handle the OAuth 2.0
-// client credentials grant flow, which is the standard method for service-to-service
-// authentication with Azure AD-protected resources like Dynamics 365 F&O.
-// </remarks>
-// ---------------------------------------------------------------------------------------------
-
 /// <summary>
-/// An authenticator that acquires OAuth 2.0 access tokens from Azure Active Directory
-/// using the MSAL library and provides in-memory caching to optimize performance.
+/// Provides an <see cref="IAuthenticator"/> that acquires OAuth 2.0 access tokens from Azure AD via MSAL, with in-memory caching to optimise performance.
 /// </summary>
-/// <remarks>
-/// This implementation is responsible for the entire token lifecycle: checking the cache,
-/// acquiring a new token from Azure AD if necessary, and caching it for future use. The built
-/// <see cref="IConfidentialClientApplication"/> is reused per (clientId, tenantId, resource) so
-/// MSAL's own in-memory token cache is consulted before a network call is made.
-///
-/// **Important Architectural Note:** the proactive-expiry token cache uses <see cref="IMemoryCache"/>,
-/// which is local to a single instance. For scaled-out, multi-instance environments an
-/// <c>IDistributedCache</c>-backed implementation should be used instead.
-/// </remarks>
+/// <remarks>The built <see cref="IConfidentialClientApplication"/> is reused per (clientId, tenantId, resource) so MSAL's own token cache is consulted before a network call. The proactive-expiry token cache uses <see cref="IMemoryCache"/>, which is local to a single instance; scaled-out, multi-instance deployments should front MSAL with a distributed token cache so instances do not each acquire their own token.</remarks>
 public class OAuthAuthenticator : IAuthenticator
 {
     // Reuse the built confidential-client app per (clientId, tenantId, resource) so MSAL's internal
@@ -104,8 +84,7 @@ public class OAuthAuthenticator : IAuthenticator
             var scopes = new[] { $"{resource}/.default" };
             AcquiredToken token = await _tokenAcquirer(confidentialClientApp, scopes, cancellationToken).ConfigureAwait(false);
 
-            // Proactively expire the cache entry 5 minutes before the actual token expires to avoid
-            // using an invalidated token due to clock skew or transit delays.
+            // Expire 5 min early to absorb clock skew / transit delay before the token actually expires.
             var cacheExpiration = token.ExpiresOn.Subtract(TimeSpan.FromMinutes(5));
             _memoryCache.Set(tokenCacheKey, token.AccessToken, cacheExpiration);
 

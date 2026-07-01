@@ -8,20 +8,20 @@ using IntegratoR.Abstractions.Interfaces.Entity;
 namespace IntegratoR.Abstractions.Common.CQRS.Commands
 {
     /// <summary>
-    /// A generic base command for deleting entities in a batch.
+    /// Represents a generic command to delete a batch of entities.
     /// </summary>
-    /// <typeparam name="TEntity">The type of the entity to create.</typeparam>
+    /// <typeparam name="TEntity">The type of the entities to delete.</typeparam>
+    /// <param name="Entities">The entities to delete.</param>
     public record DeleteBatchCommand<TEntity>(IReadOnlyList<TEntity> Entities) : ICommand<Result>
         where TEntity : IEntity
     {
         /// <summary>
-        /// Provides a default logging context containing the entity information.
-        /// This can be overridden in specific command implementations for more detail.
+        /// Gets the structured logging context for this command.
         /// </summary>
+        /// <returns>A context containing the batch entity count.</returns>
         public virtual IReadOnlyDictionary<string, object> GetLoggingContext()
         {
-            // Null-safe: a null Entities collection is an invalid command that ValidationBehaviour
-            // will reject; LoggingBehaviour runs first, so this must not throw.
+            // LoggingBehaviour runs before validation, so a null Entities collection must not throw here.
             return new Dictionary<string, object>
             {
                 { "Count", Entities?.Count ?? 0 }

@@ -31,8 +31,9 @@ wiki/                       → GitHub wiki documentation source
 - **No repository pattern** wrapping the service layer.
 - **No `var` for non-obvious types** — prefer explicit types when the type is not apparent.
 - **No sync-over-async** — no `.Result`, `.Wait()`, `Task.Run` in library code.
+- **Doc comments describe actual behaviour** — never ship stale/aspirational docs; lean by default (concise `<summary>`, `<remarks>`/inline `//` only when a WHY is non-obvious); no `FILE-LEVEL` banner comments; `Result<T>` failures documented in `<returns>`/`<remarks>`, not `<exception>`.
 
-Full language, style, and testing conventions (with examples) live in the `csharp-coding-standards` skill.
+Full language, style, and testing conventions (with examples) live in the `csharp-coding-standards` skill; documentation conventions live in the `csharp-documentation` skill.
 
 ## Default Workflow
 
@@ -62,6 +63,7 @@ Route work before starting (this replaces the former `.claude/rules/skill-routin
 |------|-----|
 | Non-trivial feature, restructuring, or design touching architecture | Plan mode + interview — focused questions with options, get approval before implementing |
 | Writing, reviewing, or refactoring C# (handlers, services, entities, commands/queries, tests) | `csharp-coding-standards` skill |
+| Writing, reviewing, or trimming C# doc comments (`///` XML docs) or inline `//` comments | `csharp-documentation` skill |
 | Changing the public/published API surface of a library (signatures, visibility, serialised output, `[Obsolete]`) | `csharp-api-design` skill |
 | Write / add / plan / review tests | `test-planning` skill (auto-triggers) → briefs the `test-writer` agent. Skip trivial structural tests (DI registration, config binding, POCO properties) |
 | Review code changes — correctness, quality, architecture, test coverage | `code-reviewer` agent |

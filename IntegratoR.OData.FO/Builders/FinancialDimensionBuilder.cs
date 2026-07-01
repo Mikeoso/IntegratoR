@@ -3,29 +3,24 @@ using IntegratoR.OData.FO.Domain.Models.FinancialDimensions;
 namespace IntegratoR.OData.FO.Builders;
 
 /// <summary>
-/// A builder class that constructs formatted financial dimension strings compatible with Dynamics 365 F&O.
-/// It uses a fluent interface to ensure dimension values are assembled in the correct order as defined
-/// by the system's dimension format, correctly handling delimiters and omitted values.
+/// Provides a fluent builder that assembles formatted financial dimension strings for D365 F&amp;O,
+/// ordering segments per the dimension format and inserting empty placeholders for omitted values.
 /// </summary>
 /// <example>
 /// <code>
-/// // 1. Define the dimension format, typically loaded from F&O.
 /// var format = new DimensionFormat
 /// {
 ///     Delimiter = "-",
-///     Segments = new List<string> { "BusinessUnit", "Department", "CostCenter" }
+///     Segments = new List&lt;string&gt; { "BusinessUnit", "Department", "CostCenter" }
 /// };
 ///
-/// // 2. Use the builder to construct the dimension string.
-/// var dimensionBuilder = new FinancialDimensionBuilder();
-/// string displayValue = dimensionBuilder
+/// string displayValue = new FinancialDimensionBuilder()
 ///     .Initialize(format)
 ///     .Add("CostCenter", "CC002")
 ///     .Add("BusinessUnit", "BU01")
 ///     .Build();
 ///
-/// // 3. The output respects the segment order and handles the missing "Department" value.
-/// // Expected output: "BU01--CC002"
+/// // displayValue => "BU01--CC002" (empty placeholder for the omitted "Department")
 /// </code>
 /// </example>
 public class FinancialDimensionBuilder
@@ -34,11 +29,10 @@ public class FinancialDimensionBuilder
     private DimensionFormat? _format;
 
     /// <summary>
-    /// Initializes the builder with the dimension format that dictates the structure of the output string.
-    /// This method should be called first and also resets the builder's state.
+    /// Resets the builder and sets the dimension format that dictates the output structure.
     /// </summary>
-    /// <param name="format">The <see cref="DimensionFormat"/> object defining the segment order and delimiter.</param>
-    /// <returns>The builder instance for fluent chaining.</returns>
+    /// <param name="format">The <see cref="DimensionFormat"/> defining the segment order and delimiter.</param>
+    /// <returns>The same builder instance for fluent chaining.</returns>
     public FinancialDimensionBuilder Initialize(DimensionFormat format)
     {
         Clear();
@@ -47,11 +41,11 @@ public class FinancialDimensionBuilder
     }
 
     /// <summary>
-    /// Adds or updates a financial dimension segment with its value. The order of adding dimensions does not matter.
+    /// Adds or updates a dimension segment value; the order in which segments are added is irrelevant.
     /// </summary>
-    /// <param name="name">The name of the dimension segment (e.g., "BusinessUnit").</param>
-    /// <param name="value">The value of the dimension segment (e.g., "001").</param>
-    /// <returns>The builder instance for fluent chaining.</returns>
+    /// <param name="name">The name of the dimension segment (e.g. "BusinessUnit").</param>
+    /// <param name="value">The value of the dimension segment (e.g. "001").</param>
+    /// <returns>The same builder instance for fluent chaining.</returns>
     public FinancialDimensionBuilder Add(string name, string value)
     {
         if (!string.IsNullOrWhiteSpace(name) && !string.IsNullOrWhiteSpace(value))
@@ -62,13 +56,12 @@ public class FinancialDimensionBuilder
     }
 
     /// <summary>
-    /// Constructs the final, delimited string using only the dimension values in the correct order.
+    /// Builds the delimited dimension string with segments in the order defined by the format.
     /// </summary>
-    /// <returns>A formatted string (e.g., "BU01--CC002") or an empty string if the builder was not initialized.</returns>
+    /// <returns>The formatted string (e.g. "BU01--CC002"), or an empty string if the builder was not initialised.</returns>
     /// <remarks>
-    /// This method correctly handles omitted dimension values by inserting an empty placeholder, which is required
-    /// by D365 F&O to maintain the structural integrity of the dimension string (e.g., producing "value1--value3"
-    /// if the middle segment was not provided).
+    /// Omitted segments are emitted as empty placeholders, which D365 F&amp;O requires to preserve the
+    /// structural integrity of the dimension string.
     /// </remarks>
     public string Build()
     {
@@ -79,7 +72,6 @@ public class FinancialDimensionBuilder
 
         var valueParts = new List<string>();
 
-        // Iterate through the segments in the exact order defined by the format.
         foreach (var segmentName in _format.Segments)
         {
             if (_dimensions.TryGetValue(segmentName, out var value))
@@ -95,8 +87,7 @@ public class FinancialDimensionBuilder
     }
 
     /// <summary>
-    /// Resets the builder to its initial state by clearing all added dimensions and the format.
-    /// This allows the builder instance to be reused for constructing multiple dimension strings.
+    /// Clears all added dimensions and the format so the builder instance can be reused.
     /// </summary>
     public void Clear()
     {

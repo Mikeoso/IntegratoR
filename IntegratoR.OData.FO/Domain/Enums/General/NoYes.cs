@@ -1,9 +1,7 @@
 namespace IntegratoR.OData.FO.Domain.Enums.General;
 
 /// <summary>
-/// Defines a boolean-like choice between 'No' and 'Yes'.
-/// This enumeration corresponds directly to the widely used 'NoYes' base enum in X++ and is the standard
-/// way to represent boolean values in Dynamics 365 Finance and Operations data entities.
+/// Defines a boolean-like choice between No and Yes, mapping to the <c>NoYes</c> X++ base enum used for boolean values in D365 F&amp;O data entities.
 /// </summary>
 public enum NoYes
 {

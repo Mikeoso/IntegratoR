@@ -55,10 +55,8 @@ internal static class ApplicationDependencyInjection
         services.AddSingleton<IValidateOptions<ODataSettings>, ODataSettingsValidator>();
         services.AddOptions<ODataSettings>().ValidateOnStart();
 
-        // Register supporting services
         services.AddTransient<ODataAuthenticationHandler>();
 
-        // Configure HttpClient with Polly policies
         services.AddHttpClient("ODataClient", (serviceProvider, httpClient) =>
             {
                 var settings = serviceProvider.GetRequiredService<IOptions<ODataSettings>>().Value;
@@ -125,7 +123,6 @@ internal static class ApplicationDependencyInjection
                         durationOfBreak: TimeSpan.FromSeconds(settings.Resilience.CircuitBreakerDurationInSeconds));
             });
 
-        // Register PanoramicData ODataClient
         services.AddSingleton(serviceProvider =>
         {
             var settings = serviceProvider.GetRequiredService<IOptions<ODataSettings>>().Value;

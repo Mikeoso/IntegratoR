@@ -12,17 +12,10 @@ using Polly.Retry;
 namespace IntegratoR.OData.Common.Services;
 
 /// <summary>
-/// Handles exception processing and retry logic for OData operations.
-/// Provides centralized error handling with comprehensive logging and performance metrics.
+/// Provides centralised exception handling and optional Polly retry for OData operations, mapping
+/// failures to <see cref="IntegrationError"/> results.
 /// </summary>
-/// <typeparam name="TEntity">The entity type that implements <see cref="IEntity"/>.</typeparam>
-/// <remarks>
-/// This handler abstracts all exception handling logic for OData operations, providing:
-/// - Automatic retry for transient failures using Polly
-/// - Comprehensive exception mapping to Result pattern
-/// - Structured logging with performance tracking
-/// - Support for different operation types (single, collection, scalar, non-query)
-/// </remarks>
+/// <typeparam name="TEntity">The type of the entity, which must implement <see cref="IEntity"/>.</typeparam>
 public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
 {
     private readonly ILogger _logger;
@@ -42,8 +35,13 @@ public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
     }
 
     /// <summary>
-    /// Executes an operation that returns a single entity with automatic retry support.
+    /// Asynchronously executes an operation that returns a single entity, applying retry and exception mapping.
     /// </summary>
+    /// <param name="operationName">The operation name used in structured logs and error codes.</param>
+    /// <param name="operation">The asynchronous operation to execute.</param>
+    /// <param name="entityKey">An optional factory returning the entity key for logging context.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>A successful <see cref="Result{TEntity}"/> carrying the entity, or a failure carrying an <see cref="IntegrationError"/> mapped from the thrown exception.</returns>
     public async Task<Result<TEntity>> ExecuteAsync(
         string operationName,
         Func<Task<TEntity>> operation,
@@ -60,8 +58,13 @@ public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
     }
 
     /// <summary>
-    /// Executes an operation that returns a collection of entities with automatic retry support.
+    /// Asynchronously executes an operation that returns a collection of entities, applying retry and exception mapping.
     /// </summary>
+    /// <param name="operationName">The operation name used in structured logs and error codes.</param>
+    /// <param name="operation">The asynchronous operation to execute.</param>
+    /// <param name="entityKey">An optional factory returning the entity key for logging context.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>A successful <see cref="Result{T}"/> carrying the entities, or a failure carrying an <see cref="IntegrationError"/> mapped from the thrown exception.</returns>
     public async Task<Result<IEnumerable<TEntity>>> ExecuteCollectionAsync(
         string operationName,
         Func<Task<IEnumerable<TEntity>>> operation,
@@ -82,8 +85,14 @@ public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
     }
 
     /// <summary>
-    /// Executes an operation that returns a scalar value with automatic retry support.
+    /// Asynchronously executes an operation that returns a scalar value, applying retry and exception mapping.
     /// </summary>
+    /// <typeparam name="T">The type of the scalar result.</typeparam>
+    /// <param name="operationName">The operation name used in structured logs and error codes.</param>
+    /// <param name="operation">The asynchronous operation to execute.</param>
+    /// <param name="entityKey">An optional factory returning the entity key for logging context.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>A successful <see cref="Result{T}"/> carrying the scalar value, or a failure carrying an <see cref="IntegrationError"/> mapped from the thrown exception.</returns>
     public async Task<Result<T>> ExecuteScalarAsync<T>(
         string operationName,
         Func<Task<T>> operation,
@@ -100,8 +109,14 @@ public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
     }
 
     /// <summary>
-    /// Executes an operation that doesn't return a value with automatic retry support.
+    /// Asynchronously executes an operation that returns no value, applying retry and exception mapping.
     /// </summary>
+    /// <param name="operationName">The operation name used in structured logs and error codes.</param>
+    /// <param name="operation">The asynchronous operation to execute.</param>
+    /// <param name="entityKey">An optional factory returning the entity key for logging context.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <param name="treatNotFoundAsSuccess">When <see langword="true"/>, an HTTP 404 is treated as success (for idempotent deletes) and logged as a warning.</param>
+    /// <returns>A successful <see cref="Result"/>, or a failure carrying an <see cref="IntegrationError"/> mapped from the thrown exception.</returns>
     public async Task<Result> ExecuteNonQueryAsync(
         string operationName,
         Func<Task> operation,
@@ -124,9 +139,14 @@ public class ODataExceptionHandler<TEntity> where TEntity : class, IEntity
     }
 
     /// <summary>
-    /// Executes an operation that may return business-level errors (e.g., batch partial failures)
-    /// without throwing exceptions. The operation returns <c>null</c> on success or a list of errors on failure.
+    /// Asynchronously executes an operation that may return business-level errors (such as batch
+    /// partial failures) without throwing.
     /// </summary>
+    /// <param name="operationName">The operation name used in structured logs and error codes.</param>
+    /// <param name="operation">The asynchronous operation, returning <see langword="null"/> on success or a list of errors on failure.</param>
+    /// <param name="entityKey">An optional factory returning the entity key for logging context.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>A successful <see cref="Result"/> when the operation returns <see langword="null"/>; otherwise a failure carrying the returned errors.</returns>
     public async Task<Result> ExecuteNonQueryAsync(
         string operationName,
         Func<Task<List<IError>?>> operation,

@@ -6,41 +6,17 @@ using IntegratoR.Abstractions.Interfaces.Authentication;
 using IntegratoR.OData.Domain.Settings;
 using Microsoft.Extensions.Options;
 
-// FILE-LEVEL DOCUMENTATION
-// ---------------------------------------------------------------------------------------------
-// <remarks>
-// This file defines an HttpClient DelegatingHandler, which acts as middleware in the HTTP
-// request pipeline. This pattern is a clean and powerful way to implement cross-cutting
-// concerns like authentication, ensuring that every outgoing request is properly authenticated
-// without cluttering the data access logic.
-// </remarks>
-// ---------------------------------------------------------------------------------------------
 namespace IntegratoR.OData.Common.Authentication;
 
 /// <summary>
-/// An HttpClient message handler that automatically acquires and attaches the necessary
-/// authentication headers to outgoing requests destined for D365 F&O OData endpoints.
+/// Provides an <see cref="HttpClient"/> message handler that acquires and attaches the appropriate
+/// authentication header to outgoing requests destined for D365 F&amp;O OData endpoints.
 /// </summary>
 /// <remarks>
-/// This handler is designed to be registered with an <c>IHttpClientFactory</c> when configuring
-/// the typed HttpClient used by the OData client (e.g., PanoramicData.OData.Client). Once registered,
-/// it transparently handles authentication for every request.
-///
-/// It supports two primary authentication modes based on the provided <see cref="ODataSettings"/>:
-/// <list type="bullet">
-///   <item>
-///     <term>OAuth</term>
-///     <description>Used for direct communication with D365 F&O. It utilizes the injected
-///     <see cref="IAuthenticator"/> to acquire a Bearer token via the client credentials flow.</description>
-///   </item>
-///   <item>
-///     <term>Subscription Key</term>
-///     <description>Used when requests are routed through a gateway like Azure API Management (APIM),
-///     which often requires a subscription key in a custom header.</description>
-///   </item>
-/// </list>
-/// If OAuth token acquisition fails, this handler will short-circuit the request and return an
-/// <c>HttpResponseMessage</c> with status 401 Unauthorized.
+/// Supports two modes based on the provided <see cref="ODataSettings"/>: OAuth (a Bearer token acquired
+/// via the injected <see cref="IAuthenticator"/> using the client credentials flow) and subscription
+/// key (a custom header for requests routed through Azure API Management). If OAuth token acquisition
+/// fails, the handler short-circuits and returns a 401 Unauthorized response without calling downstream.
 /// </remarks>
 public class ODataAuthenticationHandler : DelegatingHandler
 {

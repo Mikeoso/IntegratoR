@@ -11,6 +11,7 @@ namespace IntegratoR.Abstractions.Common.Results;
 /// </summary>
 public class ResultJsonConverter : JsonConverter<Result>
 {
+    /// <inheritdoc/>
     public override void WriteJson(JsonWriter writer, Result? value, JsonSerializer serializer)
     {
         if (value is null)
@@ -32,6 +33,7 @@ public class ResultJsonConverter : JsonConverter<Result>
         writer.WriteEndObject();
     }
 
+    /// <inheritdoc/>
     public override Result? ReadJson(JsonReader reader, Type objectType, Result? existingValue, bool hasExistingValue, JsonSerializer serializer)
     {
         if (reader.TokenType == JsonToken.Null)
@@ -57,11 +59,13 @@ public class ResultJsonConverter : JsonConverter<Result>
 /// </summary>
 public class ResultGenericJsonConverter : JsonConverter
 {
+    /// <inheritdoc/>
     public override bool CanConvert(Type objectType)
     {
         return objectType.IsGenericType && objectType.GetGenericTypeDefinition() == typeof(Result<>);
     }
 
+    /// <inheritdoc/>
     public override void WriteJson(JsonWriter writer, object? value, JsonSerializer serializer)
     {
         if (value is null)
@@ -94,6 +98,7 @@ public class ResultGenericJsonConverter : JsonConverter
         writer.WriteEndObject();
     }
 
+    /// <inheritdoc/>
     public override object? ReadJson(JsonReader reader, Type objectType, object? existingValue, JsonSerializer serializer)
     {
         if (reader.TokenType == JsonToken.Null)
@@ -137,7 +142,6 @@ public class ResultGenericJsonConverter : JsonConverter
                 value = valueToken.ToObject(valueType, serializer);
             }
 
-            // Call Result.Ok<T>(value) via reflection
             var okMethod = typeof(Result).GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
                 .First(m => m.Name == "Ok" && m.IsGenericMethod && m.GetParameters().Length == 1)
                 .MakeGenericMethod(valueType);
@@ -154,10 +158,12 @@ public class ResultGenericJsonConverter : JsonConverter
 
 /// <summary>
 /// Newtonsoft.Json converter for the generic <see cref="Result{T}"/> type.
-/// Serializes <c>isSuccess</c>, <c>value</c>, and <c>errors</c>.
+/// Serialises <c>isSuccess</c>, <c>value</c>, and <c>errors</c>.
 /// </summary>
+/// <typeparam name="T">The value type carried by the <see cref="Result{T}"/>.</typeparam>
 public class ResultJsonConverter<T> : JsonConverter<Result<T>>
 {
+    /// <inheritdoc/>
     public override void WriteJson(JsonWriter writer, Result<T>? value, JsonSerializer serializer)
     {
         if (value is null)
@@ -184,6 +190,7 @@ public class ResultJsonConverter<T> : JsonConverter<Result<T>>
         writer.WriteEndObject();
     }
 
+    /// <inheritdoc/>
     public override Result<T>? ReadJson(JsonReader reader, Type objectType, Result<T>? existingValue, bool hasExistingValue, JsonSerializer serializer)
     {
         if (reader.TokenType == JsonToken.Null)

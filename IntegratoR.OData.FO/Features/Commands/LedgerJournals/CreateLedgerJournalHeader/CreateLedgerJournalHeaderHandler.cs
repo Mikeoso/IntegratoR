@@ -8,17 +8,20 @@ using Microsoft.Extensions.Logging;
 namespace IntegratoR.OData.FO.Features.Commands.LedgerJournals.CreateLedgerJournalHeader;
 
 /// <summary>Creates a single LedgerJournalHeader in D365 F&amp;O, emitting domain-specific structured logs. Retained over the generic CreateCommandHandler&lt;T&gt; because it adds journal-context logging.</summary>
+/// <typeparam name="TEntity">The type of the entity being created.</typeparam>
 public class CreateLedgerJournalHeaderHandler<TEntity> : IRequestHandler<CreateLedgerJournalHeaderCommand<TEntity>, Result<TEntity>> where TEntity : LedgerJournalHeader
 {
     private readonly ILogger<CreateLedgerJournalHeaderHandler<TEntity>> _logger;
     private readonly IService<TEntity> _service;
 
+    /// <summary>Initializes a new instance of the <see cref="CreateLedgerJournalHeaderHandler{TEntity}"/> class.</summary>
     public CreateLedgerJournalHeaderHandler(ILogger<CreateLedgerJournalHeaderHandler<TEntity>> logger, IService<TEntity> service)
     {
         _logger = logger;
         _service = service;
     }
 
+    /// <inheritdoc/>
     public async Task<Result<TEntity>> Handle(CreateLedgerJournalHeaderCommand<TEntity> request, CancellationToken cancellationToken)
     {
         _logger.LogInformation("Creating a new Ledger Journal Header in F&O with Journal Name: {JournalName} in Company: {Company}",
