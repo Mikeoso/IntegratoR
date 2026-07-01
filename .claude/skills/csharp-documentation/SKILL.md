@@ -89,9 +89,38 @@ Two rules that resolve every judgement call:
 
 ## Inline comments (`//`)
 
-Explain **WHY** — rationale, trade-offs, workarounds, D365/OData quirks, invariants, non-obvious
-control flow. Never **WHAT**: rename to an intention-revealing identifier first. `TODO`/`FIXME`/`HACK`
-get an owner + tracked issue and stay in `//` — **never** in a shipping `///`.
+**Default to NO comment. The code is the primary documentation.** An inline comment earns its place
+only when it says something the code cannot: a non-obvious WHY, an edge case, a workaround, a
+D365/OData quirk, an invariant, or a subtle control-flow reason. A normal developer documents the
+*general logic* — not a running narration of what each line does.
+
+**Keep them SHORT.** Prefer a few words. If you need more than ~2 lines to explain a WHY, the
+explanation is too big for an inline comment — move it (see "Long rationale" below).
+
+### Acceptable
+- A terse section signpost that chunks a genuinely long method: `// Parse key property names`, `// Entity-level annotations`. A few words, aids scanning — keep these.
+- A short non-obvious WHY: `// 5-min buffer absorbs clock skew before the token actually expires.`
+- An edge-case / quirk note: `// D365 returns 204 on a composite-key PATCH, so echo the caller's entity.`
+
+### Delete on sight (obvious-code narration & noise)
+- A prose sentence restating the next line: `// Attempt to retrieve the response from the cache using the key defined in the query.` above `_cacheService.GetAsync(query.CacheKey)`.
+- A comment restating a self-evident branch: `// This only acts on queries that opt into caching.` above `if (request is not ICacheableQuery …)`.
+- A trailing comment on an obvious statement: `return cached; // short-circuit and return the cached value.`
+- **State-of-development / changelog narration**: "currently dormant", "was wrong, caused …", "TODO: refactor later" without an owner+issue. Git and the issue tracker own history.
+- **Walls of text**: a 6-line paragraph explaining framework internals inline (see "Long rationale").
+
+### Long rationale — move it out
+When the WHY is genuinely important but too big for one short line:
+- **Consumers need it** (it explains observable behaviour of a public API) → put it in the member's XML `<remarks>`.
+- **Internal design decision** (why the composition root closes open generics, why we forked an upstream parser, how the Durable Functions converter is wired) → write an **ADR** under `docs/adr/` and leave a one-line pointer in code: `// Why this closes open generics across assemblies: see docs/adr/0001-....md`. See `docs/adr/README.md` for the format.
+
+`TODO`/`FIXME`/`HACK` get an owner + a tracked issue and stay in `//` — **never** in a shipping `///`.
+
+### Finding these (audit heuristic)
+Suspect any run of **2+ consecutive `//` lines**, any `//` that is a **full grammatical sentence**
+ending in a full stop describing the *next* statement, any trailing `// …` on an obvious line, and
+any comment containing "currently", "for now", "simple", "just", "note that", or restating an
+identifier that already appears on the following line.
 
 ## Anti-patterns (all found live in this repo — remove on sight)
 
@@ -99,7 +128,7 @@ get an owner + tracked issue and stay in `//` — **never** in a shipping `///`.
 2. **Stale generic-arity / phantom docs** — `IEntity<TKey>`, `GetByIdQuery<TEntity,TKey>` don't exist; the real types are non-generic `IEntity` / `GetByKeyQuery<TEntity>`.
 3. **Forbidden-term docs** — never call a service a "repository" (Hard Rule: no repository pattern).
 4. **American spelling in prose** — `behavior`/`optimize`/`serialization`/`sanitize`/`centralized` → British (`behaviour`, `optimise`, `serialisation`, `normalise`, `honour`).
-5. **Echo comments** — `// Read the file content`, `// Parse properties`. Delete.
+5. **Obvious-code narration** — a prose `//` sentence restating what the next line plainly does, or a trailing `// …` on an obvious statement. Delete. (A *terse* few-word section signpost in a long method — `// Parse properties` — is fine; it's the full-sentence narration and walls of text that go. See the Inline comments section.)
 6. **Changelog / debug history in shipped docs** — keep only the forward-looking fact; history lives in git.
 7. **Duplicated overload blocks** — differentiate summaries or `<inheritdoc cref="…"/>` the twin.
 8. **Boilerplate filler** — allowed only in the canonical `Initializes a new instance…` form.
