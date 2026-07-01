@@ -16,6 +16,9 @@ public class EntityGenerator
     private readonly string _namespace;
     private readonly string _baseClass;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="EntityGenerator"/> class.
+    /// </summary>
     public EntityGenerator(string targetNamespace, string baseClass = DefaultBaseClass)
     {
         _namespace = targetNamespace;
@@ -32,8 +35,10 @@ public class EntityGenerator
 
     /// <summary>
     /// Generates entity and enum source files into the specified output directory.
-    /// Returns the number of files generated.
     /// </summary>
+    /// <returns>The number of files generated.</returns>
+    /// <exception cref="System.IO.IOException">A file or the output directory cannot be written.</exception>
+    /// <exception cref="UnauthorizedAccessException">The process lacks permission to write to <paramref name="outputDir"/>.</exception>
     public int Generate(CsdlSchema schema, string outputDir, HashSet<string>? entitySetFilter)
     {
         Directory.CreateDirectory(outputDir);
@@ -57,7 +62,6 @@ public class EntityGenerator
             }
         }
 
-        // Generate referenced enum types
         foreach (ODataEnumModel enumModel in schema.EnumTypes)
         {
             if (!referencedEnums.Contains(enumModel.Name)) continue;
@@ -105,13 +109,11 @@ public class EntityGenerator
         sb.AppendLine($"public partial class {entity.Name} : {_baseClass}");
         sb.AppendLine("{");
 
-        // Generate properties
         foreach (ODataPropertyModel prop in entity.Properties)
         {
             GenerateProperty(sb, prop);
         }
 
-        // Generate GetCompositeKey
         sb.AppendLine("    /// <inheritdoc/>");
         sb.Append("    public override object[] GetCompositeKey() => [");
 
@@ -131,13 +133,11 @@ public class EntityGenerator
     {
         string csharpType = MapEdmType(prop);
         string pascalName = ToPascalCase(prop.Name);
-        // Key attribute
         if (prop.IsKey)
         {
             sb.AppendLine("    [Key]");
         }
 
-        // JsonPropertyName
         sb.AppendLine($"    [JsonPropertyName(\"{prop.Name}\")]");
 
         // ODataField attribute — only emit if there's something non-default to express
