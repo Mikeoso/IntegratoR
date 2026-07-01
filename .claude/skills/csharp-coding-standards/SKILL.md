@@ -326,7 +326,7 @@ Other TestKit helpers: `FakeCacheService`, `FakeHttpMessageHandler`. NSubstitute
 - **Never** use `var` for non-obvious types.
 - **Never** use `.Result` / `.Wait()` / `.GetAwaiter().GetResult()` / `Task.Run` in library code; **never** drop the `CancellationToken`; **never** omit `ConfigureAwait(false)` in library code.
 - **Never** catch or throw base `Exception`; **never** leave an empty catch block.
-- **Never** add comments/docstrings to code you did not change.
+- **Never** add comments/docstrings to code you did not change. (For how to write/trim doc comments when you *are* changing code, see the `csharp-documentation` skill.)
 
 ## Low-Relevance For This Domain (informational)
 
