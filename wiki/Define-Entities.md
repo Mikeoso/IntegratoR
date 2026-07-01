@@ -1,8 +1,8 @@
 # Define Entities
 
-Every D365 F&O data entity that the consumer reads or writes needs a corresponding C# class. The class is mapped to the OData entity set via `[Table]`, the composite key is declared via `[Key]` attributes and `GetCompositeKey()`, and per-property serialisation behaviour is controlled via `[ODataField]` and `[JsonPropertyName]`.
+> Last verified against v2.0.1
 
-## A Minimal Entity
+Every D365 F&O data entity you read or write needs a C# class. Inherit the non-generic `BaseEntity`, map the class to its OData entity set with `[Table]`, declare the composite key with `[Key]` plus `GetCompositeKey()`, and control per-property serialisation with `[ODataField]` and `[JsonPropertyName]`.
 
 ```csharp
 using System.ComponentModel.DataAnnotations;
@@ -14,41 +14,40 @@ using IntegratoR.OData.Common.Annotations;
 namespace MyProject.Domain.Entities;
 
 [Table("LedgerJournalHeaders")]
-public class LedgerJournalHeader : BaseEntity<string>
+public class LedgerJournalHeader : BaseEntity
 {
     [Key]
     [JsonPropertyName("dataAreaId")]
+    [ODataField(IsRequired = true)]
     public required string DataAreaId { get; set; }
 
     [Key]
     [JsonPropertyName("JournalBatchNumber")]
-    [ODataField(IgnoreOnCreate = true)]
+    [ODataField(IgnoreOnCreate = true)]   // D365 number sequence assigns it on create
     public string? JournalBatchNumber { get; set; }
 
     [JsonPropertyName("JournalName")]
+    [ODataField(IgnoreOnUpdate = true)]   // read-only after create
     public required string JournalName { get; set; }
 
     [JsonPropertyName("Description")]
     public required string Description { get; set; }
 
-    public override object[] GetCompositeKey()
-    {
-        return [DataAreaId, JournalBatchNumber ?? "null"];
-    }
+    public override object[] GetCompositeKey() => [DataAreaId, JournalBatchNumber!];
 }
 ```
 
-Three contracts make this entity work end-to-end:
+Send it as a command over `IMediator` and you get a `Result<LedgerJournalHeader>` back — see [Send Commands](Send-Commands).
 
-1. **`[Table("LedgerJournalHeaders")]`** maps the class to the D365 OData entity set. The name is **case-sensitive** and almost always **plural** — `LedgerJournalHeader` is the entity, `LedgerJournalHeaders` is the entity set.
-2. **`BaseEntity`** declares the abstract `GetCompositeKey()` that handlers use for composite-key URL construction and reflection-based structured logging via `GetLoggingContext()`.
-3. **`[Key]` plus `GetCompositeKey()`** define which properties form the primary key and the order in which the framework passes them to OData reads.
+Three attributes make this entity work end to end:
 
-A hand-written entity's properties need **not** be `virtual` — the `virtual` requirement applies only when the entity will be subclassed and its properties overridden (see [Extend a Built-in Entity](#extend-a-built-in-entity) below).
+- `[Table("LedgerJournalHeaders")]` maps the class to the D365 OData entity set. The name is case-sensitive and almost always plural — `LedgerJournalHeader` is the entity, `LedgerJournalHeaders` is the entity set.
+- `[Key]` marks each composite-key property; `GetCompositeKey()` returns those same fields in the same order.
+- `[ODataField]` and `[JsonPropertyName]` control what is sent on the wire and under which name.
 
-## BaseEntity
+## Inherit BaseEntity
 
-`BaseEntity` is the non-generic abstract base class in `IntegratoR.Abstractions.Domain.Entities`. Inherit it and implement `GetCompositeKey()` — the key is returned as an `object[]`, so one base class serves every key shape:
+`BaseEntity` is the non-generic `abstract` class in `IntegratoR.Abstractions.Domain.Entities`. It implements `IEntity` and `IContext`, so a custom entity rarely needs either interface directly. Inherit it and override the one abstract member, `object[] GetCompositeKey()`. Because the key is an `object[]`, one base class serves every key shape:
 
 ```csharp
 public class DimensionParameters : BaseEntity
@@ -61,129 +60,121 @@ public class DimensionParameters : BaseEntity
 }
 ```
 
-`BaseEntity` implements `IEntity` and `IContext`, so custom entities almost never need to extend either interface directly.
+> [!WARNING]
+> Never inherit `BaseEntity<TKey>`. Its `TKey` parameter was never used, it is `[Obsolete]` since v1.4.0, and it is removed in the next MAJOR. Derive every new entity from the non-generic `BaseEntity`.
 
-> The older generic `BaseEntity<TKey>` is `[Obsolete]` — its `TKey` type parameter was never used (keys flow through `object[]`). It still compiles but is removed in the next MAJOR; derive new entities from the non-generic `BaseEntity`.
+## Declare the composite key
 
-## Composite Keys
-
-D365 F&O entities are almost always identified by a composite key. A journal header is keyed by `DataAreaId` + `JournalBatchNumber`. A journal line adds `LineNumber` as a third component. The pattern: mark every key property with `[Key]` and return the same fields from `GetCompositeKey()` **in the same order**:
+D365 F&O entities are almost always identified by a composite key: a header keys on `DataAreaId` + `JournalBatchNumber`, a line adds `LineNumber` as a third part. Mark every key property with `[Key]` and return the same fields from `GetCompositeKey()` in the same order:
 
 ```csharp
-public override object[] GetCompositeKey()
+public override object[] GetCompositeKey() => [DataAreaId, JournalBatchNumber!, LineNumber];
+```
+
+The order is load-bearing. The OData URL the framework builds for `GetByKeyQuery<T>`, `UpdateCommand<T>`, and `DeleteCommand<T>` zips each value to its `[Key]` property by declaration order. A mismatch between `[Key]` order and `GetCompositeKey()` order produces the wrong lookup URL.
+
+Use the null-forgiving `!` on a server-generated key part such as `JournalBatchNumber` — never `?? "null"`. A real `null` element flows through to a `Validation` failure rather than silently searching for the literal string `"null"`. Populate every key component before you send an `UpdateCommand<T>`, `DeleteCommand<T>`, or `GetByKeyQuery<T>`; a null part fails fast, before any HTTP call:
+
+```csharp
+// JournalBatchNumber left null on an Update
+Result<LedgerJournalHeader> result = await mediator.Send(new UpdateCommand<LedgerJournalHeader>(header));
+
+if (result.IsFailed)
 {
-    return [DataAreaId, JournalBatchNumber ?? "null", LineNumber];
+    IError error = result.GetError();
+    // Code: "LedgerJournalHeader.InvalidKey"
+    // Message: "Composite key element at index 1 for field 'JournalBatchNumber' was null; a null key cannot identify an entity."
+    // Type: ErrorType.Validation
 }
 ```
 
-The order is significant — the OData URL the framework builds for `GetByKeyQuery<T>` reads the array positionally. A mismatch between `[Key]` order and `GetCompositeKey()` order produces silent lookup failures.
+## Control serialisation with `[ODataField]`
 
-The `?? "null"` fallback in the example above handles entity instances built before a server-generated key is assigned. For `CreateCommand<T>` this never matters (the entity has no key yet); for `GetByKeyQuery<T>` and `UpdateCommand<T>` the caller must populate every key component before sending the request.
+`[ODataField]` decides which properties appear in the create (POST) and update (PATCH) payloads. The framework reflects on the attribute inside `ODataService<T>` and strips matching properties from the JSON body — you populate the full entity, the framework filters at serialisation time.
 
-## The `[ODataField]` Attribute
-
-`[ODataField]` controls per-property serialisation for create (POST) and update (PATCH) payloads. The two most-used flags:
-
-```csharp
-[ODataField(IgnoreOnCreate = true)]
-public string? JournalBatchNumber { get; set; }   // server-generated by D365 number sequence
-
-[ODataField(IgnoreOnUpdate = true)]
-public string CustomerAccount { get; set; } = "";   // immutable business key after creation
-
-[ODataField(IgnoreOnCreate = true, IgnoreOnUpdate = true)]
-public decimal JournalTotalDebit { get; set; }      // fully read-only, calculated by D365
-```
-
-| Flag | Effect | Typical use |
+| Property | Default | Effect |
 |---|---|---|
-| `IgnoreOnCreate = true` | Property is excluded from the POST payload | Number-sequence fields, computed totals, server defaults |
-| `IgnoreOnUpdate = true` | Property is excluded from the PATCH payload | Primary-key parts, immutable business keys, and server-computed / read-only fields |
+| `IgnoreOnCreate` | `false` | Exclude from the POST payload — number-sequence fields, server defaults |
+| `IgnoreOnUpdate` | `false` | Exclude from the PATCH payload — key parts, immutable business keys, server-computed / status fields |
+| `AllowEdit` | `true` | CSDL-derived; `false` excludes from update, same as `IgnoreOnUpdate` |
+| `AllowEditOnCreate` | `true` | CSDL-derived; `false` excludes from create, same as `IgnoreOnCreate` |
+| `IsRequired` | `false` | Marks a non-nullable D365 field; a null value on create fails with a `Validation` error |
+| `EdmType`, `Label` | `null` | Informational CSDL metadata; not used at serialisation time |
 
-The framework reads the attribute via reflection inside `ODataService<T>.AddAsync` / `UpdateAsync` and strips the matching properties from the JSON body. The consumer code can populate the full entity (including fields the server will overwrite); the framework filters at serialisation time.
-
-### Common Pitfall
-
-Setting a field marked `IgnoreOnCreate = true` and then calling `CreateCommand<T>` silently drops the value. The record creates successfully but with the server's default instead of the supplied value. When in doubt, read the entity source for the `[ODataField]` annotations before populating the entity.
-
-Conversely, if an update payload contains **any** field D365 treats as read-only on update, D365 rejects the **entire** PATCH with an `ODataSecurityException` (HTTP 403, `"update not allowed for field 'X'"`) — not just that field. This covers server-computed and status fields, not only business keys (on `LedgerJournalHeader`: `AccountingCurrency`, `IsPosted`, `JournalTotalDebit`/`JournalTotalCredit`, and `JournalName`). Mark every such field `[ODataField(IgnoreOnUpdate = true)]` so it is stripped from the PATCH body. Verified against live JFI (v2.0.1).
-
-### CSDL-Driven Annotations
-
-The `[ODataField]` attribute also carries CSDL-derived annotations populated by the code generator: `AllowEdit`, `AllowEditOnCreate`, `IsRequired`, `EdmType`, `Label`. These come from the D365 `$metadata` document and are the source of truth. The effective exclusion rule is:
+The effective exclusion combines the hand-written flag with the CSDL-derived flag:
 
 ```
-Excluded from create = IgnoreOnCreate OR AllowEditOnCreate == false
-Excluded from update = IgnoreOnUpdate OR AllowEdit          == false
+Excluded from create = IgnoreOnCreate    OR AllowEditOnCreate == false
+Excluded from update = IgnoreOnUpdate    OR AllowEdit         == false
 ```
 
-Hand-written entities can ignore the CSDL-derived properties and use the simple `IgnoreOn*` flags. Generated entities carry both — the framework respects either.
+Hand-written entities use the plain `IgnoreOn*` flags; generated entities carry the CSDL `AllowEdit*` flags as the source of truth. The framework honours either.
 
-## Property Names — `[JsonPropertyName]`
+> [!WARNING]
+> If a PATCH body contains any field D365 treats as read-only on update, D365 rejects the whole PATCH with an `ODataSecurityException` — HTTP 403, `"update not allowed for field 'X'"` — not only that field. On `LedgerJournalHeader` this covers `JournalName`, `AccountingCurrency`, `IsPosted`, `JournalTotalDebit`, and `JournalTotalCredit`. Mark every such field `[ODataField(IgnoreOnUpdate = true)]`. Verified against live D365 (JFI) on 2026-07-01.
 
-D365 F&O entity sets contain roughly 19,600 PascalCase fields and 479 camelCase legacy X++ system fields (`dataAreaId`, `recId`, `validFrom`, `validTo`, `inventDimId`, `itemId`, `custAccount`, `transDate`, …). The CLR property name should be **PascalCase by C# convention** and the wire name pinned with `[JsonPropertyName]`:
+Setting a value on a field marked `IgnoreOnCreate = true` and calling `CreateCommand<T>` drops that value: the record is created with D365's server default instead. Read the entity source for its `[ODataField]` matrix before you populate it.
+
+## Map property names with `[JsonPropertyName]`
+
+D365 F&O exposes roughly 19,600 PascalCase fields and 479 camelCase legacy X++ system fields (`dataAreaId`, `recId`, `validFrom`, `validTo`, `itemId`, `custAccount`, `transDate`, …). Declare the CLR property in PascalCase by C# convention and pin the wire name with `[JsonPropertyName]`:
 
 ```csharp
 [JsonPropertyName("dataAreaId")]   // camelCase wire name, PascalCase CLR property
 public required string DataAreaId { get; set; }
 
-[JsonPropertyName("JournalName")]  // PascalCase both sides — common case
+[JsonPropertyName("JournalName")]  // PascalCase both sides — the common case
 public required string JournalName { get; set; }
 ```
 
-The IntegratoR LINQ-to-OData translator **honours `[JsonPropertyName]` in filter, select, and expand expressions** (since v1.3.3). A predicate like `h => h.DataAreaId == "USMF"` correctly emits `$filter=dataAreaId eq 'USMF'` against D365. Without the attribute, the translator would emit `DataAreaId eq 'USMF'` and D365 would respond with *"Could not find a property named 'DataAreaId'"*.
+The IntegratoR LINQ-to-OData translator honours `[JsonPropertyName]` in filter, select, expand, and `$orderby` expressions. A predicate `h => h.DataAreaId == "USMF"` emits `$filter=dataAreaId eq 'USMF'`. Without the attribute the translator would emit `DataAreaId eq 'USMF'` and D365 would answer *"Could not find a property named 'DataAreaId'"*. Never write raw OData filter strings — use typed LINQ throughout (see [Run Queries](Run-Queries)).
 
-This applies to nested navigation paths as well:
+## Declare enum properties
 
-```csharp
-[JsonPropertyName("nestedNav")]
-public Nested? NavigationProperty { get; set; }
-
-// usage:
-h => h.NavigationProperty!.Name == "X"
-// emits: $filter=nestedNav/Name eq 'X'
-```
-
-## Enum Properties
-
-D365 enums are exposed by the OData service as **string-valued** members (e.g. `"PostingLayer": "Current"`). Declare the property as a CLR enum and let the System.Text.Json `JsonStringEnumConverter` (registered globally by `AddIntegratoR`) handle the round-trip:
+D365 enums arrive as string-valued members over OData (`"PostingLayer": "Current"`). Declare a CLR enum property and let the global `JsonStringEnumConverter`, registered by `AddIntegratoR`, round-trip it:
 
 ```csharp
 [JsonPropertyName("PostingLayer")]
 public virtual CurrentOperationsTax PostingLayer { get; set; }
 
 [JsonPropertyName("IsPosted")]
+[ODataField(IgnoreOnUpdate = true)]
 public virtual NoYes IsPosted { get; set; }
 ```
 
-LINQ predicates against enum properties emit the qualified-type form D365 requires:
+The filter translator emits the qualified-type form D365 requires for enum comparisons, in both top-level predicates and `Any`/`All` lambda bodies:
 
 ```csharp
 h => h.IsPosted == NoYes.Yes
 // emits: $filter=IsPosted eq Microsoft.Dynamics.DataEntities.NoYes'Yes'
 ```
 
-The qualified-type form is generated automatically by the filter translator (since v1.3.5) — for constant-literal enum comparisons in both top-level predicates and `Any`/`All` lambda bodies.
+## Shipped entities
 
-## Built-in Entities
+`IntegratoR.OData.FO` bundles two ready-made entities for the general-ledger journal flow. Read the source under `IntegratoR.OData.FO/Domain/Entities/LedgerJournal/` for the full attribute matrix.
 
-`IntegratoR.OData.FO` ships with two ready-made entities for the general-ledger journal flow:
-
-| Entity | Composite key | Notable fields |
+| Entity | Table | Composite key |
 |---|---|---|
-| `LedgerJournalHeader` | `(DataAreaId, JournalBatchNumber)` | `JournalName`, `Description`, `IntegrationKey`, `PostingLayer`, `IsPosted`, `JournalTotalDebit/Credit`, `AccountingCurrency` |
-| `LedgerJournalLine` | `(DataAreaId, JournalBatchNumber, LineNumber)` | account fields, amounts (`DebitAmount`/`CreditAmount`), dimensions, tax, payment fields |
+| `LedgerJournalHeader` | `LedgerJournalHeaders` | `(DataAreaId, JournalBatchNumber)` |
+| `LedgerJournalLine` | `LedgerJournalLines` | `(DataAreaId, JournalBatchNumber, LineNumber)` |
 
-`LedgerJournalLine` has many fields marked `[ODataField(IgnoreOnCreate = true)]` because they are server-populated (`AccountDisplayValue`, `LineNumber`, `TransDate`, …). A minimal create needs `DataAreaId`, `JournalBatchNumber`, `DebitAmount`, `CreditAmount`, and `CurrencyCode`. Read the source under `IntegratoR.OData.FO/Domain/Entities/LedgerJournal/` for the full attribute matrix.
+`LedgerJournalHeader` write flags:
 
-`IntegratoR.OData.FO.Domain.Entities.Dimensions` also ships `DimensionIntegrationFormat` and `DimensionParameters` — these power the [Work with Dimensions](Work-with-Dimensions) recipes.
+| Field | Wire name | Flags |
+|---|---|---|
+| `DataAreaId` | `dataAreaId` | `IsRequired` |
+| `JournalBatchNumber` | `JournalBatchNumber` | `IgnoreOnCreate` |
+| `JournalName` | `JournalName` | required, `IgnoreOnUpdate` |
+| `Description` | `Description` | required |
+| `IsPosted` | `IsPosted` | `IgnoreOnUpdate` |
+| `JournalTotalDebit` / `JournalTotalCredit` | same | `IgnoreOnUpdate` |
+| `AccountingCurrency` | `AccountingCurrency` | `IgnoreOnUpdate` |
 
-## Extend a Built-in Entity
+`LedgerJournalLine` marks its `LineNumber` key `IgnoreOnCreate` (server-assigned) and around two dozen further fields `IgnoreOnCreate`. Note `TransactionText` maps to the wire name `Text`. A minimal create needs `DataAreaId`, `JournalBatchNumber`, `AccountDisplayValue`, `AccountType`, `DebitAmount`, `CreditAmount`, `CurrencyCode`, and `TransDate`; the required amount and currency fields carry `IsRequired`.
 
-The shipped `LedgerJournalHeader` and `LedgerJournalLine` entities are designed to be subclassed. Extend one when you need to:
+## Extend a shipped entity
 
-- **add a field** D365 exposes on the entity set that the built-in class does not declare, or
-- **override an `[ODataField]` flag** that is wrong for your use case — for example a field marked `IgnoreOnCreate = true` that your integration must actually send.
+Subclass `LedgerJournalHeader` or `LedgerJournalLine` to add a field D365 exposes but the built-in class omits, or to override an `[ODataField]` flag that is wrong for your integration:
 
 ```csharp
 using System.Text.Json.Serialization;
@@ -193,15 +184,14 @@ using IntegratoR.OData.FO.Domain.Enums.LedgerJournals;
 
 namespace MyProject.Domain.Entities;
 
-// No [Table] needed — it is inherited from LedgerJournalLine.
+// No [Table] needed — inherited from LedgerJournalLine.
 public class MyLedgerJournalLine : LedgerJournalLine
 {
-    // 1. Add a field the built-in entity does not declare.
+    // Add a field the built-in entity does not declare.
     [JsonPropertyName("CustomReference")]
     public string? CustomReference { get; set; }
 
-    // 2. Override an attribute that is wrong for your use case.
-    //    Re-declare the attribute — overriding the property alone is not enough.
+    // Override a flag by re-declaring the attribute on the overriding property.
     [ODataField(IgnoreOnCreate = false)]
     [JsonPropertyName("AccountType")]
     public override LedgerJournalACType AccountType { get; set; }
@@ -210,24 +200,24 @@ public class MyLedgerJournalLine : LedgerJournalLine
 
 Three rules make this work:
 
-1. **`[Table]` is inherited.** A subclass targeting the same D365 entity set needs no `[Table]` — the resolver reads it from `typeof(TEntity)` with attribute inheritance, so the base mapping applies. Re-declare `[Table("…")]` only to point the subclass at a *different* entity set. (Inherited `[Key]` attributes and `GetCompositeKey()` carry over the same way — override `GetCompositeKey()` only if the key shape changes.)
-2. **Re-declare the attribute, not just the property.** `ODataFieldAttribute` is `Inherited = true`, so overriding a property *without* re-applying `[ODataField]` keeps the base flag. Re-declaring with the corrected value wins because the attribute is `AllowMultiple = false` and the payload builder reflects on the **runtime type** of the instance.
-3. **The property must be `virtual`.** Every `LedgerJournalLine` and `LedgerJournalHeader` field is virtual except the server-generated `LineNumber` / `JournalBatchNumber` keys — which you never override anyway. `new`-shadowing a non-virtual property is unsafe: reflection then sees both the base and the shadowed property and emits a duplicate wire field.
+1. `[Table]`, `[Key]`, and `GetCompositeKey()` are inherited. A subclass targeting the same entity set needs none of them. Re-declare `[Table("…")]` only to point the subclass at a different set, and override `GetCompositeKey()` only if the key shape changes.
+2. Re-declare the attribute, not only the property. `ODataFieldAttribute` is `Inherited = true` and `AllowMultiple = false`, so overriding a property without re-applying `[ODataField]` keeps the base flag; re-declaring it with the corrected value wins because the payload builder reflects on the instance's runtime type.
+3. The overridden property must be `virtual`. Every shipped field is `virtual` except the server-assigned `LineNumber` / `JournalBatchNumber` keys, which you never override. `new`-shadowing a non-virtual property makes reflection see both properties and emit a duplicate wire field.
 
-### Register the Extended Entity with MediatR
+### Register the extended entity
 
-Subclassing alone does **not** make `mediator.Send(new CreateCommand<MyLedgerJournalLine>(...))` work — the framework's generic handlers must be closed over your entity type. Hand the assembly that holds your extended entities to `AddConsumerHandlers(...)`; `AddIntegratoR` folds it into the same `RegisterGenericHandlers = true` scan it uses for the framework's own entities:
+Subclassing alone does not make `mediator.Send(new CreateCommand<MyLedgerJournalLine>(...))` work — the generic handlers, validators, and service must close over your type. Hand the assembly holding your entities to `AddConsumerHandlers`; `AddIntegratoR` folds it into the same scan it runs for the framework's own entities:
 
 ```csharp
 services.AddIntegratoR(configuration, integrator =>
     integrator.AddConsumerHandlers(typeof(MyLedgerJournalLine).Assembly));
 ```
 
-That single call closes the full generic surface — `CreateCommand<T>`, `UpdateCommand<T>`, `DeleteCommand<T>`, `GetByKeyQuery<T>`, `GetByFilterQuery<T>` — over `MyLedgerJournalLine`, and also registers its FluentValidation validators. The service layer (`IService<MyLedgerJournalLine>`) needs no extra wiring — it is an open-generic registration that closes against any type. See [Troubleshoot Common Issues](Troubleshoot-Common-Issues#extending-the-framework).
+That one call closes the full generic surface — `CreateCommand<T>`, `UpdateCommand<T>`, `DeleteCommand<T>`, `GetByKeyQuery<T>`, `GetByFilterQuery<T>` — over `MyLedgerJournalLine` and registers its FluentValidation validators.
 
 ## See Also
 
-- [Send Commands](Send-Commands) — use the entity in Create / Update / Delete operations
-- [Run Queries](Run-Queries) — GetByKey uses the composite key, GetByFilter uses the LINQ-to-OData translator
-- [Work with Dimensions](Work-with-Dimensions) — `DimensionIntegrationFormat` and `DimensionParameters` entities
-- [Troubleshoot Common Issues](Troubleshoot-Common-Issues#extending-the-framework) — errors when extending or registering custom entities
+- [Send Commands](Send-Commands) — create, update, and delete the entity via `IMediator`
+- [Run Queries](Run-Queries) — read by composite key or by a typed LINQ filter
+- [Work with Dimensions](Work-with-Dimensions) — the dimension entities and their format
+- [Troubleshoot Common Issues](Troubleshoot-Common-Issues) — errors when extending or registering custom entities
