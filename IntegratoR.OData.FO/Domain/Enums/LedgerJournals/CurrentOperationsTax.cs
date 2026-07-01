@@ -1,10 +1,7 @@
 namespace IntegratoR.OData.FO.Domain.Enums.LedgerJournals;
 
 /// <summary>
-/// Defines the posting layer for a financial transaction in Dynamics 365 Finance and Operations.
-/// Posting layers enable the creation of parallel accounting entries for a single business event, which is
-/// essential for different accounting standards or reporting purposes (e.g., local GAAP vs. IFRS).
-/// This enumeration corresponds to the 'CurrentOperationsTax' base enum in X++.
+/// Defines the posting layer for a financial transaction in D365 F&amp;O, enabling parallel accounting entries for a single business event, and maps to the <c>CurrentOperationsTax</c> X++ base enum.
 /// </summary>
 public enum CurrentOperationsTax
 {
@@ -34,37 +31,37 @@ public enum CurrentOperationsTax
     WarehouseCur_RU = 17,
 
     /// <summary>
-    /// Represents the first user-definable custom posting layer, configurable within D365 F&O.
+    /// Represents the first user-definable custom posting layer, configurable within D365 F&amp;O.
     /// </summary>
     CustomLayer1 = 18,
 
     /// <summary>
-    /// Represents the second user-definable custom posting layer, configurable within D365 F&O.
+    /// Represents the second user-definable custom posting layer, configurable within D365 F&amp;O.
     /// </summary>
     CustomLayer2 = 19,
 
     /// <summary>
-    /// Represents the third user-definable custom posting layer, configurable within D365 F&O.
+    /// Represents the third user-definable custom posting layer, configurable within D365 F&amp;O.
     /// </summary>
     CustomLayer3 = 20,
 
     /// <summary>
-    /// Represents the fourth user-definable custom posting layer, configurable within D365 F&O.
+    /// Represents the fourth user-definable custom posting layer, configurable within D365 F&amp;O.
     /// </summary>
     CustomLayer4 = 21,
 
     /// <summary>
-    /// Represents the fifth user-definable custom posting layer, configurable within D365 F&O.
+    /// Represents the fifth user-definable custom posting layer, configurable within D365 F&amp;O.
     /// </summary>
     CustomLayer5 = 22,
 
     /// <summary>
-    /// Represents the sixth user-definable custom posting layer, configurable within D365 F&O.
+    /// Represents the sixth user-definable custom posting layer, configurable within D365 F&amp;O.
     /// </summary>
     CustomLayer6 = 23,
 
     /// <summary>
-    /// Represents the seventh user-definable custom posting layer, configurable within D365 F&O.
+    /// Represents the seventh user-definable custom posting layer, configurable within D365 F&amp;O.
     /// </summary>
     CustomLayer7 = 24
 }

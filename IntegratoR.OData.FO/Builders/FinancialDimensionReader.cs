@@ -5,10 +5,8 @@ using IntegratoR.OData.FO.Domain.Models.FinancialDimensions;
 namespace IntegratoR.OData.FO.Builders;
 
 /// <summary>
-/// Parses formatted financial dimension strings back into named segment values.
-/// This is the inverse of <see cref="FinancialDimensionBuilder"/> — given a dimension string
-/// like "BU01--CC002" and its <see cref="DimensionFormat"/>, it produces a dictionary mapping
-/// each segment name to its value (including empty strings for omitted segments).
+/// Provides the inverse of <see cref="FinancialDimensionBuilder"/>, parsing a formatted dimension
+/// string back into a dictionary mapping each segment name to its value.
 /// </summary>
 /// <example>
 /// <code>

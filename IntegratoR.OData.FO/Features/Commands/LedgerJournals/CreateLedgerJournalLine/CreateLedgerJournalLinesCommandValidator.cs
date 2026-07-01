@@ -3,21 +3,13 @@ using IntegratoR.OData.FO.Domain.Entities.LedgerJournal;
 
 namespace IntegratoR.OData.FO.Features.Commands.LedgerJournals.CreateLedgerJournalLine;
 
-/// <summary>
-/// Thin derived validator that re-applies the generic <c>CreateBatchCommand</c> baseline rules
-/// (entities not null, not empty) under the concrete batch command's closed type
-/// (<c>IValidator&lt;CreateLedgerJournalLinesCommand&lt;TEntity&gt;&gt;</c>).
-///
-/// NOTE: currently dormant in the MediatR pipeline — FluentValidation's
-/// <c>AddValidatorsFromAssembly</c> cannot register open-generic validators (see
-/// <c>ServiceCollectionExtensions.cs</c> step 6). Unit-tested directly in
-/// <c>GenericValidatorReuseTests</c>; will fire once a closed-generic validator-registration
-/// mechanism is added.
-/// </summary>
+/// <summary>Validates that <see cref="CreateLedgerJournalLinesCommand{TEntity}"/> carries a non-null, non-empty entity collection.</summary>
+/// <typeparam name="TEntity">The <see cref="LedgerJournalLine"/> type being created.</typeparam>
 public sealed class CreateLedgerJournalLinesCommandValidator<TEntity>
     : AbstractValidator<CreateLedgerJournalLinesCommand<TEntity>>
     where TEntity : LedgerJournalLine
 {
+    /// <summary>Initializes a new instance of the <see cref="CreateLedgerJournalLinesCommandValidator{TEntity}"/> class.</summary>
     public CreateLedgerJournalLinesCommandValidator()
     {
         RuleFor(x => x.Entities)

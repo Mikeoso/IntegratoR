@@ -1,10 +1,7 @@
 namespace IntegratoR.OData.FO.Domain.Enums.Dimensions;
 
 /// <summary>
-/// Defines the different types of dimension hierarchies and validation structures used in Dynamics 365 Finance and Operations.
-/// This enumeration corresponds directly to the 'DimensionHierarchyType' base enum in X++ and is fundamental for
-/// dimension-related development and integration. It determines which validation rules, storage patterns, and account
-/// structures are applied to a set of financial dimensions.
+/// Defines the dimension hierarchy and validation structures used in D365 F&amp;O, mapping to the <c>DimensionHierarchyType</c> X++ base enum.
 /// </summary>
 public enum DimensionHierarchyType
 {

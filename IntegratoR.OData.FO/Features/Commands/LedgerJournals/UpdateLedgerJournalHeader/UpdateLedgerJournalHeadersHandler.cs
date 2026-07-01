@@ -13,12 +13,14 @@ public class UpdateLedgerJournalHeadersHandler<TEntity> : IRequestHandler<Update
     private readonly ILogger<UpdateLedgerJournalHeadersHandler<TEntity>> _logger;
     private readonly IODataBatchService<TEntity> _service;
 
+    /// <summary>Initializes a new instance of the <see cref="UpdateLedgerJournalHeadersHandler{TEntity}"/> class.</summary>
     public UpdateLedgerJournalHeadersHandler(ILogger<UpdateLedgerJournalHeadersHandler<TEntity>> logger, IODataBatchService<TEntity> service)
     {
         _logger = logger;
         _service = service;
     }
 
+    /// <inheritdoc/>
     public async Task<Result> Handle(UpdateLedgerJournalHeadersCommand<TEntity> request, CancellationToken cancellationToken)
     {
         _logger.LogInformation("Updating Ledger Journal Headers in batch...");

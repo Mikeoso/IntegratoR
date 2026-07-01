@@ -6,13 +6,13 @@ using Microsoft.Extensions.DependencyInjection;
 namespace IntegratoR.OData.FO.Common.Extensions;
 
 /// <summary>
-/// Provides extension methods for <see cref="IServiceCollection"/> to configure and register
-/// the necessary services for the D365 Finance & Operations OData client proxy.
+/// Provides extension methods for <see cref="IServiceCollection"/> that register the D365
+/// Finance &amp; Operations OData client proxy services.
 /// </summary>
 internal static class ApplicationDependencyInjection
 {
     /// <summary>
-    /// Adds and configures the D365 F&O OData client services using application configuration.
+    /// Adds and configures the D365 F&amp;O OData client services using application configuration.
     /// </summary>
     /// <param name="services">The <see cref="IServiceCollection"/> to add the services to.</param>
     /// <param name="configuration">The application's <see cref="IConfiguration"/> instance.</param>
@@ -25,10 +25,10 @@ internal static class ApplicationDependencyInjection
     }
 
     /// <summary>
-    /// Adds and configures the D365 F&O OData client services using a configuration delegate.
+    /// Adds and configures the D365 F&amp;O OData client services using a configuration delegate.
     /// </summary>
     /// <param name="services">The <see cref="IServiceCollection"/> to add the services to.</param>
-    /// <param name="foSettings">An <see cref="Action{FOSettings}"/> to configure the F&O settings.</param>
+    /// <param name="foSettings">An <see cref="Action{FOSettings}"/> to configure the F&amp;O settings.</param>
     /// <returns>The <see cref="IServiceCollection"/> so that additional calls can be chained.</returns>
     public static IServiceCollection AddODataClientFOProxy(this IServiceCollection services, Action<FOSettings> foSettings)
     {
@@ -44,7 +44,6 @@ internal static class ApplicationDependencyInjection
     /// <returns>The <see cref="IServiceCollection"/> so that additional calls can be chained.</returns>
     private static IServiceCollection AddODataDependenciesFOProxy(this IServiceCollection services)
     {
-        // Register all MediatR handlers
         services.AddMediatR(cfg =>
         {
             cfg.RegisterGenericHandlers = true;

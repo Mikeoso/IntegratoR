@@ -12,12 +12,20 @@ using Microsoft.Extensions.Logging;
 
 namespace IntegratoR.OData.FO.Features.Queries.Dimensions.GetDimensionOrder;
 
+/// <summary>
+/// Handles <see cref="GetDimensionOrdersQuery"/> by resolving the active D365 F&amp;O dimension
+/// format that matches the requested format name and hierarchy type, then returning its ordered
+/// segments and delimiter.
+/// </summary>
 public class GetDimensionOrdersQueryHandler : IRequestHandler<GetDimensionOrdersQuery, Result<DimensionFormat>>
 {
     private readonly ILogger<GetDimensionOrdersQueryHandler> _logger;
     private readonly IODataService<DimensionParameters> _dimensionParametersService;
     private readonly IService<DimensionIntegrationFormat> _dimensionIntegrationFormatService;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="GetDimensionOrdersQueryHandler"/> class.
+    /// </summary>
     public GetDimensionOrdersQueryHandler(ILogger<GetDimensionOrdersQueryHandler> logger, IODataService<DimensionParameters> dimensionParametersService, IService<DimensionIntegrationFormat> dimensionIntegrationFormatService)
     {
         _logger = logger;
@@ -25,6 +33,17 @@ public class GetDimensionOrdersQueryHandler : IRequestHandler<GetDimensionOrders
         _dimensionIntegrationFormatService = dimensionIntegrationFormatService;
     }
 
+    /// <summary>
+    /// Resolves the active dimension format matching the requested name and hierarchy type and
+    /// returns its ordered segments and delimiter.
+    /// </summary>
+    /// <param name="request">The query specifying the dimension format name and hierarchy type.</param>
+    /// <param name="cancellationToken">A token that cancels the outbound OData requests.</param>
+    /// <returns>
+    /// A successful <see cref="Result{T}"/> containing the resolved <see cref="DimensionFormat"/>;
+    /// a failed result with <c>ErrorType.NotFound</c> when the singleton parameter row is missing,
+    /// or the underlying errors when a lookup fails.
+    /// </returns>
     public async Task<Result<DimensionFormat>> Handle(GetDimensionOrdersQuery request, CancellationToken cancellationToken)
     {
         var dimensionFormatName = request.DimensionFormat;

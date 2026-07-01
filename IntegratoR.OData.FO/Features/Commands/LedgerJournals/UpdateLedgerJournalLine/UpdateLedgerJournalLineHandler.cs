@@ -13,12 +13,14 @@ public class UpdateLedgerJournalLineHandler<TEntity> : IRequestHandler<UpdateLed
     private readonly ILogger<UpdateLedgerJournalLineHandler<TEntity>> _logger;
     private readonly IService<TEntity> _service;
 
+    /// <summary>Initializes a new instance of the <see cref="UpdateLedgerJournalLineHandler{TEntity}"/> class.</summary>
     public UpdateLedgerJournalLineHandler(ILogger<UpdateLedgerJournalLineHandler<TEntity>> logger, IService<TEntity> service)
     {
         _logger = logger;
         _service = service;
     }
 
+    /// <inheritdoc/>
     public async Task<Result<TEntity>> Handle(UpdateLedgerJournalLineCommand<TEntity> request, CancellationToken cancellationToken)
     {
         _logger.LogInformation("Updating Ledger Journal Line with Journal Number: {JournalBatchNumber} and Line Number: {LineNumber} in Company {Company}",

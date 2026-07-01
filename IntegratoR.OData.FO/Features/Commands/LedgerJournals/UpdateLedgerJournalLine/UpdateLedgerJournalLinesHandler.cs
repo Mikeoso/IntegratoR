@@ -13,12 +13,14 @@ namespace IntegratoR.OData.FO.Features.Commands.LedgerJournals.UpdateLedgerJourn
         private readonly ILogger<UpdateLedgerJournalLinesHandler<TEntity>> _logger;
         private readonly IODataBatchService<TEntity> _service;
 
+        /// <summary>Initializes a new instance of the <see cref="UpdateLedgerJournalLinesHandler{TEntity}"/> class.</summary>
         public UpdateLedgerJournalLinesHandler(ILogger<UpdateLedgerJournalLinesHandler<TEntity>> logger, IODataBatchService<TEntity> service)
         {
             _logger = logger;
             _service = service;
         }
 
+        /// <inheritdoc/>
         public async Task<Result> Handle(UpdateLedgerJournalLinesCommand<TEntity> request, CancellationToken cancellationToken)
         {
             _logger.LogInformation("Updating Ledger Journal Lines in batch...");

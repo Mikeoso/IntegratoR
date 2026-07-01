@@ -8,41 +8,40 @@ using IntegratoR.OData.FO.Domain.Enums.General;
 namespace IntegratoR.OData.FO.Domain.Entities.Dimensions;
 
 /// <summary>
-/// Represents a configuration for formatting and parsing financial dimension strings in an integration context.
-/// This entity is typically a custom or helper entity used to define how segmented dimension strings 
-/// (e.g., "618160-001-023") should be constructed or deconstructed, mapping them to the correct dimension format in D365 F&O.
+/// Represents a configuration for formatting and parsing segmented financial dimension strings for integration with D365 F&amp;O.
 /// </summary>
 [Table("DimensionIntegrationFormats")]
 public class DimensionIntegrationFormat : BaseEntity
 {
     /// <summary>
-    /// The unique name of the dimension format configuration. This serves as the primary identifier for the record.
+    /// Gets or sets the unique name of the dimension format configuration. Part of the composite key.
     /// </summary>
     [Key]
     [JsonPropertyName("DimensionFormatName")]
     public required string DimensionFormatName { get; set; }
 
     /// <summary>
-    /// The type of dimension hierarchy this format applies to, such as 'Dimension combination' or 'Ledger dimension format'.
-    /// This determines the validation and structure rules used in D365 F&O.
+    /// Gets or sets the dimension hierarchy type this format applies to, determining the D365 F&amp;O validation and structure rules. Part of the composite key.
     /// </summary>
     [Key]
     [JsonPropertyName("DimensionFormatType")]
     public DimensionHierarchyType DimensionFormatType { get; set; }
 
     /// <summary>
-    /// A string defining the structure of the financial dimensions, typically using placeholders or dimension names.
-    /// Example: "MainAccount-BusinessUnit-Department". This structure is used to correctly parse and build the dimension display value.
+    /// Gets or sets the structure of the financial dimensions, for example <c>MainAccount-BusinessUnit-Department</c>.
     /// </summary>
     [JsonPropertyName("FinancialDimensionFormat")]
     public virtual string? FinancialDimensionFormat { get; set; }
 
     /// <summary>
-    /// Indicates whether this dimension format configuration is currently active and can be used by the integration.
+    /// Gets or sets a value indicating whether this dimension format configuration is active.
     /// </summary>
     [JsonPropertyName("IsActive")]
     public virtual NoYes IsActive { get; set; }
 
+    /// <summary>
+    /// Gets the composite key formed from <see cref="DimensionFormatName"/> and <see cref="DimensionFormatType"/>.
+    /// </summary>
     public override object[] GetCompositeKey()
     {
         return [DimensionFormatName, DimensionFormatType];

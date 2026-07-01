@@ -13,12 +13,14 @@ public class CreateLedgerJournalHeaderHandler<TEntity> : IRequestHandler<CreateL
     private readonly ILogger<CreateLedgerJournalHeaderHandler<TEntity>> _logger;
     private readonly IService<TEntity> _service;
 
+    /// <summary>Initializes a new instance of the <see cref="CreateLedgerJournalHeaderHandler{TEntity}"/> class.</summary>
     public CreateLedgerJournalHeaderHandler(ILogger<CreateLedgerJournalHeaderHandler<TEntity>> logger, IService<TEntity> service)
     {
         _logger = logger;
         _service = service;
     }
 
+    /// <inheritdoc/>
     public async Task<Result<TEntity>> Handle(CreateLedgerJournalHeaderCommand<TEntity> request, CancellationToken cancellationToken)
     {
         _logger.LogInformation("Creating a new Ledger Journal Header in F&O with Journal Name: {JournalName} in Company: {Company}",
