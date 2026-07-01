@@ -6,17 +6,19 @@ IntegratoR packages follow [Semantic Versioning](https://semver.org/) — `MAJOR
 
 | Trigger | Version produced | NuGet listing |
 |---|---|---|
-| Push to `main` (every PR squash-merge) | `1.X.Y-ci.N` pre-release | Pre-release, hidden by default in NuGet UI |
-| Manual workflow dispatch with `release: true` | `1.X.Y` stable | Stable, shown by default |
+| Push to `main` (every PR squash-merge) | `X.Y.Z-ci.N` pre-release | Pre-release, hidden by default in NuGet UI |
+| Manual workflow dispatch with `release: true` | `X.Y.Z` stable | Stable, shown by default |
 
-Both publish to `nuget.org`. Consumers pinning `1.3.5` pick up the stable version; consumers using a `*-*` range will see the latest pre-release. Choose the pin shape according to risk tolerance.
+Both publish to `nuget.org`. Consumers pinning an exact version (e.g. `2.0.0`) pick up the stable version; consumers using a `*-*` range will see the latest pre-release. Choose the pin shape according to risk tolerance.
 
-> **GitVersion defaults to PATCH bumps.** Conventional-commit prefixes (`feat:`, `fix:`, `chore:`) are **not** honoured for bump detection in the current `GitVersion.yml` configuration. Every merge produces a PATCH bump (1.3.4 → 1.3.5 → 1.3.6, ...). To force a MINOR or MAJOR bump, either include `+semver: minor` / `+semver: major` in the merge commit message, or bump `next-version:` in `GitVersion.yml` before merging.
+> **GitVersion defaults to PATCH bumps.** Conventional-commit prefixes (`feat:`, `fix:`, `chore:`) are **not** honoured for bump detection in the current `GitVersion.yml` configuration. Every merge produces a PATCH bump (2.0.0 → 2.0.1 → 2.0.2, ...). To force a MINOR or MAJOR bump, either include `+semver: minor` / `+semver: major` in the merge commit message, or bump `next-version:` in `GitVersion.yml` before merging.
 
 ## Released Versions
 
 | Version | Date | Highlights |
 |---|---|---|
+| v2.0.1 | next release | Composite-key write hardening from the live 2026-07-01 JFI run: `ODataService.UpdateAsync` returns the written entity when a composite-key PATCH comes back `204 No Content`; `LedgerJournalHeader` read-only fields (`JournalName`, `AccountingCurrency`, `IsPosted`, `JournalTotalDebit/Credit`) are now `[ODataField(IgnoreOnUpdate = true)]` so D365 no longer rejects the PATCH with an `ODataSecurityException`; the smoke trigger no longer crashes on a null success value. Generic command validation now runs through the MediatR pipeline (a null command / empty batch / empty composite key short-circuits with a Validation failure). |
+| v2.0.0 | 2026-06-30 | **Breaking** — architecture-review fix series (PRs #131–135). Composite-key **write** support (Update / Delete / batch) via an owned raw-`HttpClient` bypass in `ODataClientAdapter`. Strongly-typed `$orderby`. `ODataSettingsValidator` (`IValidateOptions` + `ValidateOnStart`). `IBatchService<T>` + generic batch handlers. 401/403 and OAuth-failure `ReasonPhrase`/message no longer leak MSAL/tenant detail. `FindEntriesAsync` gained an `orderBy` parameter; batch commands take `IReadOnlyList<T>`; `GetDimensionOrdersQuery` params PascalCased. `BaseEntity<TKey>`, `IODataService.FindAll`, `ODataBatchException`, `ICacheableQuery.GenerateCacheKey`/`GetCacheKeyValues`, `ODataMetadataProvider` deprecated. RELion module removed. |
 | v1.3.5 | 2026-05-13 | FinancialDimension smoke test + dimension query fixes (PR #104). Enum-constant qualified-type form in lambda bodies. `DimensionParameters.Key` `string → int`. `DimensionIntegrationFormat` table-name plural fix. |
 | v1.3.4 | 2026-04-15 | Smoke-test framework fixes (PR #92): MediatR cross-assembly handler closing, BaseAddress trailing-slash normalisation, ExceptionHandler 404 observability, `CurrencyCode` payload fix on `LedgerJournalLine`. |
 | v1.3.3 | (in series with PR #86) | `[JsonPropertyName]`-aware OData filter / select / expand translator (PR #86). camelCase wire names now honoured throughout the LINQ path. |

@@ -8,8 +8,10 @@ Both triggers are part of the open-source sample project — clone the repositor
 
 | Trigger | Route | Operations | Side effects |
 |---|---|---|---|
-| `LedgerJournalSmokeTestTrigger` | `POST /api/smoke/ledger-journal` | Create → Get → Filter → Update → Delete on `LedgerJournalHeader` and `LedgerJournalLine` | Creates a real journal in D365; best-effort cleanup |
+| `LedgerJournalSmokeTestTrigger` | `POST /api/smoke/ledger-journal` | Create → Get → Filter → Update → Delete on `LedgerJournalHeader` and `LedgerJournalLine` | Creates a real journal in D365; deletes it again on the same run — self-cleaning, no orphan left behind |
 | `FinancialDimensionSmokeTestTrigger` | `POST /api/smoke/financial-dimensions` | `GetDimensionOrdersQuery` (one MediatR `Send` that chains two D365 reads) | **None** — read-only, safe to run repeatedly |
+
+Both triggers use `AuthorizationLevel.Function`. Running locally with `func start` no host key is required; once deployed to Azure they need a function/host key (`?code=<key>` or the `x-functions-key` header).
 
 The financial-dimension trigger is the recommended first run: it is read-only, depends on no company context, and verifies authentication + OData + the `[JsonPropertyName]` filter translator in one round-trip.
 
@@ -110,7 +112,7 @@ A failed response surfaces the `IntegrationError` per step:
 
 ## LedgerJournal Smoke Test
 
-The journal smoke test exercises the write path — composite-key creation, payload field exclusion via `[ODataField]`, balanced debit/credit line creation, update, and cleanup.
+The journal smoke test exercises the full write path end to end — composite-key creation, payload field exclusion via `[ODataField]`, balanced debit/credit line creation, **composite-key Update and Delete**, and re-read verification that each write landed. It was verified green against a live D365 (JFI) sandbox on 2026-07-01: the complete create → update → delete → verify-gone cycle passed and self-cleaned with no orphan record.
 
 ```bash
 curl -s -X POST http://localhost:7123/api/smoke/ledger-journal \
@@ -125,21 +127,27 @@ curl -s -X POST http://localhost:7123/api/smoke/ledger-journal \
      }'
 ```
 
-The trigger runs seven steps in order:
+The trigger runs the full ordered write-and-verify chain:
 
-| # | Step | What it proves |
-|---|---|---|
-| 1 | Create header | `CreateCommand<LedgerJournalHeader>` payload exclusion for `JournalBatchNumber` |
-| 2 | Get by composite key | `GetByKeyQuery<LedgerJournalHeader>` composite-key construction |
-| 3 | Filter by `dataAreaId` | `GetByFilterQuery` and the `[JsonPropertyName]`-aware filter translator |
-| 4 | Create debit line | `CreateCommand<LedgerJournalLine>` with the required `CurrencyCode` |
-| 5 | Create credit line | Same path, second line |
-| 6 | Filter lines by `dataAreaId` | Translator against `LedgerJournalLine` |
-| 7 | Cleanup (best effort) | Delete the lines and the header |
+| Step | What it proves |
+|---|---|
+| `CreateHeader` | `CreateCommand<LedgerJournalHeader>` payload exclusion for `JournalBatchNumber` |
+| `GetHeaderByKey` | `GetByKeyQuery<LedgerJournalHeader>` composite-key construction |
+| `FilterHeaderByDataAreaId` | `GetByFilterQuery` and the `[JsonPropertyName]`-aware filter translator |
+| `CreateDebitLine` | `CreateCommand<LedgerJournalLine>` with the required `CurrencyCode` |
+| `CreateCreditLine` | Same path, second line |
+| `FilterLinesByDataAreaId` | Translator against `LedgerJournalLine` |
+| `UpdateHeader` | `UpdateCommand<LedgerJournalHeader>` composite-key **PATCH** via the owned bypass |
+| `VerifyHeaderUpdated` | Re-reads the header by composite key and confirms the new `Description` |
+| `UpdateLine` | `UpdateCommand<LedgerJournalLine>` composite-key PATCH on the line |
+| `VerifyLineUpdated` | Re-reads the line and confirms the updated `TransactionText` |
+| `DeleteLine[…]` | `DeleteCommand<LedgerJournalLine>` composite-key **DELETE** per line |
+| `DeleteHeader` | `DeleteCommand<LedgerJournalHeader>` composite-key DELETE |
+| `VerifyHeaderDeleted` | Re-reads the header; a `NotFound` result confirms the delete landed |
 
 The response is the same per-step JSON shape as the financial-dimensions trigger.
 
-> Step 7 (cleanup delete) currently has a known limitation — composite-key Update/Delete writes go through a code path with a parked PanoramicData issue. The cleanup step reports success in the response but logs a `Warning` line on the host saying the delete may not have happened. The created journal stays in the D365 sandbox until manually removed via the UI. See [Known Limitations](Known-Limitations#composite-key-write-path) for the parked workaround.
+Composite-key Update and Delete run through the owned raw-`HttpClient` bypass in `ODataClientAdapter` (shipped in v2.0.0) — it builds the keyed URL manually, e.g. `LedgerJournalHeaders(dataAreaId='1210',JournalBatchNumber='LNR0000300')`, through the named `"ODataClient"` client so the write carries the same auth, Polly resilience, and `BaseAddress` as every other request. Because the chain deletes everything it creates and verifies the header is gone, a green run leaves no record behind.
 
 ## Diagnosing a Failed Smoke Test
 
@@ -161,7 +169,7 @@ Both triggers can be wired into a CI smoke pipeline that exercises a sandbox aft
 
 1. Deploy the framework to a sandbox slot
 2. Run the financial-dimension smoke test (read-only, fast, low-risk)
-3. Run the ledger-journal smoke test (writes a journal, accept the orphan record)
+3. Run the ledger-journal smoke test (writes a journal, then deletes it — self-cleaning, no orphan left behind)
 4. Block promotion to production if either step's `Success` is `false`
 
 The triggers signal failure via the JSON `Success` field, not the HTTP status code — the HTTP response is always 200 (unless the request body is malformed). CI scripts should check `.Success` against the response body (e.g. `jq -e '.Success'`), not rely on HTTP status alone.
@@ -169,6 +177,6 @@ The triggers signal failure via the JSON `Success` field, not the HTTP status co
 ## See Also
 
 - [Troubleshoot Common Issues](Troubleshoot-Common-Issues) — diagnostic guide for the error codes above
-- [Known Limitations](Known-Limitations) — composite-key write parking
+- [Known Limitations](Known-Limitations) — remaining open items (composite-key writes are resolved)
 - [Work with Dimensions](Work-with-Dimensions) — what the dimension smoke test exercises
 - [Send Commands](Send-Commands) — what the journal smoke test exercises

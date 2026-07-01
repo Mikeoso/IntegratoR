@@ -34,7 +34,7 @@ A .NET 10 framework for building enterprise integrations with **Microsoft Dynami
 | [Understand the Architecture](Understand-the-Architecture) | Layer diagram, dependency flow, project map |
 | [Authentication Modes](Authentication-Modes) | OAuth 2.0 vs API Key (APIM), Key Vault integration |
 | [Set Up Azure Functions Host](Set-Up-Azure-Functions-Host) | Production `Program.cs`, Key Vault, Application Insights |
-| [Known Limitations](Known-Limitations) | Composite-key write paths, other parked items (transparent) |
+| [Known Limitations](Known-Limitations) | Remaining parked items, transparently tracked (composite-key writes are resolved as of v2.0.0) |
 | [Troubleshoot Common Issues](Troubleshoot-Common-Issues) | Real errors from sandbox runs and how to resolve them |
 | [Release Notes and Versioning](Release-Notes-and-Versioning) | Semantic versioning, pre-release vs stable, migration tips |
 

@@ -2,7 +2,7 @@
 
 This page lists known constraints in the framework and the planned resolutions. The goal is transparency — every limitation here has been investigated, has a documented cause, and either has a tracked workaround or has a planned fix.
 
-> Last refreshed against v1.3.5.
+> Last refreshed against v2.0.1.
 
 ## Composite-Key Write Path — RESOLVED
 
@@ -35,7 +35,9 @@ This page lists known constraints in the framework and the planned resolutions. 
 
 ## Entity Attribute Audit Pending
 
-**What:** PR #92 fixed `CurrencyCode` on `LedgerJournalLine`, which had been simultaneously `[Required]` and `[ODataField(IgnoreOnCreate = true)]`. Six other fields on `LedgerJournalLine` carry the same suspect combination and have not been audited yet: `AccountDisplayValue`, `TransDate`, `DueDate`, `DocumentDate`, `ExchRate`, `ReverseDate`.
+**Fixed in v2.0.1 (`LedgerJournalHeader` read-only-on-update fields):** the live 2026-07-01 JFI run found D365 rejects the entire update PATCH with an `ODataSecurityException` (HTTP 403) whenever a read-only field rides in the payload. `LedgerJournalHeader`'s `JournalName`, `AccountingCurrency`, `IsPosted`, `JournalTotalDebit`, and `JournalTotalCredit` are now `[ODataField(IgnoreOnUpdate = true)]`, so composite-key `UpdateCommand<LedgerJournalHeader>` succeeds.
+
+**Still open — `LedgerJournalLine` `[Required]` + `IgnoreOnCreate` audit:** PR #92 fixed `CurrencyCode` on `LedgerJournalLine`, which had been simultaneously `[Required]` and `[ODataField(IgnoreOnCreate = true)]`. Six other fields on `LedgerJournalLine` carry the same suspect combination and have not been audited yet: `AccountDisplayValue`, `TransDate`, `DueDate`, `DocumentDate`, `ExchRate`, `ReverseDate`.
 
 **Symptoms:** none observed today on the smoke-test path. The bug shape is *silent payload exclusion of a required field*, which D365 may accept (computing a default) or reject (HTTP 400 from D365 with a server-side validation message) depending on the journal template and field.
 
@@ -63,7 +65,7 @@ The framework's backlog, tracked internally by maintainers, consolidates these i
 
 ## See Also
 
-- [Send Commands](Send-Commands) — composite-key Update/Delete limitation referenced from the command pages
-- [Run Smoke Tests](Run-Smoke-Tests) — the smoke tests that surface the composite-key write issue
+- [Send Commands](Send-Commands) — composite-key Update/Delete, now via the owned write bypass
+- [Run Smoke Tests](Run-Smoke-Tests) — the smoke tests that verify composite-key writes work end to end
 - [Release Notes and Versioning](Release-Notes-and-Versioning) — when fixes ship
 - [Troubleshoot Common Issues](Troubleshoot-Common-Issues) — the operator-side view of the same incidents

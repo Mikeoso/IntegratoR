@@ -46,7 +46,7 @@ If the token is acquired but D365 still returns HTTP 401: register the app as a 
 
 D365 returned HTTP 404 because the request URL was malformed. Two common shapes:
 
-1. URL contains `(System.Collections.Generic.Dictionary…)` — the composite-key write-path limitation. See [Known Limitations](Known-Limitations#composite-key-write-path).
+1. URL contains `(System.Collections.Generic.Dictionary…)` — the **pre-v2.0.0** composite-key write path serialised the key dictionary via `Object.ToString()`. Fixed in v2.0.0: `ODataClientAdapter` now builds the keyed URL manually through an owned raw-`HttpClient` bypass. If you see this shape, upgrade to v2.0.0 or later. See [Known Limitations](Known-Limitations#composite-key-write-path--resolved).
 2. URL is missing a path segment (`/fo`, `/data`) — `BaseAddress` trailing-slash issue.
 
 **Resolution for (2):** ensure `ODataSettings.Url` ends with the correct path segment. The framework normalises by appending a trailing slash; either `https://host/fo` or `https://host/fo/` works. The host log emits `OData client configured with base URL: <normalised>` once at startup — verify the segment is present.
@@ -56,7 +56,7 @@ D365 returned HTTP 404 because the request URL was malformed. Two common shapes:
 The ExceptionHandler's observability fix (since v1.3.4) surfacing a suppressed-404. The Result returned to the consumer is still `Result.Ok` (the `treatNotFoundAsSuccess` flag), but the warning signals one of:
 
 - The entity was genuinely already gone (legitimate idempotent delete) — ignore the warning.
-- The request URL was malformed and D365 had nothing to match (composite-key write path) — see [Known Limitations](Known-Limitations#composite-key-write-path).
+- On a **pre-v2.0.0** build, the request URL was malformed and D365 had nothing to match (the old composite-key write path). Fixed in v2.0.0 — see [Known Limitations](Known-Limitations#composite-key-write-path--resolved).
 
 The warning includes the request URL — `RequestUrl: (internal)` means the framework could not capture it; `RequestUrl: <full-url>` lets the operator distinguish the two cases.
 
@@ -112,13 +112,15 @@ D365 rejected the line create because `CurrencyCode` was missing from the payloa
 
 **Resolution:** fixed in PR #92 (v1.3.4). The `CurrencyCode` attribute on `LedgerJournalLine` had `[ODataField(IgnoreOnCreate = true)]` removed — the value the consumer supplies now reaches the wire. Verify the consumer's code sets `CurrencyCode` on every line.
 
-### Step 6 (UpdateHeader) fails with `LedgerJournalHeader.NotFound: Resource not found: LedgerJournalHeaders(System.Collections.Generic.Dictionary…)`
+### `UpdateHeader` fails with `LedgerJournalHeader.NotFound: Resource not found: LedgerJournalHeaders(System.Collections.Generic.Dictionary…)`
 
-Composite-key write-path limitation. See [Known Limitations](Known-Limitations#composite-key-write-path).
+Historical (pre-v2.0.0) composite-key write-path bug — the key dictionary serialised via `Object.ToString()` into the URL. Fixed in v2.0.0: `ODataClientAdapter` now builds the keyed URL manually through the owned raw-`HttpClient` bypass, so `UpdateHeader`, `UpdateLine`, `DeleteLine`, and `DeleteHeader` all land against the correct record. If you see this, upgrade to v2.0.0 or later. See [Known Limitations](Known-Limitations#composite-key-write-path--resolved).
 
-### Step 7 (Cleanup.Delete*) returns success but the journal stays in D365
+> On v2.0.0, a composite-key PATCH that returns `204 No Content` made `ODataService.UpdateAsync` hand back a null `Value`, and D365 rejected a PATCH carrying a read-only `LedgerJournalHeader` field (`JournalName`, `AccountingCurrency`, `IsPosted`, `JournalTotalDebit/Credit`) with an `ODataSecurityException` (HTTP 403). Both are fixed in v2.0.1 — `UpdateAsync` returns the caller's entity and those fields are now `[ODataField(IgnoreOnUpdate = true)]`.
 
-Same composite-key write-path limitation surfaced via the suppressed-404 observability warning. The journal must be deleted manually via the D365 UI until the bypass ships.
+### `DeleteHeader` / cleanup returns success and the journal is removed
+
+On v2.0.0 and later the full Update/Delete cycle runs through the owned composite-key bypass and self-cleans — the smoke test deletes every line and the header it created and verifies the header is gone (`VerifyHeaderDeleted`). A green run leaves no orphan in D365. Verified end to end against a live D365 (JFI) sandbox on 2026-07-01.
 
 ## Extending the Framework
 

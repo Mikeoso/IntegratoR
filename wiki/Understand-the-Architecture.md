@@ -91,10 +91,10 @@ Custom behaviours registered via `services.AddTransient(typeof(IPipelineBehavior
 D365 F&O entities are almost always keyed by `(DataAreaId, BusinessKey)`. The framework constructs OData composite-key URLs by:
 
 1. Reading `GetCompositeKey()` from the entity.
-2. For reads: building a `$filter` predicate with `eq` on each key field (this bypasses a limitation in PanoramicData.OData.Client — see [Known Limitations](Known-Limitations)).
-3. For writes: writing through PanoramicData's single-key `UpdateAsync` / `DeleteAsync` paths (this currently has the parked limitation — composite-key writes fall back to broken behaviour).
+2. For reads: building a `$filter` predicate with `eq` on each key field.
+3. For writes (Update / Delete, including the batch variants): `ODataClientAdapter` detects the composite (dictionary) key and issues the PATCH / DELETE through an owned raw-`HttpClient` bypass that builds the keyed URL manually — `LedgerJournalHeaders(dataAreaId='USMF',JournalBatchNumber='B0001')` — through the named `"ODataClient"` client so the write carries the same authentication, Polly resilience, and `BaseAddress` as every other request (since v2.0.0).
 
-The key-field **names** used in the URL are the `[JsonPropertyName]` wire names (camelCase `dataAreaId`, not CLR `DataAreaId`), because that is what D365 OData expects.
+Both the read and write bypasses are owned, first-party source maintained in this repository. The key-field **names** used in the URL are the `[JsonPropertyName]` wire names (camelCase `dataAreaId`, not CLR `DataAreaId`), because that is what D365 OData expects.
 
 ### Two JSON Serialisers
 
