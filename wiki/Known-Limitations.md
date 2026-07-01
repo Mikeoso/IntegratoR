@@ -1,71 +1,141 @@
 # Known Limitations
+> Last verified against v2.0.1
 
-This page lists known constraints in the framework and the planned resolutions. The goal is transparency — every limitation here has been investigated, has a documented cause, and either has a tracked workaround or has a planned fix.
+Every limitation here is real today, has a documented cause, and states its workaround. Resolved gaps move to [Release Notes and Versioning](Release-Notes-and-Versioning) — they do not linger on this list.
 
-> Last refreshed against v2.0.1.
+## No cross-company queries
 
-## Composite-Key Write Path — RESOLVED
+D365 OData accepts a `cross-company=true` parameter that returns rows across every legal entity the service principal can read. IntegratoR does not surface it — every query is scoped to the company you set through the entity composite key.
 
-**Status:** resolved. `UpdateCommand<T>` and `DeleteCommand<T>` against entities with composite keys (every D365 F&O entity that includes `DataAreaId`) now write correctly.
+Read one company at a time and merge the results:
 
-**What was wrong:** writes previously routed through `PanoramicData.OData.Client`'s single-primitive-key `UpdateAsync` / `DeleteAsync` methods. The composite-key dictionary fell through to `Object.ToString()` and produced a malformed OData URL like `LedgerJournalHeaders(System.Collections.Generic.Dictionary`2[System.String,System.Object])`, so updates returned `*.NotFound` and deletes silently no-opped.
+```csharp
+var companies = new[] { "USMF", "JFI" };
+var journals = new List<LedgerJournalHeader>();
 
-**How it is fixed:** `ODataClientAdapter` detects a composite key (an `IDictionary<string, object>`) and issues the PATCH / DELETE through an owned raw-`HttpClient` bypass that builds the keyed URL manually — `LedgerJournalHeaders(dataAreaId='USMF',JournalBatchNumber='B0001')` — sent through the named `"ODataClient"` client so it carries the same authentication, Polly resilience, and `BaseAddress` as every other request. This mirrors the long-standing read-path bypass used by `GetByKeyQuery<T>`. The bypass is owned, first-party source maintained in this repository (not a fork awaiting upstream).
+foreach (string company in companies)
+{
+    var query = new GetByFilterQuery<LedgerJournalHeader>(
+        header => header.DataAreaId == company && header.IsPosted == NoYes.No);
+    Result<IEnumerable<LedgerJournalHeader>> result = await mediator.Send(query, cancellationToken);
 
-**Coverage:** adapter-level unit tests pin the keyed URL construction, value formatting (string / Guid / enum / `DateOnly`), and the 404-treated-as-success delete path; the LedgerJournal smoke test exercises the create → update → re-read → delete → verify-gone round-trip end to end.
+    if (result.IsFailed)
+    {
+        IError error = result.GetError();
+        // IntegrationError { Code, Type }: a D365 read failure surfaces here — inspect and stop or skip.
+        break;
+    }
 
-## `IValidateOptions<T>` Not Implemented
+    journals.AddRange(result.Value);
+}
+```
 
-**What:** Settings classes (`ODataSettings`, `FOSettings`) bind from `IConfiguration` but no `IValidateOptions<T>` is registered. Misconfiguration surfaces as either:
+**Workaround status:** not planned. The likely shape is a per-query opt-in marker (`ICrossCompanyQuery`) handled by a dedicated pipeline behaviour; the design is not worked out.
 
-- A clear `ArgumentException` at first OData client resolution (when `ODataSettings.Url` is empty — the framework guards this case specifically).
-- A cryptic runtime error when a missing field is dereferenced inside a handler.
+## Narrow `$expand` translator coverage
 
-**Symptoms:** for `ODataSettings.Url == ""` the error is clear (`"ODataSettings.Url must be set to a non-empty absolute URL..."`). For other missing fields the failure happens later than ideal.
+The LINQ-to-OData translator (`IntegratoRODataExpressionTranslator`) covers filter, select, and expand expressions plus `Any` / `All` lambdas. Advanced `$expand` shapes — nested expand with a filter, expand carrying a select inside an `Any` — are not covered and throw `NotSupportedException` at translation time.
 
-**Workaround status:** on the backlog. The intended implementation registers `IValidateOptions<ODataSettings>` (and siblings) so misconfiguration fails fast at host startup with a single, comprehensive error summarising every missing field.
+The failure is caught before the request reaches D365, so an unsupported expression never produces a malformed call:
 
-## Polly Retry Sometimes Retries HTTP 400
+```csharp
+// Supported: a flat expand translates cleanly.
+var supported = new GetByFilterQuery<LedgerJournalHeader>(
+    header => header.DataAreaId == "USMF");
 
-**What:** The 2026-04-14 smoke-test session observed four retries against an HTTP 400 response from APIM, despite 400 being a client error that should not retry. Root cause suspected to be `.Or<TaskCanceledException>()` in the retry predicate combined with an APIM behaviour that surfaces some timeouts as 400 rather than 408 or 504.
+// Unsupported: a nested expand-with-filter throws NotSupportedException at translation,
+// not a runtime OData error. The expression never leaves the process.
+```
 
-**Symptoms:** chronic 400-response retries log as `Warning` to the `IntegratoR.OData.HttpRetry` logger with rising retry counts before eventually failing the request. Observable but not silent.
+The supported shapes are pinned by `tests/IntegratoR.OData.Tests/Common/Filters/IntegratoRODataExpressionTranslatorTests.cs`.
 
-**Workaround status:** uninvestigated. Likely candidates for the fix are tightening the retry predicate (`.HandleTransientHttpError()` alone, dropping the `Or<TaskCanceledException>` for HTTP retries since `TaskCanceledException` from `HttpClient.Timeout` is already a 408-equivalent), or adding an explicit `WhereResponseStatusCode(...)` filter.
+**Workaround status:** coverage is added on demand. The translator stays narrow on purpose — predictable, D365-compatible output over exhaustive LINQ coverage.
 
-## Entity Attribute Audit Pending
+## `LedgerJournalLine` attribute audit incomplete
 
-**Fixed in v2.0.1 (`LedgerJournalHeader` read-only-on-update fields):** the live 2026-07-01 JFI run found D365 rejects the entire update PATCH with an `ODataSecurityException` (HTTP 403) whenever a read-only field rides in the payload. `LedgerJournalHeader`'s `JournalName`, `AccountingCurrency`, `IsPosted`, `JournalTotalDebit`, and `JournalTotalCredit` are now `[ODataField(IgnoreOnUpdate = true)]`, so composite-key `UpdateCommand<LedgerJournalHeader>` succeeds.
+`LedgerJournalLine` carries fields that are both `required` in C# and `[ODataField(IgnoreOnCreate = true)]` — the value is compiler-mandatory but excluded from the create payload. `AccountDisplayValue` and `TransDate` are the confirmed pair today; the wider set of `IgnoreOnCreate` fields has not been audited against D365's create metadata.
 
-**Still open — `LedgerJournalLine` `[Required]` + `IgnoreOnCreate` audit:** PR #92 fixed `CurrencyCode` on `LedgerJournalLine`, which had been simultaneously `[Required]` and `[ODataField(IgnoreOnCreate = true)]`. Six other fields on `LedgerJournalLine` carry the same suspect combination and have not been audited yet: `AccountDisplayValue`, `TransDate`, `DueDate`, `DocumentDate`, `ExchRate`, `ReverseDate`.
+```csharp
+// LedgerJournalLine.cs — required by the compiler, yet dropped from the create body:
+[JsonPropertyName("AccountDisplayValue")]
+[ODataField(IgnoreOnCreate = true)]
+public virtual required string AccountDisplayValue { get; set; }
+```
 
-**Symptoms:** none observed today on the smoke-test path. The bug shape is *silent payload exclusion of a required field*, which D365 may accept (computing a default) or reject (HTTP 400 from D365 with a server-side validation message) depending on the journal template and field.
+> [!CAUTION]
+> A field marked both `required` and `IgnoreOnCreate` is silent payload exclusion — D365 either computes a default and accepts the create, or rejects it with HTTP 400 and a server-side validation message, depending on the journal template. Read the entity source before building a `LedgerJournalLine` create so you know which values D365 actually receives.
 
-**Workaround status:** queued. Each field needs verification against D365's metadata — is the value server-generated (keep `IgnoreOnCreate`) or consumer-supplied (drop the attribute)? Each fix lands with a reflection-based regression test pinning the attribute state.
+**Workaround status:** queued. Each field needs verifying against D365 metadata — server-generated (keep `IgnoreOnCreate`) or consumer-supplied (drop it) — and lands with a reflection-based test pinning the attribute state.
 
-## Cross-Company Queries Not Surfaced
+## Polly may retry HTTP 400 from APIM
 
-**What:** D365 OData supports a `cross-company=true` query parameter that returns rows across all legal entities the service principal can read. The framework does not surface this directly — every query is implicitly scoped to the company set by `DataAreaId` in the entity composite key.
+The HTTP retry policy handles transient errors plus `TaskCanceledException` (`.HandleTransientHttpError().Or<TaskCanceledException>()`). APIM surfaces some gateway timeouts as HTTP 400 rather than 408 or 504, so a chronic 400 can be retried up to `RetryCount` times before the request fails.
 
-**Symptoms:** N/A — multi-company queries require splitting into per-company calls today.
+The retries are visible, not silent — each one logs a warning to the `IntegratoR.OData.HttpRetry` logger with a rising attempt count:
 
-**Workaround status:** not yet planned. The right shape is probably a per-query opt-in marker interface (`ICrossCompanyQuery`) handled by a dedicated pipeline behaviour, but the design has not been worked out.
+```text
+warn: IntegratoR.OData.HttpRetry
+      HTTP retry attempt 3 after 4000ms. Reason: BadRequest
+```
 
-## OData `$expand` Translator Coverage
+**Workaround status:** uninvestigated. The likely fix tightens the retry predicate — drop `Or<TaskCanceledException>` for HTTP retries (an `HttpClient.Timeout` cancellation is already 408-equivalent) or add an explicit status-code filter that excludes 400.
 
-**What:** the LINQ-to-OData translator supports filter, select, and expand expressions plus `Any` / `All` lambdas. Some advanced `$expand` shapes (nested expand with filter, expand with select inside an Any) are not yet covered and throw `NotSupportedException` at translation time.
+## `RetryCount` range 1–10 is documented, not enforced
 
-**Symptoms:** caught at translation time, not at runtime — the failing expression never reaches D365. Tests under `tests/IntegratoR.OData.Tests/Common/Filters/IntegratoRODataExpressionTranslatorTests.cs` document the supported shapes.
+`ODataResilienceSettings.RetryCount` defaults to `3` and its XML doc states a valid range of 1 to 10. `ODataSettingsValidator` does not check that range — it validates authentication headers, the selected mode, and its credentials only. A `RetryCount` of `0` or `50` binds and runs.
 
-**Workaround status:** add coverage on demand. The translator is intentionally narrow — favouring predictable D365-compatible output over comprehensive LINQ coverage.
+> [!CAUTION]
+> Keep `RetryCount` within 1–10 yourself. A value of `0` disables retries for that policy; a large value multiplies load against D365 and delays the surfaced failure. Nothing rejects an out-of-range value at startup.
 
-## Where to Track Progress
+**Workaround status:** the range check is a candidate addition to `ODataSettingsValidator`; not yet implemented.
 
-The framework's backlog, tracked internally by maintainers, consolidates these items and tracks which has an active design and which is still scoped. Items shipping in a given release are noted in [Release Notes and Versioning](Release-Notes-and-Versioning) with the relevant PR link.
+## Composite-key batch Update/Delete is per-item, not atomic
+
+`CreateBatchCommand<T>` groups its writes into a single atomic OData changeset. `UpdateBatchCommand<T>` and `DeleteBatchCommand<T>` cannot — every D365 F&O entity is composite-keyed, and PanoramicData's changeset cannot bind a dictionary key. `ODataClientAdapter` therefore sends each composite-key update or delete as an individual HTTP request in index order.
+
+```csharp
+var updates = new List<LedgerJournalHeader> { header1, header2, header3 };
+Result result = await mediator.Send(
+    new UpdateBatchCommand<LedgerJournalHeader>(updates), cancellationToken);
+
+if (result.IsFailed)
+{
+    IError error = result.GetError();
+    // Per-item, not transactional: earlier items may already be committed in D365
+    // when a later item fails. Re-read to establish which writes landed.
+}
+```
+
+> [!WARNING]
+> A failed composite-key `UpdateBatchCommand`/`DeleteBatchCommand` is not all-or-nothing. Items before the failing one are already committed. Do not treat the batch as a transaction; re-read to reconcile, or drive idempotent per-item commands when you need precise recovery.
+
+**Workaround status:** inherent to D365's composite-key write model. Atomic multi-entity updates would need server-side support IntegratoR cannot synthesise.
+
+## Deferred items
+
+These are acknowledged and parked — no fix is scheduled:
+
+- **D365 innererror text may reach `IntegrationError.Message`.** A downstream error body can carry server detail into the surfaced message. Treat `IntegrationError.Message` as server-authored when logging externally.
+- **Non-401 failures expose `exception.Message`.** Only the auth short-circuit is sanitised to a generic reason phrase; other paths pass the exception message through.
+- **No Polly retry on PATCH/DELETE.** Writes are not retried — the retry policy targets idempotent reads. A transient write failure surfaces immediately.
+- **Smoke-trigger handler tests absent.** The HTTP trigger handlers behind `smoke/ledger-journal` and `smoke/financial-dimensions` have no isolated unit coverage; the smoke run itself is the check.
+- **`IEntity.GetLoggingContext()` couples telemetry to the domain contract.** Splitting it into a dedicated logging interface is a MAJOR-breaking change, deferred to the next MAJOR.
+
+## Awaiting the next MAJOR
+
+These types are `[Obsolete]` and removed in the next MAJOR. Migrate off them now:
+
+| Obsolete member | Replacement |
+|---|---|
+| `BaseEntity<TKey>` | Non-generic `BaseEntity` + `GetCompositeKey()` |
+| `IODataService<T>.FindAll` and the `Func`-based `QueryAsync` | Typed `QueryAsync` overloads with `Expression` filters |
+| `ICacheableQuery.GenerateCacheKey()` / `GetCacheKeyValues()` | The `CacheKey` property |
+| `ODataBatchException`, `ODataMetadataProvider` | Handled internally; no consumer replacement needed |
+| `IAuthenticator` overload without a `CancellationToken` | The `CancellationToken` overload |
 
 ## See Also
 
-- [Send Commands](Send-Commands) — composite-key Update/Delete, now via the owned write bypass
-- [Run Smoke Tests](Run-Smoke-Tests) — the smoke tests that verify composite-key writes work end to end
-- [Release Notes and Versioning](Release-Notes-and-Versioning) — when fixes ship
-- [Troubleshoot Common Issues](Troubleshoot-Common-Issues) — the operator-side view of the same incidents
+- [Handle Errors](Handle-Errors)
+- [Configure Resilience](Configure-Resilience)
+- [Release Notes and Versioning](Release-Notes-and-Versioning)
+- [Troubleshoot Common Issues](Troubleshoot-Common-Issues)

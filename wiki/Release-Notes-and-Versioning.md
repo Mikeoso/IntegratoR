@@ -1,147 +1,161 @@
 # Release Notes and Versioning
+> Last verified against v2.0.1
 
-IntegratoR packages follow [Semantic Versioning](https://semver.org/) — `MAJOR.MINOR.PATCH`. Versions are computed by GitVersion in **ContinuousDelivery** mode on every merge to `main` and are pinned by Git tags created automatically by the publish workflow.
+GitVersion computes every version in **ContinuousDelivery** mode: each merge to `main` produces a `X.Y.Z-ci.N` pre-release on NuGet, and a maintainer promotes a chosen build to a stable `X.Y.Z`. GitVersion defaults to a **PATCH** bump and ignores conventional-commit prefixes — signal a MINOR or MAJOR with a `+semver:` marker. Public API is deprecated for at least one MINOR before removal. The exhaustive log lives in [CHANGELOG.md](https://github.com/Mikeoso/IntegratoR/blob/main/CHANGELOG.md) and [GitHub Releases](https://github.com/Mikeoso/IntegratoR/releases); this page keeps a curated table and the per-MAJOR migration guide.
 
-## Version Model
+## How versions are produced
 
 | Trigger | Version produced | NuGet listing |
 |---|---|---|
-| Push to `main` (every PR squash-merge) | `X.Y.Z-ci.N` pre-release | Pre-release, hidden by default in NuGet UI |
-| Manual workflow dispatch with `release: true` | `X.Y.Z` stable | Stable, shown by default |
+| Push to `main` (every squash-merge) | `X.Y.Z-ci.N` pre-release | Pre-release, hidden by default |
+| `gh workflow run publish.yml -f release=true` | `X.Y.Z` stable | Stable, shown by default |
 
-Both publish to `nuget.org`. Consumers pinning an exact version (e.g. `2.0.0`) pick up the stable version; consumers using a `*-*` range will see the latest pre-release. Choose the pin shape according to risk tolerance.
+Both publish to `nuget.org`. Pin an exact stable version (the latest stable is `2.0.0`); use a `2.0.*-*` range to track the latest pre-release. Tags are created by the publish workflow — never tag manually.
 
-> **GitVersion defaults to PATCH bumps.** Conventional-commit prefixes (`feat:`, `fix:`, `chore:`) are **not** honoured for bump detection in the current `GitVersion.yml` configuration. Every merge produces a PATCH bump (2.0.0 → 2.0.1 → 2.0.2, ...). To force a MINOR or MAJOR bump, either include `+semver: minor` / `+semver: major` in the merge commit message, or bump `next-version:` in `GitVersion.yml` before merging.
+> [!CAUTION]
+> GitVersion produces a PATCH bump on every merge (`2.0.1 → 2.0.2 → …`); `feat:` / `fix:` prefixes do **not** change this. To ship a MINOR or MAJOR, add `+semver: minor` or `+semver: major` to the merge commit message, or set `next-version:` in `GitVersion.yml` before merging.
+
+## Pre-release vs stable
+
+Consume a pre-release to test a fix against a sandbox before promotion:
+
+```bash
+dotnet add package IntegratoR.Hosting --version 2.0.1-ci.5
+```
+
+A `2.0.1-ci.5` build is immutable — the next push produces `2.0.1-ci.6`, never a silent update. Pin the stable version for production.
+
+## Deprecate before remove
+
+A public type is marked `[Obsolete("since vX.Y; use …")]` for at least one MINOR before it is removed in the next MAJOR. Awaiting the next MAJOR: `BaseEntity<TKey>`, `IODataService.FindAll` (use `FindAllAsync`), `ODataBatchException`, `ICacheableQuery.GenerateCacheKey` / `GetCacheKeyValues`, and `ODataMetadataProvider`. Derive from the non-generic `BaseEntity` now — see [Upgrading to v2](#upgrading-to-v2) below.
 
 ## Released Versions
 
-| Version | Date | Highlights |
-|---|---|---|
-| v2.0.1 | next release | Composite-key write hardening from the live 2026-07-01 JFI run: `ODataService.UpdateAsync` returns the written entity when a composite-key PATCH comes back `204 No Content`; `LedgerJournalHeader` read-only fields (`JournalName`, `AccountingCurrency`, `IsPosted`, `JournalTotalDebit/Credit`) are now `[ODataField(IgnoreOnUpdate = true)]` so D365 no longer rejects the PATCH with an `ODataSecurityException`; the smoke trigger no longer crashes on a null success value. Generic command validation now runs through the MediatR pipeline (a null command / empty batch / empty composite key short-circuits with a Validation failure). |
-| v2.0.0 | 2026-06-30 | **Breaking** — architecture-review fix series (PRs #131–135). Composite-key **write** support (Update / Delete / batch) via an owned raw-`HttpClient` bypass in `ODataClientAdapter`. Strongly-typed `$orderby`. `ODataSettingsValidator` (`IValidateOptions` + `ValidateOnStart`). `IBatchService<T>` + generic batch handlers. 401/403 and OAuth-failure `ReasonPhrase`/message no longer leak MSAL/tenant detail. `FindEntriesAsync` gained an `orderBy` parameter; batch commands take `IReadOnlyList<T>`; `GetDimensionOrdersQuery` params PascalCased. `BaseEntity<TKey>`, `IODataService.FindAll`, `ODataBatchException`, `ICacheableQuery.GenerateCacheKey`/`GetCacheKeyValues`, `ODataMetadataProvider` deprecated. RELion module removed. |
-| v1.3.5 | 2026-05-13 | FinancialDimension smoke test + dimension query fixes (PR #104). Enum-constant qualified-type form in lambda bodies. `DimensionParameters.Key` `string → int`. `DimensionIntegrationFormat` table-name plural fix. |
-| v1.3.4 | 2026-04-15 | Smoke-test framework fixes (PR #92): MediatR cross-assembly handler closing, BaseAddress trailing-slash normalisation, ExceptionHandler 404 observability, `CurrencyCode` payload fix on `LedgerJournalLine`. |
-| v1.3.3 | (in series with PR #86) | `[JsonPropertyName]`-aware OData filter / select / expand translator (PR #86). camelCase wire names now honoured throughout the LINQ path. |
-| v1.3.0 | — | (PR #79 / OData BaseAddress bug fix). |
-| v1.2.0 | (PR #76) | **Breaking** — ODataSettings restructure. `ClientId`/`ClientSecret`/`TenantId`/`Resource` moved from `ODataSettings` root to `ODataSettings.Authentication.OAuth.*`. Retry/circuit-breaker fields moved to `ODataSettings.Resilience.*`. |
-| v1.1.0 | — | Initial public release. |
+| Version | Highlights |
+|---|---|
+| v2.0.1 (in flight, pre-release only) | Generic command validation fires through the pipeline; `UpdateAsync` returns the entity on a `204` composite-key PATCH; `LedgerJournalHeader` read-only fields marked `IgnoreOnUpdate`; null-safe `GetLoggingContext()`. |
+| [v2.0.0](https://github.com/Mikeoso/IntegratoR/releases/tag/v2.0.0) | **Breaking.** Composite-key writes (Update/Delete/batch) live; typed `$orderby`; `ODataSettingsValidator`; `IBatchService<T>` + generic batch handlers; 401/403 + MSAL leak fixes. See [Upgrading to v2](#upgrading-to-v2). |
+| [v1.3.5](https://github.com/Mikeoso/IntegratoR/releases/tag/v1.3.5) | FinancialDimension smoke test + dimension query fixes; enum qualified-type form in `Any`/`All` lambda bodies. |
+| [v1.3.4](https://github.com/Mikeoso/IntegratoR/releases/tag/v1.3.4) | Cross-assembly handler closing; `BaseAddress` trailing-slash normalisation; `LedgerJournalLine` `CurrencyCode` payload fix. |
+| [v1.3.3](https://github.com/Mikeoso/IntegratoR/releases/tag/v1.3.3) | `[JsonPropertyName]`-aware OData filter / select / expand translator — camelCase wire names honoured throughout the LINQ path. |
+| [v1.2.0](https://github.com/Mikeoso/IntegratoR/releases/tag/v1.2.0) | **Breaking.** `ODataSettings` restructure — OAuth and resilience moved under `Authentication` / `Resilience` sub-objects. |
+| [v1.1.0](https://github.com/Mikeoso/IntegratoR/releases/tag/v1.1.0) | Initial public release. |
 
-Each row links a release version to the major PRs that landed in it. For the full per-commit history use `git log v1.3.4..v1.3.5 --oneline` (or the equivalent for any two adjacent tags).
+For the full per-commit history, run `git log v2.0.0..HEAD --oneline` (or `git log v1.3.5..v2.0.0` for any two adjacent tags).
 
-## Migration Guides
+## Upgrading to v2
 
-### Upgrading from v1.1.x to v1.2.0 (or later)
+v2.0.0 carries three source-breaking API changes and one deprecation. Each has a mechanical fix; the migration is contained to code that calls these members directly. All other consumer code compiles unchanged.
 
-The `ODataSettings` structure changed from flat to nested. The OAuth and resilience properties moved under typed sub-objects.
+### `BaseEntity<TKey>` → non-generic `BaseEntity`
 
-**Before (v1.1.x):**
+The `TKey` parameter was never used. Derive from the non-generic `BaseEntity` and override `GetCompositeKey()` to return the key parts in composite-key order. `BaseEntity<TKey>` is `[Obsolete]` (removed next MAJOR).
 
-```json
+**Before (v1.x):**
+
+```csharp
+[Table("LedgerJournalHeaders")]
+public sealed class LedgerJournalHeader : BaseEntity<string>
 {
-  "ODataSettings": {
-    "Url": "...",
-    "ClientId": "...",
-    "ClientSecret": "...",
-    "TenantId": "...",
-    "Resource": "...",
-    "EnableRetries": true,
-    "RetryCount": 3,
-    "UseCircuitBreaker": true,
-    "CircuitBreakerThreshold": 5,
-    "CircuitBreakerDurationSeconds": 30
-  }
+    [Key]
+    [JsonPropertyName("dataAreaId")]
+    public required string DataAreaId { get; set; }
+
+    [Key]
+    [ODataField(IgnoreOnCreate = true)]
+    public string JournalBatchNumber { get; set; } = string.Empty;
 }
 ```
 
-**After (v1.2.0+):**
+**After (v2.x):**
 
-```json
+```csharp
+[Table("LedgerJournalHeaders")]
+public sealed class LedgerJournalHeader : BaseEntity
 {
-  "ODataSettings": {
-    "Url": "...",
-    "Authentication": {
-      "Mode": "OAuth",
-      "OAuth": {
-        "ClientId": "...",
-        "ClientSecret": "...",
-        "TenantId": "...",
-        "Resource": "..."
-      }
-    },
-    "Resilience": {
-      "EnableRetries": true,
-      "RetryCount": 3,
-      "UseCircuitBreaker": true,
-      "CircuitBreakerThreshold": 5,
-      "CircuitBreakerDurationInSeconds": 30
-    }
-  }
+    [Key]
+    [JsonPropertyName("dataAreaId")]
+    public required string DataAreaId { get; set; }
+
+    [Key]
+    [ODataField(IgnoreOnCreate = true)]
+    public string JournalBatchNumber { get; set; } = string.Empty;
+
+    public override object[] GetCompositeKey() => [DataAreaId, JournalBatchNumber];
 }
 ```
 
-Two additional gotchas:
+Change the base class and add the `GetCompositeKey()` override. See [Define Entities](Define-Entities) for the full attribute set.
 
-- The `Mode` selector defaults to `ApiKey`. OAuth-based setups must add `"Mode": "OAuth"` explicitly.
-- The circuit breaker duration property was renamed `CircuitBreakerDurationSeconds → CircuitBreakerDurationInSeconds`. The old key is silently ignored under typed binding.
+### Batch commands take `IReadOnlyList<T>`
 
-Azure App Settings update accordingly — the nested keys use the double-underscore separator (`ODataSettings__Authentication__OAuth__ClientId`, ...).
+`CreateBatchCommand<T>`, `UpdateBatchCommand<T>`, and `DeleteBatchCommand<T>` (and the F&O records deriving from them) now take `IReadOnlyList<T>` instead of `IEnumerable<T>`, removing multiple-enumeration and giving an O(1) count.
 
-### Upgrading from v1.3.4 to v1.3.5
+**Before:** `new CreateBatchCommand<LedgerJournalHeader>(headers.Where(h => h.DataAreaId == "USMF"))`
 
-No breaking changes. Two consumer-visible improvements:
+**After:**
 
-- LINQ filter expressions using enum constants inside `Any` / `All` lambda bodies now emit the D365-compatible qualified-type form. If a consumer was working around the prior behaviour by using captured variables or raw filter strings, those workarounds can be removed.
-- `GetDimensionOrdersQuery` now returns `Result.Fail(IntegrationError("DimensionParameters.NotFound", ..., NotFound))` when the singleton parameters row is missing instead of throwing `ArgumentOutOfRangeException`. Consumers that already handled `Result.IsFailed` work unchanged.
+```csharp
+IReadOnlyList<LedgerJournalHeader> headers =
+    source.Where(h => h.DataAreaId == "USMF").ToList();
 
-The dimension-related entity changes (`DimensionIntegrationFormat` plural table, `DimensionParameters.Key` `int`) are runtime-only — no API surface change for consumers using only the typed query.
+Result result = await mediator.Send(
+    new CreateBatchCommand<LedgerJournalHeader>(headers), cancellationToken);
 
-## Release Process
-
-For maintainers — full mechanics are in `feedback-gitversion-tagging` and `deployment-workflow` internal memory files. Summary:
-
-1. Merge the PR to `main` via the GitHub UI (squash-merge).
-2. The push triggers `publish.yml` automatically — pre-release `1.X.Y-ci.N` ships to NuGet within ~3 minutes.
-3. When ready to cut a stable release: `gh workflow run publish.yml -f release=true --ref main`.
-4. The release job:
-   - Runs GitVersion to compute `MajorMinorPatch` (`1.X.Y`).
-   - Packs and pushes stable packages.
-   - Creates a Git tag `vX.Y.Z` via `softprops/action-gh-release@v2`.
-   - Creates a GitHub Release with auto-generated notes from the merged PR titles since the previous tag.
-
-Tags are **never** created manually — the workflow is authoritative.
-
-## Pre-release Channel
-
-Pre-release versions are useful for:
-
-- Testing a fix against a sandbox before the stable release ships.
-- Pinning a known-good build that has not yet been promoted.
-
-To consume a pre-release:
-
-```bash
-dotnet add package IntegratoR.Hosting --version 1.3.6-ci.5
+if (result.IsFailed)
+{
+    IntegrationError? error = result.GetError();
+    // D365 rejects a header whose JournalBatchNumber is set on create → IntegrationError, Type Failure.
+}
 ```
 
-Or in `Directory.Packages.props`:
+Materialise the sequence with `.ToList()` (or `.ToArray()`) before constructing the command.
 
-```xml
-<PackageVersion Include="IntegratoR.Hosting" Version="1.3.6-ci.*" />
+### `GetDimensionOrdersQuery` parameters are PascalCase
+
+The positional record parameters were renamed `dimensionFormat` / `hierarchyType` → `DimensionFormat` / `HierarchyType` to follow the C# convention. Positional callers are unaffected; only named-argument callers must update.
+
+**Before:** `new GetDimensionOrdersQuery(dimensionFormat: "Sachkontodimensionen", hierarchyType: DimensionHierarchyType.LedgerDimension)`
+
+**After:**
+
+```csharp
+Result<DimensionFormat> result = await mediator.Send(
+    new GetDimensionOrdersQuery(
+        DimensionFormat: "Sachkontodimensionen",
+        HierarchyType: DimensionHierarchyType.LedgerDimension),
+    cancellationToken);
+
+if (result.IsFailed && result.GetError() is IntegrationError { Type: ErrorType.NotFound })
+{
+    // The singleton DimensionParameters row is missing → NotFound, not an exception.
+}
 ```
 
-Pre-release versions are immutable once published. A `1.3.6-ci.5` build is not retroactively updated — the next push produces `1.3.6-ci.6`.
+Rename the argument labels. See [Work with Dimensions](Work-with-Dimensions).
 
-## Where to Find What
+### `IODataClientAdapter.FindEntriesAsync` gained an `orderBy` parameter
 
-- **Package downloads** — `https://www.nuget.org/packages?q=IntegratoR`
-- **Per-version release notes** — `https://github.com/Mikeoso/IntegratoR/releases`
-- **Per-commit history** — `git log` on the repository
-- **Roadmap / known limitations** — [Known Limitations](Known-Limitations)
-- **Per-PR review and discussion** — `https://github.com/Mikeoso/IntegratoR/pulls?q=is%3Apr+is%3Aclosed`
+An `orderBy` parameter (an `IReadOnlyList` of `(KeySelector, Descending)` tuples) was inserted before `skip` and `top`. This breaks anyone implementing `IODataClientAdapter` or calling `FindEntriesAsync` with named arguments for `skip` / `top`; most consumers reach queries through `IMediator` and are unaffected.
+
+**Before:** `adapter.FindEntriesAsync<LedgerJournalHeader>(entitySet, filter, skip: 0, top: 50, cancellationToken)`
+
+**After:**
+
+```csharp
+IEnumerable<LedgerJournalHeader> page = await adapter.FindEntriesAsync<LedgerJournalHeader>(
+    "LedgerJournalHeaders",
+    filter: h => h.DataAreaId == "USMF",
+    orderBy: [(h => h.JournalBatchNumber, false)],
+    skip: 0,
+    top: 50,
+    cancellationToken: cancellationToken);
+```
+
+Pass `orderBy: null` to keep the previous behaviour, or use named arguments for `skip` / `top` / `cancellationToken`. Prefer the typed `$orderby` overload on `IODataService<T>` in application code — see [Run Queries](Run-Queries).
 
 ## See Also
-
-- [Configure OData](Configure-OData) — current settings reference (post-v1.2.0 nested shape)
-- [Known Limitations](Known-Limitations) — what's parked for future releases
-- [Set Up Azure Functions Host](Set-Up-Azure-Functions-Host) — production deployment pattern that consumes these packages
-- [Source on GitHub](https://github.com/Mikeoso/IntegratoR) — full commit history and source code
+- [Define Entities](Define-Entities)
+- [Known Limitations](Known-Limitations)
+- [Set Up Azure Functions Host](Set-Up-Azure-Functions-Host)
+- [GitHub Releases](https://github.com/Mikeoso/IntegratoR/releases)

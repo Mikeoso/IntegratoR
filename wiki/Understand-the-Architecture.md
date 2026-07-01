@@ -1,139 +1,142 @@
 # Understand the Architecture
+> Last verified against v2.0.1
 
-IntegratoR follows Clean Architecture with dependencies pointing inward — concrete infrastructure layers reference abstract interface layers, never the reverse. The composition root (`IntegratoR.Hosting` plus the consumer's Azure Functions host) ties the layers together via a single `AddIntegratoR(configuration)` call.
+IntegratoR is Clean Architecture with dependencies pointing inward: the concrete infrastructure layers (`OData`, `OData.FO`, `Application`, `Hosting`) reference the abstract core (`Abstractions`), never the reverse. A consumer wires the whole graph with one call — `AddIntegratoR(configuration)` — and drives it through `IMediator`. The rest of this page states the durable invariants that outlive any single file.
 
-## Layer Diagram
+## Dependency direction points inward
 
-```mermaid
-flowchart BT
-    subgraph Host["Azure Functions Host (consumer's project)"]
-        Program[Program.cs<br/>composition root]
-    end
+Every arrow points at `IntegratoR.Abstractions`. Higher layers depend on the core; the core depends on nothing above it. This is what lets a consumer reference only `IService<T>` and `Result<T>` from `Abstractions` for testability while the concrete `ODataService<T>` lives in `IntegratoR.OData` and is bound at the composition root.
 
-    subgraph Hosting["IntegratoR.Hosting"]
-        Builder[IntegratoRBuilder]
-    end
-
-    subgraph FO["IntegratoR.OData.FO"]
-        FOEntities[D365 Entities<br/>LedgerJournalHeader/Line<br/>DimensionIntegrationFormat<br/>DimensionParameters]
-        FOHandlers[Feature Handlers<br/>GetDimensionOrdersQuery<br/>CreateLedgerJournal*]
-    end
-
-    subgraph OData["IntegratoR.OData"]
-        ODataClient[ODataService&lt;T&gt;<br/>ODataClientAdapter<br/>Polly + Auth Handler]
-        FilterTranslator[IntegratoRODataExpressionTranslator<br/>LINQ → $filter]
-    end
-
-    subgraph Application["IntegratoR.Application"]
-        Behaviours[Pipeline Behaviours<br/>Logging → Validation → Caching]
-        AppServices[OAuthAuthenticator<br/>DistributedCacheService<br/>Generic Handlers]
-    end
-
-    subgraph Abstractions["IntegratoR.Abstractions (core)"]
-        Contracts[Interfaces<br/>IService&lt;T&gt;, ICommand, IQuery<br/>BaseEntity&lt;TKey&gt;, IEntity<br/>IntegrationError, ErrorType]
-    end
-
-    Host --> Hosting
-    Hosting --> Application
-    Hosting --> OData
-    Hosting --> FO
-    Application --> Abstractions
-    OData --> Abstractions
-    FO --> OData
-    FO --> Abstractions
-
-    style Abstractions fill:#e8f4f8
-    style Hosting fill:#f9f4e8
+```
+SampleFunction (host / composition root)
+  -> Hosting     -> Application -> Abstractions
+                 -> OData       -> Abstractions
+                 -> OData.FO    -> OData -> Abstractions
 ```
 
-## Project Map
-
-| Project | Role | DI entry point |
+| Project | Role | Depends on |
 |---|---|---|
-| `IntegratoR.Abstractions` | Domain interfaces (`IService<T>`, `ICommand<T>`, `IQuery<T>`), base entities (`BaseEntity<TKey>`), CQRS contracts, `Result<T>` types (`IntegrationError`, `ErrorType`), STJ and Newtonsoft `Result<T>` converters | Core — no DI registration |
-| `IntegratoR.Application` | MediatR pipeline behaviours, generic command/query handlers, `OAuthAuthenticator`, `DistributedCacheService`, the cross-serialiser `Result<T>` wiring | `services.AddApplicationServices()` |
-| `IntegratoR.OData` | Generic OData client wrapping PanoramicData.OData.Client, `ODataService<T>`, authentication delegating handler, Polly retry + circuit breaker, `ODataFieldAttribute`, `IntegratoRODataExpressionTranslator` | `services.AddODataClient(configuration)` |
-| `IntegratoR.OData.FO` | D365 F&O entities (`LedgerJournalHeader/Line`, `DimensionIntegrationFormat`, `DimensionParameters`), feature-specific commands and handlers, `FOSettings`, dimension builder/reader | `services.AddODataClientFOProxy(configuration)` |
-| `IntegratoR.Hosting` | `IntegratoRBuilder`, the single `AddIntegratoR(configuration)` composition root that wires Application + OData + OData.FO + cross-assembly MediatR closing + Durable Functions Result converter | `services.AddIntegratoR(configuration)` |
-| `IntegratoR.SampleFunction` | The consumer-side sample — Azure Functions isolated-worker host that wires `AddIntegratoR`, configures Key Vault and Application Insights, and exposes two smoke-test HTTP triggers | Not a library — sample app |
-| `IntegratoR.TestKit` | Shared test infrastructure: custom `Result<T>` assertions for FluentAssertions, fakes (`FakeCacheService`, `FakeHttpMessageHandler`), test entity builders | Reference from test projects only |
+| `IntegratoR.Abstractions` | Domain interfaces (`IService<T>`, `ICommand<T>`, `IQuery<T>`), the non-generic `BaseEntity`, CQRS contracts, `Result<T>` types (`IntegrationError`, `ErrorType`), and both `Result<T>` JSON converter families | — (core) |
+| `IntegratoR.Application` | MediatR pipeline behaviours, generic command/query handlers, `OAuthAuthenticator`, cache services | Abstractions |
+| `IntegratoR.OData` | Generic OData client, `ODataService<T>`, auth handler, Polly policies, `ODataFieldAttribute`, the LINQ→`$filter` translator | Abstractions |
+| `IntegratoR.OData.FO` | D365 F&O entities (`LedgerJournalHeader`/`Line`), dimension queries, feature handlers, `FOSettings` | OData |
+| `IntegratoR.Hosting` | `IntegratoRBuilder` and the single `AddIntegratoR` composition root | Application, OData, OData.FO |
+| `IntegratoR.SampleFunction` | Isolated-worker Functions host — the consumer-side composition root and smoke triggers | Hosting (not published) |
+| `IntegratoR.TestKit` | Shared test infrastructure: `Result<T>` assertions, fakes, entity builders | test-only |
 
-## Key Patterns
+> [!NOTE]
+> `AddApplicationServices`, `AddODataClient`, and `AddODataClientFOProxy` are internal composition steps, not consumer API. Call `AddIntegratoR` — it is the only public entry point, and it invokes the three in order (see below).
 
-### CQRS via MediatR
+## Entities inherit the non-generic BaseEntity
 
-Commands and queries are `record` types implementing `ICommand<TResponse>` or `IQuery<TResponse>` (both inherit `MediatR.IRequest<TResponse> + IContext`). The handler is registered automatically by MediatR's assembly scanning when its assembly is passed to `AddConsumerHandlers(...)`.
+An entity inherits `BaseEntity` and overrides `object[] GetCompositeKey()`, returning key-field values in a fixed order. D365 keys are composite — typically `DataAreaId` plus a business key.
 
-The framework provides generic Create / Update / Delete commands and GetByKey / GetByFilter queries that work with any entity implementing `IEntity`. Entity-specific custom commands and queries inherit from or compose these — they exist when entity-specific logging context or composition is genuinely useful.
+```csharp
+[Table("LedgerJournalHeaders")]
+public class LedgerJournalHeader : BaseEntity
+{
+    [JsonPropertyName("dataAreaId")]
+    public required string DataAreaId { get; set; }
 
-### Result Pattern
+    [ODataField(IgnoreOnCreate = true)]      // server-assigned
+    public string? JournalBatchNumber { get; set; }
 
-Every operation returns `Result<T>` (or non-generic `Result`) from FluentResults. The framework's standard error shape is `IntegrationError(string Code, string Message, ErrorType Type, Exception? Exception)`. The `Result` pattern is used uniformly:
+    [ODataField(IgnoreOnUpdate = true)]      // read-only on update in D365
+    public required string JournalName { get; set; }
 
-- Pipeline behaviours convert business-logic failures into `Result.Fail(IntegrationError)`.
-- Handlers never throw for business errors — they wrap with `Result.Fail`.
-- Consumers pattern-match on `result.IsSuccess` / `result.GetError()` instead of `try`/`catch`.
-- Exceptions are reserved for genuinely exceptional infrastructure failures (network resets, null refs, cancellation).
+    public required string Description { get; set; }
 
-### Pipeline Order
+    public override object[] GetCompositeKey() => [DataAreaId, JournalBatchNumber!];
+}
+```
 
-`AddApplicationServices` registers the three built-in MediatR pipeline behaviours in this fixed order:
+The generic `BaseEntity<TKey>` is `[Obsolete]` (the type parameter was never used) and is removed next MAJOR. Never use it. See [Define Entities](Define-Entities) for the full `[ODataField]`/`[JsonPropertyName]` matrix.
 
-1. **`LoggingBehaviour`** — logs request type, duration, and structured properties from `IContext.GetLoggingContext()`. Wraps handler in `try`/`catch`/`re-throw`/`log`.
-2. **`ValidationBehaviour`** — resolves all `IValidator<TRequest>` registrations, runs them, short-circuits with `Validation.Error` on the first failure.
-3. **`CachingBehaviour`** — only acts on requests implementing `ICacheableQuery<TResponse>`. Cache hits short-circuit the pipeline; misses run the handler and cache successful responses.
-4. **Handler** — the closed-generic `CreateCommandHandler<T>` / `GetByKeyQueryHandler<T>` / consumer-defined handler.
+## CQRS runs through MediatR
 
-Custom behaviours registered via `services.AddTransient(typeof(IPipelineBehavior<,>), typeof(MyBehaviour<,>))` run **after** the built-in behaviours, between caching and the handler. See [Extend the Pipeline](Extend-the-Pipeline).
+Commands and queries are `record` types implementing `ICommand<TResponse>` or `IQuery<TResponse>`. A consumer never calls `ODataService<T>` directly — it sends a command or query and reads back a `Result<T>`.
 
-### Composite-Key URL Construction
+```csharp
+LedgerJournalHeader header = new()
+{
+    DataAreaId = "USMF",
+    JournalName = "GenJrn",
+    Description = "April accruals",
+};
 
-D365 F&O entities are almost always keyed by `(DataAreaId, BusinessKey)`. The framework constructs OData composite-key URLs by:
+Result<LedgerJournalHeader> result =
+    await mediator.Send(new CreateCommand<LedgerJournalHeader>(header), cancellationToken);
 
-1. Reading `GetCompositeKey()` from the entity.
-2. For reads: building a `$filter` predicate with `eq` on each key field.
-3. For writes (Update / Delete, including the batch variants): `ODataClientAdapter` detects the composite (dictionary) key and issues the PATCH / DELETE through an owned raw-`HttpClient` bypass that builds the keyed URL manually — `LedgerJournalHeaders(dataAreaId='USMF',JournalBatchNumber='B0001')` — through the named `"ODataClient"` client so the write carries the same authentication, Polly resilience, and `BaseAddress` as every other request (since v2.0.0).
+if (result.IsFailed)
+{
+    IntegrationError error = result.GetError();
+    // Code is "{EntityType}.{reason}" — e.g. "LedgerJournalHeader.Conflict" on an HTTP 409 (ErrorType.Conflict).
+    return;
+}
 
-Both the read and write bypasses are owned, first-party source maintained in this repository. The key-field **names** used in the URL are the `[JsonPropertyName]` wire names (camelCase `dataAreaId`, not CLR `DataAreaId`), because that is what D365 OData expects.
+string batchNumber = result.Value.JournalBatchNumber!;  // server-assigned on create
+```
 
-### Two JSON Serialisers
+Generic `CreateCommand<T>`/`UpdateCommand<T>`/`DeleteCommand<T>` and `GetByKeyQuery<T>`/`GetByFilterQuery<T>` work with any `IEntity`; entity-specific commands compose them only when they add real logging context. See [Send Commands](Send-Commands) and [Run Queries](Run-Queries).
 
-The codebase uses both **System.Text.Json** and **Newtonsoft.Json**, intentionally:
+## Result&lt;T&gt; never throws for business flow
 
-| Serialiser | Used by | Auto-wired by `AddIntegratoR`? |
+Every operation returns `Result<T>` (or non-generic `Result`) from FluentResults. Business failures return a failed `Result` carrying an `IntegrationError { string Code; ErrorType Type; Exception? Exception }`; they do not throw. `ErrorType` has four members: `Failure`, `Validation`, `NotFound`, `Conflict`. Exceptions are reserved for genuinely exceptional infrastructure faults (cancellation, socket resets).
+
+Read failures with `result.IsFailed` and `result.GetError()` — never `try`/`catch` on the pipeline, never the verbose `result.Errors.FirstOrDefault()` form. See [Handle Errors](Handle-Errors).
+
+## The pipeline order is fixed: Logging → Validation → Caching → Handler
+
+`AddApplicationServices` registers three MediatR behaviours in one order, and the order is load-bearing.
+
+1. **`LoggingBehaviour`** — records request type, duration, and `IContext.GetLoggingContext()`, and detects a failed `Result<T>` returned by an inner stage.
+2. **`ValidationBehaviour`** — runs every `IValidator<TRequest>` and short-circuits on the first failure with `IntegrationError("Validation.Error", …, Validation)`.
+3. **`CachingBehaviour`** — acts only on `ICacheableQuery<TResponse>`; a hit short-circuits, a miss runs the handler and caches a successful response.
+4. **Handler** — the closed generic `CreateCommandHandler<T>` / `GetByKeyQueryHandler<T>` or a consumer handler.
+
+> [!CAUTION]
+> The order is deliberate. Validation before caching stops an invalid request from ever producing a cache entry; caching before the handler stops a valid cache hit from re-running work. Custom behaviours registered via `AddTransient(typeof(IPipelineBehavior<,>), …)` run **after** these three, between caching and the handler. See [Extend the Pipeline](Extend-the-Pipeline).
+
+Because `LoggingBehaviour` inspects the returned `Result<T>` rather than only catching exceptions, a handler that returns `Result.Fail(...)` is logged as a failure — a failed `Result` is never silently logged as success.
+
+## Two JSON serialisers, kept in lockstep
+
+The codebase runs both System.Text.Json and Newtonsoft.Json, and `Result<T>` needs converters in both. Both families delegate to one shared shape helper, `ResultJsonShape`, so the wire format never drifts.
+
+| Serialiser | Used by | Wiring |
 |---|---|---|
-| System.Text.Json | OData responses, `DistributedCacheService` (cache round-trip), Durable Functions data converter | Yes — `AddIntegratoR` wires `DurableTaskWorkerOptions.DataConverter`; `DistributedCacheService` registers in its own static options |
-| Newtonsoft.Json | HTTP request/response bodies in Azure Functions worker | No — consumers must wire `JsonConvert.DefaultSettings` in `Program.cs` |
+| System.Text.Json | Durable Functions data converter, `DistributedCacheService` | **Auto** — `AddIntegratoR` wires `DurableTaskWorkerOptions.DataConverter`; the cache service registers converters in its own static options. Consumers do nothing. |
+| Newtonsoft.Json | HTTP trigger payloads, journal-file parsing | **Manual** — a `JsonConvert.DefaultSettings` block in the host `Program.cs`. |
 
-Both serialisers share a `Result<T>` projection helper (`ResultJsonShape`) so wire formats stay aligned. See [Set Up Azure Functions Host](Set-Up-Azure-Functions-Host) for the Newtonsoft wiring snippet.
+> [!NOTE]
+> `ResultJsonShape.Project` accepts any `IError`, falling back to `(Unknown, message, Failure)` for a plain `Result.Fail("message")`. That leniency is intentional public-API behaviour — external consumers may pass non-`IntegrationError` results. See [Set Up Azure Functions Host](Set-Up-Azure-Functions-Host) for the Newtonsoft snippet.
 
-## Composition Root Flow
+## Composite-key writes bypass PanoramicData
 
-The `AddIntegratoR(configuration, configure)` call performs six steps in this order:
+D365 F&O entities are composite-keyed, and PanoramicData's `Key(object)` cannot bind a dictionary key — it calls `.ToString()` on the dictionary and emits a malformed URL. So Update, Delete, and their batch variants route through an owned raw-`HttpClient` bypass in `ODataClientAdapter`. It builds the keyed URL by hand — `LedgerJournalHeaders(dataAreaId='USMF',JournalBatchNumber='B0001')` — using the `[JsonPropertyName]` wire names, and issues the request through the named `"ODataClient"` client so the write carries the same authentication, Polly resilience, and `BaseAddress` as every other call (since v2.0.0). Reads use a parallel `$filter` bypass over the same key fields.
 
-1. `AddApplicationServices()` — pipeline behaviours, MediatR, cache service, OAuth authenticator
-2. `AddODataClient(configuration)` — HTTP client, Polly policies, OData client, `IService<T>` registration
-3. `AddODataClientFOProxy(configuration)` — F&O handlers, F&O entity bindings
-4. Cross-assembly MediatR closing — second `AddMediatR` call that scans the Application, F&O, **and** consumer assemblies together so generic CRUD handlers close against F&O **and** consumer entity types
-5. Durable Functions data converter — registers `JsonDataConverter` with the STJ Result converters on `DurableTaskWorkerOptions`
-6. Consumer validator registration — for each assembly passed to `AddConsumerHandlers`, calls `AddValidatorsFromAssembly(...)` (its MediatR handlers are already registered by the combined scan in step 4)
+> [!NOTE]
+> D365 returns `204 No Content` on a composite-key PATCH. `UpdateAsync` treats that as success and returns the caller's entity, so a successful `Result<TEntity>` never carries a null `Value`.
 
-Step 4 exists because MediatR v12's `RegisterGenericHandlers = true` flag only closes open-generic handlers against types in the **same** scanned assembly. The generic CRUD handlers live in `IntegratoR.Application`, F&O entities live in `IntegratoR.OData.FO` — the layer-local `AddMediatR` calls in steps 1–3 never see them together, so no closed `IRequestHandler<CreateCommand<LedgerJournalHeader>, ...>` registration would be emitted without step 4. The same scan folds in every assembly passed to `AddConsumerHandlers(...)`, so a consumer's extended or custom entities get closed generic handlers exactly like the framework's own.
+> [!WARNING]
+> A single field marked `[ODataField(IgnoreOnUpdate = true)]` present in an update payload makes D365 reject the **whole** PATCH with HTTP 403 (`ODataSecurityException`), not only that field. On `LedgerJournalHeader` that set is `JournalName`, `AccountingCurrency`, `IsPosted`, `JournalTotalDebit`, and `JournalTotalCredit`. Audit every field against D365's update semantics before shipping an entity.
 
-## Dependency Direction
+## The composition root wires it in order
 
-The arrows in the diagram all point toward `IntegratoR.Abstractions`:
+`AddIntegratoR(configuration, configure)` runs these steps, and `ODataSettingsValidator : IValidateOptions<ODataSettings>` (auto-registered, with `ValidateOnStart`) fails the host at start-up on invalid connection or auth settings rather than at first request.
 
-- Higher-level packages (`OData.FO`, `OData`, `Application`, `Hosting`) depend on the abstractions.
-- The abstractions never depend on a higher-level package.
-- Cross-cutting concerns (auth, cache, resilience) live in concrete packages with interfaces in abstractions.
+1. `AddApplicationServices()` — pipeline behaviours, MediatR, cache, OAuth authenticator.
+2. `AddODataClient(configuration)` — HTTP client, Polly policies, `ODataService<T>`, `ODataSettingsValidator`.
+3. `AddODataClientFOProxy(configuration)` — F&O handlers and entity bindings.
+4. A combined MediatR scan (Application + F&O + every assembly from `AddConsumerHandlers`) that closes the open-generic CRUD handlers against F&O **and** consumer entity types together.
+5. The Durable Functions `Result<T>` converter on `DurableTaskWorkerOptions` (lazy — zero cost for non-Durable consumers).
+6. Closing and registering the open-generic and consumer validators so `ValidationBehaviour` resolves them.
 
-This is what allows the framework to expose `IService<T>` from `IntegratoR.Abstractions` while the concrete `ODataService<T>` implementation lives in `IntegratoR.OData` — the consumer references only abstractions for testability, the composition root references concretes for runtime wiring.
+Step 4 exists because MediatR v12 closes open generics only within a single scanned assembly, and step 6 exists because FluentValidation's scanner skips open generics. Both cross-assembly closures happen once, here — a consumer's extended entities get closed generic handlers and validators exactly like the framework's own. The rationale lives in [ADR-0001](https://github.com/Mikeoso/IntegratoR/blob/main/docs/adr/0001-generic-handler-and-validator-registration.md); the Durable wiring in [ADR-0002](https://github.com/Mikeoso/IntegratoR/blob/main/docs/adr/0002-durable-functions-result-converter-wiring.md); the `[JsonPropertyName]`-aware translator fork in [ADR-0003](https://github.com/Mikeoso/IntegratoR/blob/main/docs/adr/0003-odata-expression-translator-fork.md).
 
 ## See Also
 
-- [Getting Started](Getting-Started) — putting the architecture into a running Azure Functions host
-- [Set Up Azure Functions Host](Set-Up-Azure-Functions-Host) — production composition root with all wiring
-- [Send Commands](Send-Commands) — the CQRS pattern in practice
-- [Extend the Pipeline](Extend-the-Pipeline) — adding to the architecture without modifying it
-- [Known Limitations](Known-Limitations) — current architecture gaps tracked transparently
+- [Getting Started](Getting-Started)
+- [Send Commands](Send-Commands)
+- [Extend the Pipeline](Extend-the-Pipeline)
+- [Set Up Azure Functions Host](Set-Up-Azure-Functions-Host)

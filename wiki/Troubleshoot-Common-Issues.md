@@ -1,176 +1,171 @@
 # Troubleshoot Common Issues
+> Last verified against v2.0.1 (live-D365 items dated per run)
 
-Real errors observed during framework development and resolution steps for each. Errors are grouped by where they surface in the stack — host startup, the OData layer, the OAuth layer, validation, and the dimension and journal smoke tests.
+Each entry is keyed by the error you see. Match the symptom, read the one-line cause, apply the fix. Live-server behaviour is dated to the smoke run that proved it.
 
-## Host Startup
+## HTTP 403 `ODataSecurityException` — "update not allowed for field 'X'"
 
-### `ArgumentException: ODataSettings.Url must be set to a non-empty absolute URL`
+D365 rejected an `UpdateCommand<T>` because the PATCH payload carried a field that is read-only on update. The offending field needs `[ODataField(IgnoreOnUpdate = true)]` so the payload builder omits it.
 
-The framework's normalisation guard fired because the configured `Url` was missing or whitespace.
+> [!WARNING]
+> One read-only field in the payload makes D365 reject the **whole** PATCH with HTTP 403 — not only that field. The other fields never land. Mark every read-only field `IgnoreOnUpdate`, or the update fails entirely.
 
-**Resolution:**
-1. Verify the configuration source — `local.settings.json` (development) or Azure App Settings (production).
-2. The section name is **exactly** `ODataSettings` — case-sensitive.
-3. On Azure App Settings the key is `ODataSettings__Url` (double-underscore separator).
+On `LedgerJournalHeader` these fields are read-only on update and already carry the attribute: `JournalName`, `IsPosted`, `JournalTotalDebit`, `JournalTotalCredit`, `AccountingCurrency`. If you extend the entity or add a new one, audit every property against D365's update semantics.
 
-### `KeyVault URI is not set in environment variables`
+```csharp
+Result<LedgerJournalHeader> result = await mediator.Send(
+    new UpdateCommand<LedgerJournalHeader>(header), cancellationToken);
 
-The production-host wiring requires `ClientSecretKeyVaultURI` as an environment variable. The check is intentional — without Key Vault, secrets cannot be sourced safely in production.
+if (result.IsFailed)
+{
+    IntegrationError error = result.GetError();
+    // On a stray read-only field the OData layer surfaces the 403 as a failed Result.
+    // error.Type == ErrorType.Failure; error.Code == "LedgerJournalHeader.Unauthorized".
+    // error.Exception is the wrapped ODataClientException — its Message and response body
+    // carry D365's ODataSecurityException and the "update not allowed for field 'X'" detail.
+}
+```
 
-**Resolution:** set the env var to the Key Vault URI (e.g. `https://my-vault.vault.azure.net/`). For local development runs, ensure `local.settings.json` is loaded by `Program.cs` — the production path only fires when `EnvironmentName` is not `Development`.
+To send a field D365 rejects, do not remove the attribute globally — subclass the entity and re-declare the property with the corrected flag (see [Errors when registering a custom entity](#errors-when-registering-a-custom-entity) below).
 
-### `Core Tools Version: 4.4.0` shown by `func start`
+Verified against live D365 (JFI) on 2026-07-01: the five `LedgerJournalHeader` fields above were surfaced by an all-green LedgerJournal CRUD run once they were marked `IgnoreOnUpdate`.
 
-The local `func` CLI picked the in-process host, which does not support .NET 10 isolated workers.
+## HTTP 401 with `ReasonPhrase "Authentication failed"`
 
-**Resolution:** start `func` **without** the `--csharp` flag. The correct banner is `Core Tools Version: 4.9.0+...` and `Function Runtime Version: 4.1047.100…`. See [Run Smoke Tests](Run-Smoke-Tests).
+`ODataAuthenticationHandler` could not attach a bearer token, so it short-circuited the request before it reached D365. The 401 carries the fixed generic phrase and no MSAL detail — tenant IDs and AADSTS codes stay server-side in the logged `IntegrationError`.
 
-## OData Layer
+Check the failed `Result<T>` from the OAuth path — its `Code` is `Auth.Msal.{code}`, where `{code}` is the MSAL error code:
 
-### `OData.AuthenticationFailed` with message *"Failed to acquire OAuth token for resource ..."*
+```csharp
+if (result.IsFailed)
+{
+    IntegrationError error = result.GetError();
+    // error.Code == "Auth.Msal.invalid_client"  (Auth.Msal.{MSAL error code})
+    // error.Type == ErrorType.Failure; error.Message == "Token acquisition failed".
+    // error.Exception carries the full MSAL detail for server-side logging.
+}
+```
 
-`OAuthAuthenticator` could not acquire a bearer token via MSAL.
-
-**Resolution:** check the wrapped MSAL error code embedded in the message:
+Read the MSAL code on the inner exception in the host log and act on it:
 
 | MSAL code | Cause | Fix |
 |---|---|---|
-| `AADSTS70011` | `Resource` is wrong | Set `Resource` to the environment URL **without** `/data` |
-| `AADSTS50034` | Wrong tenant | Re-check `TenantId` is the tenant where the app is registered |
 | `AADSTS7000215` | Invalid client secret | Rotate the secret in Azure AD, re-deploy via Key Vault |
-| `AADSTS50012` | Secret hash mismatch | Secret was truncated or contains an invalid character — re-copy from Azure AD verbatim |
+| `AADSTS50012` | Secret truncated or malformed | Re-copy the secret from Azure AD verbatim |
+| `AADSTS50034` | Wrong tenant | Set `TenantId` to the tenant where the app is registered |
+| `AADSTS70011` | Wrong resource | Set the resource to the environment URL **without** `/data` |
 
-If the token is acquired but D365 still returns HTTP 401: register the app as a service user in D365 F&O (*System administration → Setup → Azure Active Directory applications*). See [Authentication Modes](Authentication-Modes).
+If the token is acquired but D365 still returns 401, register the app as a service user in D365 F&O (*System administration -> Setup -> Azure Active Directory applications*). See [Authentication Modes](Authentication-Modes).
 
-### `OData.NotFound` with malformed-key URL in the message
+## "Could not find a property named 'X'"
 
-D365 returned HTTP 404 because the request URL was malformed. Two common shapes:
+D365 rejected the filter, select, or payload because a camelCase wire field was declared without `[JsonPropertyName]`. About 479 legacy X++ fields (`dataAreaId`, `transDate`, `validFrom`, `recId`) are camelCase on the wire; the CLR property is PascalCase by C# convention, so the two must be bridged.
 
-1. URL contains `(System.Collections.Generic.Dictionary…)` — the **pre-v2.0.0** composite-key write path serialised the key dictionary via `Object.ToString()`. Fixed in v2.0.0: `ODataClientAdapter` now builds the keyed URL manually through an owned raw-`HttpClient` bypass. If you see this shape, upgrade to v2.0.0 or later. See [Known Limitations](Known-Limitations#composite-key-write-path--resolved).
-2. URL is missing a path segment (`/fo`, `/data`) — `BaseAddress` trailing-slash issue.
+Add `[JsonPropertyName("camelCaseName")]` to the property. IntegratoR's filter/select/expand/`$orderby` translator honours the attribute, so a typed LINQ filter then emits the right wire name.
 
-**Resolution for (2):** ensure `ODataSettings.Url` ends with the correct path segment. The framework normalises by appending a trailing slash; either `https://host/fo` or `https://host/fo/` works. The host log emits `OData client configured with base URL: <normalised>` once at startup — verify the segment is present.
+```csharp
+[Key]
+[JsonPropertyName("dataAreaId")]              // wire name is camelCase
+[ODataField(IsRequired = true)]
+public required string DataAreaId { get; set; }
+```
 
-### `Warning: Delete on EntityName returned HTTP 404 and is being treated as success`
+With the attribute in place, `x => x.DataAreaId == "USMF"` emits `$filter=dataAreaId eq 'USMF'`. Without it, the translator reads the PascalCase CLR name and D365 fails the request. Never write raw OData filter strings — use typed LINQ throughout.
 
-The ExceptionHandler's observability fix (since v1.3.4) surfacing a suppressed-404. The Result returned to the consumer is still `Result.Ok` (the `treatNotFoundAsSuccess` flag), but the warning signals one of:
+## A value you set on create is silently dropped
 
-- The entity was genuinely already gone (legitimate idempotent delete) — ignore the warning.
-- On a **pre-v2.0.0** build, the request URL was malformed and D365 had nothing to match (the old composite-key write path). Fixed in v2.0.0 — see [Known Limitations](Known-Limitations#composite-key-write-path--resolved).
+The property carries `[ODataField(IgnoreOnCreate = true)]`, so the payload builder omits it from the POST. The create succeeds, but your value never reached D365. On `LedgerJournalHeader`, `JournalBatchNumber` is `IgnoreOnCreate` because a D365 number sequence assigns it — read it back from `result.Value.JournalBatchNumber` after the create.
 
-The warning includes the request URL — `RequestUrl: (internal)` means the framework could not capture it; `RequestUrl: <full-url>` lets the operator distinguish the two cases.
+```csharp
+Result<LedgerJournalHeader> result = await mediator.Send(
+    new CreateCommand<LedgerJournalHeader>(header), cancellationToken);
 
-### Polly retry warnings on every request
+if (result.IsSuccess)
+{
+    // The server-assigned batch number is on the returned entity, not the one you sent.
+    string batchNumber = result.Value.JournalBatchNumber!;
+}
+else
+{
+    IntegrationError error = result.GetError();
+    // A rejected create fails the Result — inspect error.Code and error.Message for the D365 detail.
+}
+```
 
-`IntegratoR.OData.HttpRetry` logger emits a `Warning` line per retry attempt with `RetryCount`, `DelayMs`, and `Reason`.
+If you must send a field D365 accepts on create but the framework entity ignores, subclass and re-declare the property with `IgnoreOnCreate = false` (see below). If D365 accepts the field for every consumer, fix the attribute on the framework entity instead — see [Known Limitations](Known-Limitations).
 
-**Resolution:**
+## `Validation.Error` returned before any request reaches D365
 
-- Reason mentions `5xx` consistently → upstream (APIM or D365) is unhealthy; investigate downstream rather than increase `RetryCount`.
-- Reason mentions `TaskCanceledException` → `Timeout` is too short; increase `ODataSettings.Timeout`.
-- Reason mentions `400` → suspected Polly predicate over-broadening; see [Known Limitations](Known-Limitations#polly-retry-sometimes-retries-http-400).
+`ValidationBehaviour` ran a registered `IValidator<TRequest>`, a rule failed, and the pipeline short-circuited. The handler never ran, so nothing reached D365. This is the framework working as intended, not a fault.
 
-## Validation
+```csharp
+if (result.IsFailed)
+{
+    IntegrationError error = result.GetError();
+    // error.Code == "Validation.Error"; error.Type == ErrorType.Validation.
+    // error.Message is the FIRST failing rule's message — later failures are dropped.
+}
+```
 
-### `Validation.Error` returned with the first failed rule message
+Read `error.Message` for the first failing rule and correct the input. To surface every failure at once, compose them in one `RuleFor(...).Custom(...)` rule that builds a multi-line message. See [Add Validation](Add-Validation).
 
-Expected behaviour. The framework's `ValidationBehaviour` surfaces only the first validation failure to keep client handling simple.
+## Your validator never fires
 
-**Resolution:** if all failures need to surface, compose the messages into a single `RuleFor(...).Custom(...)` validator that builds a multi-line message. See [Add Validation](Add-Validation).
+The assembly holding the validator was not passed to `AddConsumerHandlers`. `AddIntegratoR` scans only the assemblies you register explicitly plus the framework assemblies — it does not scan every loaded assembly.
 
-### Validator never runs
+Register the assembly in the configure delegate:
 
-The validator's assembly is not registered with `AddConsumerHandlers(...)`.
+```csharp
+services.AddIntegratoR(configuration, integrator =>
+    integrator.AddConsumerHandlers(typeof(MyValidator).Assembly));
+```
 
-**Resolution:** add the assembly explicitly: `integrator.AddConsumerHandlers(typeof(MyValidator).Assembly)`. The framework only scans assemblies passed in explicitly — it does **not** scan every loaded assembly.
+Generic command validators are closed over your entity types by the same scan (since v2.0.1), so registering the assembly also activates `CreateCommand<T>`/`UpdateCommand<T>` validation for your entities.
 
-## Dimension Smoke Test
+## Errors when registering a custom entity
 
-### `DimensionParameters.NotFound` (introduced in v1.3.5)
+`mediator.Send(...)` was called with a command or query closed over a custom or extended entity whose assembly was never handed to `AddConsumerHandlers`. MediatR then has no closed handler to resolve.
 
-`GetDimensionOrdersQuery` ran but `DimensionParameters.FindAll` returned no rows. The singleton row was never seeded in this D365 environment.
+```text
+InvalidOperationException: No service for type
+'MediatR.IRequestHandler`2[...]' has been registered.
+```
 
-**Resolution:** browse to the *General ledger → Setup → Dimensions → Dimension parameters* page in D365 F&O. Seeding the row is a one-time setup operation per environment.
-
-### Empty `Segments` list returned successfully
-
-`DimensionIntegrationFormat.FindAsync` matched zero rows for the supplied `DimensionFormatName` + `HierarchyType`. The handler returns `Result.Ok` with an empty segment list rather than `NotFound` for backward compatibility.
-
-**Resolution:** verify that the dimension format name exists in *General ledger → Setup → Financial dimensions → Dimension integration setup*, and that the `IsActive` flag is `Yes`. The query filter includes `IsActive == NoYes.Yes`.
-
-### `Lines/any(l: l/Status eq 1)` rejected by D365
-
-Pre-v1.3.5 the LINQ-to-OData translator did not intercept enum-constant comparisons inside `Any`/`All` lambda bodies, so it emitted the integer form D365 rejects with *"incompatible types ... 'Edm.Int32'"*.
-
-**Resolution:** upgrade to v1.3.5 or later. The translator now emits the qualified-type form (`Microsoft.Dynamics.DataEntities.Status'Posted'`) for both top-level predicates and lambda bodies.
-
-## LedgerJournal Smoke Test
-
-### Step 4 (CreateDebitLine) fails with *"Das Feld 'Währung' muss ausgefüllt werden"* (or English equivalent)
-
-D365 rejected the line create because `CurrencyCode` was missing from the payload.
-
-**Resolution:** fixed in PR #92 (v1.3.4). The `CurrencyCode` attribute on `LedgerJournalLine` had `[ODataField(IgnoreOnCreate = true)]` removed — the value the consumer supplies now reaches the wire. Verify the consumer's code sets `CurrencyCode` on every line.
-
-### `UpdateHeader` fails with `LedgerJournalHeader.NotFound: Resource not found: LedgerJournalHeaders(System.Collections.Generic.Dictionary…)`
-
-Historical (pre-v2.0.0) composite-key write-path bug — the key dictionary serialised via `Object.ToString()` into the URL. Fixed in v2.0.0: `ODataClientAdapter` now builds the keyed URL manually through the owned raw-`HttpClient` bypass, so `UpdateHeader`, `UpdateLine`, `DeleteLine`, and `DeleteHeader` all land against the correct record. If you see this, upgrade to v2.0.0 or later. See [Known Limitations](Known-Limitations#composite-key-write-path--resolved).
-
-> On v2.0.0, a composite-key PATCH that returns `204 No Content` made `ODataService.UpdateAsync` hand back a null `Value`, and D365 rejected a PATCH carrying a read-only `LedgerJournalHeader` field (`JournalName`, `AccountingCurrency`, `IsPosted`, `JournalTotalDebit/Credit`) with an `ODataSecurityException` (HTTP 403). Both are fixed in v2.0.1 — `UpdateAsync` returns the caller's entity and those fields are now `[ODataField(IgnoreOnUpdate = true)]`.
-
-### `DeleteHeader` / cleanup returns success and the journal is removed
-
-On v2.0.0 and later the full Update/Delete cycle runs through the owned composite-key bypass and self-cleans — the smoke test deletes every line and the header it created and verifies the header is gone (`VerifyHeaderDeleted`). A green run leaves no orphan in D365. Verified end to end against a live D365 (JFI) sandbox on 2026-07-01.
-
-## Extending the Framework
-
-### `InvalidOperationException: No service for type 'MediatR.IRequestHandler`2[...]' has been registered`
-
-`mediator.Send(...)` was called with a command or query closed over a **custom or extended entity** (for example a subclass of `LedgerJournalLine`) whose assembly was never handed to `AddConsumerHandlers(...)`.
-
-**Why:** the framework closes its generic CQRS handlers over an entity type only when that type's assembly is part of the combined `RegisterGenericHandlers = true` scan. `AddIntegratoR` scans the Application + F&O assemblies **plus every assembly you pass to `AddConsumerHandlers(...)`**. If your entity lives in an assembly you never registered, no closed handler is emitted for it.
-
-**Resolution:** register the assembly that holds your extended entity — nothing more:
+`AddIntegratoR` closes its generic handlers over an entity type only when that type's assembly is part of the combined handler scan. Register the assembly that holds your entity — nothing more:
 
 ```csharp
 services.AddIntegratoR(configuration, integrator =>
     integrator.AddConsumerHandlers(typeof(MyLedgerJournalLine).Assembly));
 ```
 
-`AddConsumerHandlers` folds the assembly into the combined generic-handler scan, so `mediator.Send(new CreateCommand<MyLedgerJournalLine>(...))` — and `Update` / `Delete` / `GetByKey` / `GetByFilter` — resolves automatically (and the assembly's FluentValidation validators are registered too). The service layer (`IService<MyEntity>`) was never the problem — it is an open-generic registration that resolves against any type.
+`AddConsumerHandlers` folds the assembly into the scan, so `CreateCommand<MyLedgerJournalLine>` — and `Update`/`Delete`/`GetByKeyQuery`/`GetByFilterQuery` — resolves. The service layer was never the gap: `IService<T>` is an open-generic registration that resolves against any type.
 
-### A field I need on create or update is dropped from the payload (wrong `IgnoreOnCreate` / `IgnoreOnUpdate`)
-
-An `[ODataField(IgnoreOnCreate = true)]` (or `IgnoreOnUpdate`) on a framework entity excludes a field your use case needs to send, so the value never reaches the wire.
-
-**Resolution:** subclass the entity and **override the property, re-declaring the attribute** with the corrected flag. Overriding alone is not enough — `ODataFieldAttribute` is `Inherited = true`, so without re-declaring it the base value still applies:
+To override an inherited `[ODataField]` flag, re-declare the property on the subclass — overriding alone is not enough, because `ODataFieldAttribute` is inherited:
 
 ```csharp
 [Table("LedgerJournalLines")]
 public class MyLedgerJournalLine : LedgerJournalLine
 {
-    [ODataField(IgnoreOnCreate = false)]
+    [ODataField(IgnoreOnCreate = false)]      // re-declared flag wins
     [JsonPropertyName("AccountType")]
     public override LedgerJournalACType AccountType { get; set; }
 }
 ```
 
-The payload builder reflects on the **runtime type**, so an instance of the subclass picks up the override and the re-declared attribute wins (`AllowMultiple = false`). The property must be `virtual` — every `LedgerJournalLine` field is, except the server-generated `LineNumber` key, which you should never send on create anyway. Then register the subclass per the handler entry above.
+The payload builder reflects on the runtime type, so an instance of the subclass picks up the re-declared attribute. The property must be `virtual` on the base entity.
 
-If the attribute is wrong for **every** consumer (D365 actually accepts the field on create), fix it on the framework entity instead — see [Known Limitations](Known-Limitations#entity-attribute-audit-pending).
+## When the diagnostic is not here
 
-## When the Diagnostic Is Not Here
+For any error not listed above:
 
-For any error not covered above:
-
-1. Read the host log carefully — the framework logs the normalised `BaseAddress`, the OData request URL, the auth mode, and every retry attempt at startup-time and per-request.
-2. Run the financial-dimension smoke test (read-only, low-risk) and inspect the per-step JSON response. It surfaces authentication, network, and OData configuration errors as typed `IntegrationError` codes without writing to D365.
-3. Search the framework's source for the error code — codes follow the `<Subsystem>.<Cause>` convention (e.g. `OData.AuthenticationFailed`, `LedgerJournalHeader.NotFound`) and grep against the source typically finds where the code is constructed.
-4. Open an issue at `https://github.com/Mikeoso/IntegratoR/issues` with the request URL, the `IntegrationError` shape, and the host log lines for the failing call.
+1. Read the host log — the framework logs the normalised base URL, the OData request URL, the auth mode, and every retry attempt.
+2. Run the financial-dimension smoke test (read-only, low-risk); it surfaces auth, network, and OData configuration errors as typed `IntegrationError` codes without writing to D365. See [Run Smoke Tests](Run-Smoke-Tests).
+3. Match on the `IntegrationError.Code` prefix — codes follow the `<Subsystem>.<Cause>` convention (`Auth.Msal.{code}`, `Validation.Error`).
+4. Open an issue at [the IntegratoR repository](https://github.com/Mikeoso/IntegratoR/issues) with the request URL, the `IntegrationError` shape, and the failing host-log lines.
 
 ## See Also
 
-- [Run Smoke Tests](Run-Smoke-Tests) — the fastest diagnostic tool
-- [Known Limitations](Known-Limitations) — limitations that look like bugs but have known status
-- [Authentication Modes](Authentication-Modes) — auth-failure deep dive
 - [Handle Errors](Handle-Errors) — the `IntegrationError` shape that carries these diagnostics
+- [Run Smoke Tests](Run-Smoke-Tests) — the fastest live diagnostic
+- [Authentication Modes](Authentication-Modes) — the auth-failure deep dive
+- [Known Limitations](Known-Limitations) — behaviour that looks like a bug but has known status
