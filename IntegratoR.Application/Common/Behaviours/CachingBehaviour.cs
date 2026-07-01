@@ -39,27 +39,21 @@ public class CachingBehaviour<TRequest, TResponse> : IPipelineBehavior<TRequest,
     /// <returns>The response served from the cache on a hit; otherwise the response from the handler.</returns>
     public async Task<TResponse> Handle(TRequest request, RequestHandlerDelegate<TResponse> next, CancellationToken cancellationToken)
     {
-        // This behavior only acts on queries that explicitly opt into caching.
-        // For all other requests, it's a simple passthrough.
         if (request is not ICacheableQuery<TResponse> cacheableQuery)
         {
             return await next().ConfigureAwait(false);
         }
 
-        // Attempt to retrieve the response from the cache using the key defined in the query.
         var cachedResponse = await _cacheService.GetAsync<TResponse>(cacheableQuery.CacheKey).ConfigureAwait(false);
         if (cachedResponse is not null)
         {
             _logger.LogDebug("Cache HIT for key {CacheKey}. Returning cached response.", cacheableQuery.CacheKey);
-            return cachedResponse; // Short-circuit the pipeline and return the cached value.
+            return cachedResponse;
         }
 
-        // If the item was not in the cache, proceed with executing the actual request handler.
         _logger.LogDebug("Cache MISS for key {CacheKey}. Executing handler.", cacheableQuery.CacheKey);
         var response = await next().ConfigureAwait(false);
 
-        // Only cache the response if the handler executed successfully.
-        // This prevents caching failures or "Not Found" results.
         if (response is { IsSuccess: true })
         {
             _logger.LogDebug("Handler executed successfully. Caching response with key {CacheKey} for {CacheDuration}", cacheableQuery.CacheKey, cacheableQuery.CacheDuration);

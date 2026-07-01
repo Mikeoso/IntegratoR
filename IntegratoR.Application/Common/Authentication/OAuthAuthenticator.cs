@@ -84,8 +84,7 @@ public class OAuthAuthenticator : IAuthenticator
             var scopes = new[] { $"{resource}/.default" };
             AcquiredToken token = await _tokenAcquirer(confidentialClientApp, scopes, cancellationToken).ConfigureAwait(false);
 
-            // Proactively expire the cache entry 5 minutes before the actual token expires to avoid
-            // using an invalidated token due to clock skew or transit delays.
+            // Expire 5 min early to absorb clock skew / transit delay before the token actually expires.
             var cacheExpiration = token.ExpiresOn.Subtract(TimeSpan.FromMinutes(5));
             _memoryCache.Set(tokenCacheKey, token.AccessToken, cacheExpiration);
 

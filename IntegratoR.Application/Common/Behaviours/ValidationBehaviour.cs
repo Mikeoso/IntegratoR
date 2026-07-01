@@ -37,7 +37,6 @@ public class ValidationBehaviour<TRequest, TResponse> : IPipelineBehavior<TReque
     /// <remarks>Failed results are built via <see cref="ResultFactory.FailFromError{TResult}"/> so the correct closed type (<see cref="Result{TValue}"/> or non-generic <see cref="Result"/>) is returned for any command or query.</remarks>
     public async Task<TResponse> Handle(TRequest request, RequestHandlerDelegate<TResponse> next, CancellationToken cancellationToken)
     {
-        // If no validators are registered for this request type, skip validation.
         if (!_validators.Any())
         {
             return await next().ConfigureAwait(false);
@@ -60,11 +59,9 @@ public class ValidationBehaviour<TRequest, TResponse> : IPipelineBehavior<TReque
             var firstFailure = validationFailures.First();
             var error = new IntegrationError("Validation.Error", firstFailure.ErrorMessage, ErrorType.Validation);
 
-            // Build the correctly-typed failed Result (generic or non-generic) via the shared cached factory.
             return ResultFactory.FailFromError<TResponse>(error);
         }
 
-        // If validation was successful, proceed to the next behavior or the handler.
         return await next().ConfigureAwait(false);
     }
 }

@@ -51,6 +51,8 @@ namespace IntegratoR.OData.Common.Filters;
 /// </summary>
 internal static class IntegratoRODataExpressionTranslator
 {
+    // Why this is a fork: see docs/adr/0003-odata-expression-translator-fork.md
+
     /// <summary>
     /// Converts a predicate expression into an OData <c>$filter</c> clause.
     /// </summary>

@@ -87,6 +87,7 @@ public static class CsdlParser
             string typeName = entityTypeElement.Attribute("Name")?.Value ?? "";
             if (string.IsNullOrEmpty(typeName)) continue;
 
+            // Parse key property names
             var keyNames = entityTypeElement
                 .Element(Edm + "Key")?
                 .Elements(Edm + "PropertyRef")
@@ -96,11 +97,13 @@ public static class CsdlParser
 
             var keySet = new HashSet<string>(keyNames, StringComparer.Ordinal);
 
+            // Parse properties
             var properties = entityTypeElement
                 .Elements(Edm + "Property")
                 .Select(p => ParseProperty(p, keySet, schemaNamespace, enumTypeNames))
                 .ToList();
 
+            // Entity-level annotations
             bool isReadOnly = GetAnnotationBool(entityTypeElement, "IsReadOnly");
             string? label = GetAnnotationString(entityTypeElement, "LabelId");
 
@@ -147,6 +150,7 @@ public static class CsdlParser
             }
         }
 
+        // D365 annotations
         bool allowEdit = GetAnnotationBool(propertyElement, "AllowEdit", defaultValue: true);
         bool allowEditOnCreate = GetAnnotationBool(propertyElement, "AllowEditOnCreate", defaultValue: true);
         bool isRequired = GetAnnotationBool(propertyElement, "IsRequired");
@@ -204,6 +208,7 @@ public static class CsdlParser
     {
         var mapping = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
+        // EntityContainer is within the same Schema element
         XElement? container = schema.Element(Edm + "EntityContainer");
         if (container is null) return mapping;
 

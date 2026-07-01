@@ -62,7 +62,6 @@ public class ODataMetadataProvider
             // Remove DTD declarations to prevent security issues
             xmlContent = RemoveDtdDeclaration(xmlContent);
 
-            // Validate that it's proper XML
             var validationResult = ValidateXml(xmlContent);
             if (validationResult.IsFailed)
             {
@@ -137,7 +136,6 @@ public class ODataMetadataProvider
     /// </summary>
     private string RemoveDtdDeclaration(string xmlContent)
     {
-        // Remove DOCTYPE declarations
         // Pattern matches: <!DOCTYPE ... [ ... ]> or <!DOCTYPE ...>
         var dtdPattern = @"<!DOCTYPE[^>\[]*(\[[^\]]*\])?>";
         xmlContent = System.Text.RegularExpressions.Regex.Replace(

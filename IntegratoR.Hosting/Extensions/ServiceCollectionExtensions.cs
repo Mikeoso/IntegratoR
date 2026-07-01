@@ -23,9 +23,7 @@ namespace Microsoft.Extensions.DependencyInjection;
 /// </summary>
 public static class IntegratoRServiceCollectionExtensions
 {
-    // Shared JsonSerializerOptions for the Durable Task data converter. STJ caches per-instance
-    // converter metadata on the options, so a single static readonly instance keeps that cache
-    // warm across the lifetime of the host. Matches the pattern in DistributedCacheService.
+    // Single static instance keeps STJ's per-instance converter cache warm for the host lifetime; see ADR-0002.
     private static readonly JsonSerializerOptions DurableTaskJsonOptions =
         new JsonSerializerOptions(JsonSerializerDefaults.Web).AddResultConverters();
 
@@ -66,13 +64,8 @@ public static class IntegratoRServiceCollectionExtensions
         // 3. F&O layer — MediatR handlers for D365 entities
         services.AddODataClientFOProxy(configuration);
 
-        // 3b. Cross-assembly generic handler closing.
-        // MediatR v12 only closes open generics against types in the SAME scanned assembly,
-        // so the layer-local AddMediatR calls in AddApplicationServices() and AddODataClientFOProxy()
-        // never see the open CreateCommandHandler<T> and the entity types together. This single
-        // combined scan emits the closed IRequestHandler<CreateCommand<T>, ...> registrations for
-        // every F&O entity AND every consumer-supplied entity (a subclass of an F&O entity or a new
-        // BaseEntity<TKey>), so mediator.Send(new CreateCommand<ConsumerEntity>(...)) resolves.
+        // 3b. Close the open-generic handlers over the framework AND consumer entity types in one
+        //     combined scan (MediatR v12 only closes within a single scanned assembly). See ADR-0001.
         services.AddMediatR(cfg =>
         {
             cfg.RegisterGenericHandlers = true;
@@ -81,22 +74,14 @@ public static class IntegratoRServiceCollectionExtensions
             cfg.RegisterServicesFromAssembly(
                 typeof(IntegratoR.OData.FO.Domain.Entities.LedgerJournal.LedgerJournalHeader).Assembly);
 
-            // Fold consumer assemblies into the SAME RegisterGenericHandlers pass so the framework's
-            // generic CRUD/query handlers are also closed over consumer entity types. Without this,
-            // a consumer's extended/custom entity would have no IRequestHandler<CreateCommand<T>, ...>.
             foreach (Assembly assembly in builder.ConsumerAssemblies)
             {
                 cfg.RegisterServicesFromAssembly(assembly);
             }
         });
 
-        // 4. Durable Functions Result<T> support — register the System.Text.Json Result
-        //    converters with the Durable Task worker so activities and orchestrators returning
-        //    Result<T>/Result round-trip through the task hub. The Configure call is lazy:
-        //    consumers not using Durable Functions never resolve DurableTaskWorkerOptions and
-        //    pay zero runtime cost (the package reference itself is unconditional, but the
-        //    Microsoft.DurableTask.* packages are tiny and almost always already in the
-        //    dependency tree of an IntegratoR consumer building Azure Functions integrations).
+        // 4. Wire the Result<T> converters into the Durable Task worker (lazy — zero cost for
+        //    consumers not using Durable Functions). See ADR-0002.
         services.Configure<DurableTaskWorkerOptions>(options =>
         {
             options.DataConverter = new JsonDataConverter(DurableTaskJsonOptions);
@@ -113,31 +98,14 @@ public static class IntegratoRServiceCollectionExtensions
             services.PostConfigure(builder.FOPostConfigure);
         }
 
-        // 6. Register the F&O FluentValidation validators. The F&O layer (AddODataClientFOProxy)
-        //    registers its MediatR handlers but not its validators; wiring them here keeps the
-        //    FluentValidation.DependencyInjectionExtensions dependency in the composition root.
-        //    This registers the NON-GENERIC, concrete validators (e.g. GetDimensionOrdersQueryValidator),
-        //    which fire in the MediatR ValidationBehaviour.
-        //
-        //    AddValidatorsFromAssembly's scanner does NOT register OPEN-GENERIC validators (it cannot
-        //    build a closed IValidator<> service type from a partially-open generic). The generic
-        //    baseline validators (CreateCommandValidator<T> etc.) and the F&O-derived per-command
-        //    validators are therefore closed and registered explicitly in step 6b below.
+        // 6. Register the F&O non-generic validators (e.g. GetDimensionOrdersQueryValidator). The
+        //    open-generic validators are closed separately in 6b. See ADR-0001.
         services.AddValidatorsFromAssembly(
             typeof(IntegratoR.OData.FO.Domain.Entities.LedgerJournal.LedgerJournalHeader).Assembly,
             includeInternalTypes: true);
 
-        // 6b. Close the OPEN-GENERIC command/query validators over every discovered entity type and
-        //     register the resulting CLOSED IValidator<> so they actually fire in ValidationBehaviour.
-        //     Step 6 (and AddApplicationServices) cannot: the FluentValidation scanner skips open
-        //     generics, so mediator.Send(new CreateCommand<TEntity>(...)) would otherwise resolve an
-        //     EMPTY IEnumerable<IValidator<CreateCommand<TEntity>>> and generic command validation
-        //     would silently never run. Entities come from the F&O assembly AND consumer assemblies (a
-        //     consumer's CreateCommand<ConsumerEntity> needs its validator too); the open-generic
-        //     validators come from IntegratoR.Application (baseline) and IntegratoR.OData.FO (derived).
-        //     (The F&O-derived per-command validators are also closed and registered here as a benign
-        //     side-effect — nothing dispatches those FO-specific commands through the mediator today,
-        //     and TryAddEnumerable keeps the registration harmless.) See open-todos #15.
+        // 6b. Close the open-generic command/query validators over every entity so they fire in
+        //     ValidationBehaviour (the FluentValidation scanner skips open generics). See ADR-0001, open-todos #15.
         RegisterClosedGenericValidators(
             services,
             validatorAssemblies:
@@ -151,10 +119,8 @@ public static class IntegratoRServiceCollectionExtensions
                 .. builder.ConsumerAssemblies,
             ]);
 
-        // 7. Register consumer FluentValidation validators. Consumer MediatR handlers — including
-        //    the closed generic CRUD/query handlers for consumer entities — are already registered
-        //    by the combined RegisterGenericHandlers scan in step 3b, so they must NOT be scanned
-        //    again here (a second AddMediatR pass would emit duplicate handler registrations).
+        // 7. Register consumer validators. Consumer handlers are already closed in 3b — do NOT
+        //    re-scan them into MediatR here, or handler registrations would be duplicated. See ADR-0001.
         foreach (Assembly assembly in builder.ConsumerAssemblies)
         {
             services.AddValidatorsFromAssembly(assembly);
@@ -163,10 +129,8 @@ public static class IntegratoRServiceCollectionExtensions
         return services;
     }
 
-    // Open-generic validators (AbstractValidator<TRequest<TArg>>) are skipped by FluentValidation's
-    // assembly scanner because there is no closed IValidator<> service type to bind. This closes each
-    // over every discovered entity that satisfies its generic constraints and registers the resulting
-    // closed IValidator<> so ValidationBehaviour resolves and runs them.
+    // Closes each open-generic validator over every constraint-satisfying entity and registers the
+    // resulting closed IValidator<> so ValidationBehaviour resolves them. See ADR-0001.
     private static void RegisterClosedGenericValidators(
         IServiceCollection services,
         Assembly[] validatorAssemblies,
@@ -202,8 +166,7 @@ public static class IntegratoRServiceCollectionExtensions
                 Type requestType = GetValidatedRequestType(implementationType)!;    // e.g. CreateCommand<TEntity> (closed)
                 Type serviceType = typeof(IValidator<>).MakeGenericType(requestType);
 
-                // TryAddEnumerable dedupes on (service, implementation) so the pass is idempotent when
-                // AddIntegratoR is called twice and never double-registers the same validator.
+                // TryAddEnumerable keeps the pass idempotent across repeated AddIntegratoR calls.
                 services.TryAddEnumerable(ServiceDescriptor.Transient(serviceType, implementationType));
             }
         }
@@ -238,9 +201,8 @@ public static class IntegratoRServiceCollectionExtensions
         return null;
     }
 
-    // Whether 'candidate' satisfies every generic constraint declared on 'genericParameter', so
-    // MakeGenericType(candidate) will not throw. Lets one pass cover baseline validators (constraint
-    // IEntity) and F&O-derived validators (constraint LedgerJournalHeader/Line) without exceptions.
+    // Whether MakeGenericType(candidate) will succeed for genericParameter's constraints — lets one
+    // pass cover both the IEntity-constrained and F&O-entity-constrained validators without throwing.
     private static bool SatisfiesConstraints(Type genericParameter, Type candidate)
     {
         GenericParameterAttributes attributes =
