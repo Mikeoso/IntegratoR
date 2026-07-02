@@ -86,48 +86,59 @@ if (result.IsFailed)
 
 ## Send a batch
 
-Batch commands apply one operation across a collection. They take `IReadOnlyList<TEntity>` (since v2.0.0) and return non-generic `Result` — no per-entity values on success.
+Batch commands apply one operation across a collection. They take `IReadOnlyList<TEntity>` and return `Result<BatchOutcome>` — a per-item report of what committed and what failed. Every batch is submitted as OData `$batch` and split automatically into chunks (`ODataSettings.Batch.MaxOperationsPerChunk`, default 150; D365 caps a `$batch` at 200 operations).
 
 ```csharp
 IReadOnlyList<LedgerJournalLine> lines =
 [
-    new()
-    {
-        DataAreaId = "USMF",
-        JournalBatchNumber = "B0001",
-        DebitAmount = 1000m,
-        CreditAmount = 0m,
-        CurrencyCode = "USD",
-    },
-    new()
-    {
-        DataAreaId = "USMF",
-        JournalBatchNumber = "B0001",
-        DebitAmount = 0m,
-        CreditAmount = 1000m,
-        CurrencyCode = "USD",
-    },
+    new() { DataAreaId = "USMF", JournalBatchNumber = "B0001", DebitAmount = 1000m, CreditAmount = 0m, CurrencyCode = "USD" },
+    new() { DataAreaId = "USMF", JournalBatchNumber = "B0001", DebitAmount = 0m, CreditAmount = 1000m, CurrencyCode = "USD" },
 ];
 
-Result result = await mediator
+Result<BatchOutcome> result = await mediator
     .Send(new CreateBatchCommand<LedgerJournalLine>(lines), cancellationToken)
     .ConfigureAwait(false);
 
-if (result.IsFailed)
+if (result.IsSuccess)
 {
-    IntegrationError? error = result.GetError();
-    // Handle the first failing item; see the atomicity note below.
+    BatchOutcome outcome = result.Value;   // outcome.AllSucceeded is true
 }
 ```
 
-| Command | Effective HTTP method | Use |
+### Choose a failure mode
+
+`BatchFailureMode.Atomic` (the default) runs each chunk as one all-or-nothing changeset; `ContinueOnError` applies operations independently and collects every failure. Override per call with `BatchOptions`, or set the default in `ODataSettings.Batch.FailureMode`.
+
+```csharp
+Result<BatchOutcome> result = await mediator.Send(
+    new UpdateBatchCommand<LedgerJournalHeader>(
+        headers,
+        new BatchOptions { Mode = BatchFailureMode.ContinueOnError, MaxOperationsPerChunk = 100 }),
+    cancellationToken);
+```
+
+### Read the failure list
+
+On failure the result is failed and its error is a `BatchIntegrationError` carrying the full outcome, so you can pinpoint which records to retry:
+
+```csharp
+if (result.IsFailed && result.GetError() is BatchIntegrationError batchError)
+{
+    foreach (BatchItemResult failure in batchError.Outcome.Failures)
+    {
+        // failure.Index, failure.ChunkIndex, failure.Key, failure.StatusCode, failure.ErrorMessage
+    }
+}
+```
+
+| Command | HTTP method | Use |
 |---|---|---|
-| `CreateBatchCommand<TEntity>` | POST per entity | Bulk insert |
-| `UpdateBatchCommand<TEntity>` | PATCH per entity | Bulk update |
-| `DeleteBatchCommand<TEntity>` | DELETE per entity | Bulk delete |
+| `CreateBatchCommand<TEntity>` | POST | Bulk insert |
+| `UpdateBatchCommand<TEntity>` | PATCH | Bulk update |
+| `DeleteBatchCommand<TEntity>` | DELETE | Bulk delete |
 
 > [!CAUTION]
-> Batch **Update** and **Delete** over composite keys run **per item, not atomically** — each entity is its own PATCH/DELETE through the raw-`HttpClient` bypass. If item three fails, items one and two are already committed and are not rolled back. Only the PanoramicData create changeset is a single OData transaction. Size batches so a partial failure is recoverable, and key retries on the composite key rather than replaying the whole list.
+> `Atomic` is all-or-nothing **per chunk**, not per dataset — a collection larger than the chunk size becomes several independent changesets. `StopOnFirstFailedChunk` (default `true`) halts after the first failed chunk, but chunks already committed stay committed. See [Known Limitations](Known-Limitations#batch-atomicity-is-per-chunk).
 
 ## Send an entity-specific command
 
