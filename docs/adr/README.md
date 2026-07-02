@@ -37,3 +37,4 @@ one and mark the old `Superseded by ADR-NNNN`.
 | [0001](0001-generic-handler-and-validator-registration.md) | Cross-assembly generic handler & validator registration | Accepted |
 | [0002](0002-durable-functions-result-converter-wiring.md) | Durable Functions `Result<T>` converter wiring | Accepted |
 | [0003](0003-odata-expression-translator-fork.md) | Forked OData expression translator for `[JsonPropertyName]` | Accepted |
+| [0004](0004-configurable-chunked-odata-batch.md) | Configurable, chunked OData `$batch` writes | Accepted |
