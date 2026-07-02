@@ -1,7 +1,7 @@
 # Run Smoke Tests
 > Last verified against v2.0.1
 
-`IntegratoR.SampleFunction` ships two HTTP triggers that drive the whole stack — auth, OData wiring, the LINQ-to-OData translator, Polly resilience — against a live D365 F&O sandbox. Run them to prove a fresh deployment works before you wire in real business logic. They are part of the sample host, not a separate NuGet package.
+`IntegratoR.SampleFunction` ships three HTTP triggers that drive the whole stack — auth, OData wiring, the LINQ-to-OData translator, Polly resilience — against a live D365 F&O sandbox. Run them to prove a fresh deployment works before you wire in real business logic. They are part of the sample host, not a separate NuGet package.
 
 Start with the read-only dimension trigger: it needs no company context and leaves no records behind.
 
@@ -33,14 +33,15 @@ A green run returns the delimiter and ordered segments the handler parsed out of
 
 The exact segment list depends on the target environment — the example is the shape captured against a JFI sandbox.
 
-## The two triggers
+## The three triggers
 
 | Function ID | Route | Flow | Side effects |
 |---|---|---|---|
 | `FinancialDimensionSmokeTest_HTTPTrigger` | `POST /api/smoke/financial-dimensions` | One `GetDimensionOrdersQuery` (chains two D365 reads) | None — read-only, safe to repeat |
 | `LedgerJournalSmokeTest_HTTPTrigger` | `POST /api/smoke/ledger-journal` | Create → GetByKey → Filter → Update → Delete on `LedgerJournalHeader` + `LedgerJournalLine` | Writes a real journal, then deletes it — self-cleaning on a green run |
+| `LedgerJournalBatchSmokeTest_HTTPTrigger` | `POST /api/smoke/ledger-journal-batch` | Chunked atomic batch-create → atomic-changeset rollback → continue-on-error partial → batch delete of `LedgerJournalLine` (v3.0.0) | Writes a real journal + lines, then deletes them — self-cleaning on a green run |
 
-Both use `AuthorizationLevel.Function`. Locally under `func start` no key is needed; once deployed to Azure they need a function/host key (`?code=<key>` or the `x-functions-key` header).
+All use `AuthorizationLevel.Function`. Locally under `func start` no key is needed; once deployed to Azure they need a function/host key (`?code=<key>` or the `x-functions-key` header).
 
 ## Run the triggers locally
 
@@ -123,6 +124,43 @@ Verified against live D365 (JFI) on 2026-07-01: the complete create → update �
 > [!NOTE]
 > D365 answers a composite-key PATCH with `204 No Content`, so `UpdateCommand` returns your caller entity and `result.Value` may be null on a successful write. The step builder null-guards `result.Value` before projecting details — a diagnostic trigger must never throw and lose every per-step result to a 500.
 
+## Ledger journal batch smoke test
+
+The batch trigger drives the configurable, chunked `$batch` write path (v3.0.0, [ADR-0004](https://github.com/Mikeoso/IntegratoR/blob/main/docs/adr/0004-configurable-chunked-odata-batch.md)) end-to-end under one journal header. It is the live-verification gate for a v3.0.0 release: it proves — against real D365 — that changesets are atomic, that `ContinueOnError` accepts the good operations and reports the bad ones, and that large inputs chunk correctly.
+
+```bash
+curl -s -X POST http://localhost:7123/api/smoke/ledger-journal-batch \
+     -H "Content-Type: application/json" \
+     -d '{
+       "Company":                   "USMF",
+       "JournalName":               "GenJrn",
+       "AccountDisplayValue":       "110180-",
+       "OffsetAccountDisplayValue": "211100-",
+       "Amount":                    100.00,
+       "CurrencyCode":              "USD",
+       "LineCount":                 6,
+       "ChunkSize":                 2
+     }'
+```
+
+`LineCount` (default 6, min 2) is how many lines to batch-create; `ChunkSize` (default 2, 1–200) is set deliberately small so the create splits across several `$batch` changesets. Failures are injected deterministically: the rollback and partial steps include one operation targeting a non-existent `LineNumber` (guaranteed HTTP 404), so the test does not depend on D365 account validation.
+
+| Step | What it proves |
+|---|---|
+| `BatchCreateLines.Atomic.Chunked` | `CreateBatchCommand<LedgerJournalLine>` split into ⌈`LineCount`/`ChunkSize`⌉ changesets; global index aggregation; per-chunk atomic commit |
+| `VerifyLinesCreated` | Re-query count equals `LineCount` |
+| `BatchUpdateAtomic.ExpectRollback` | One good update + one bogus-key op in a single `Atomic` changeset — D365 rolls the **whole** changeset back |
+| `VerifyAtomicRolledBack` | Re-read confirms the good op did **not** persist (proves changeset atomicity) |
+| `BatchUpdateContinueOnError.ExpectPartial` | Same mix in `ContinueOnError` — outcome reports `Succeeded=1, Failed=1` |
+| `VerifyContinueApplied` | Re-read confirms the good op **did** persist |
+| `BatchDeleteLines.Atomic` / `VerifyLinesDeleted` | `DeleteBatchCommand<LedgerJournalLine>` removes every line |
+| `DeleteHeader` / `VerifyHeaderDeleted` | Header deleted last (D365 rejects deleting a header with child lines); re-read confirms `NotFound` |
+
+A failed batch comes back as a failed `Result<BatchOutcome>` whose error is a `BatchIntegrationError` carrying the full per-item outcome — the trigger reads `Succeeded`/`Failed`/`Failures` from it to decide each step. Because the chain deletes everything it creates, a green run leaves no orphan.
+
+> [!NOTE]
+> `Atomic` atomicity is **per chunk**, not per dataset: a `LineCount` larger than `ChunkSize` spans several changesets, each committing independently. See [Known Limitations](Known-Limitations) for the D365 200-operation `$batch` ceiling this follows from.
+
 ## Read a failed step
 
 Each entry in `Steps[]` carries the failing operation and its `IntegrationError`. On failure the trigger surfaces the `Code` and `Type`, and returns a generic `ErrorMessage` — the full server detail is logged host-side only, never echoed to the caller.
@@ -159,12 +197,13 @@ The full diagnostic chain — retry warnings, circuit-breaker state, the logged 
 
 ## Wire into CI
 
-Both triggers signal outcome through the JSON `Success` field, not the HTTP status — the response is `200 OK` unless the body is malformed (`400`). A CI script must check `.Success` against the body, not the status code:
+All three triggers signal outcome through the JSON `Success` field, not the HTTP status — the response is `200 OK` unless the body is malformed (`400`). A CI script must check `.Success` against the body, not the status code:
 
 1. Deploy to a sandbox slot.
 2. Run the financial-dimension test (read-only, fast).
 3. Run the ledger-journal test (writes then self-cleans).
-4. Block promotion if either body's `Success` is `false` — for example, `jq -e '.Success'`.
+4. Run the ledger-journal-batch test (writes a chunked batch then self-cleans) — the v3.0.0 release gate.
+5. Block promotion if any body's `Success` is `false` — for example, `jq -e '.Success'`.
 
 ## See Also
 
