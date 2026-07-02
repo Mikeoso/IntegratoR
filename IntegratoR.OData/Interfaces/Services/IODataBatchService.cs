@@ -11,8 +11,8 @@ namespace IntegratoR.OData.Interfaces.Services;
 /// <remarks>
 /// The batch members are declared on the layer-agnostic <see cref="IBatchService{TEntity}"/> so the
 /// generic batch command handlers can depend on the abstraction without referencing the OData layer;
-/// this interface is the OData-specific marker those implementations register against. Batch members
-/// are executed within a single transaction, giving an all-or-nothing guarantee.
+/// this interface is the OData-specific marker those implementations register against. The failure mode
+/// (atomic changeset vs continue-on-error) is configurable per call and via <c>ODataSettings.Batch</c>.
 /// </remarks>
 public interface IODataBatchService<TEntity> : IBatchService<TEntity> where TEntity : IEntity
 {

@@ -1,4 +1,5 @@
 using FluentResults;
+using IntegratoR.Abstractions.Common.Batch;
 using IntegratoR.Abstractions.Common.CQRS.Commands;
 using IntegratoR.Abstractions.Interfaces.Entity;
 using IntegratoR.Abstractions.Interfaces.Services;
@@ -12,7 +13,7 @@ namespace IntegratoR.Application.Features.Common.Commands;
 /// </summary>
 /// <typeparam name="TEntity">The type of the entities being created.</typeparam>
 public class CreateBatchCommandHandler<TEntity>
-    : IRequestHandler<CreateBatchCommand<TEntity>, Result>
+    : IRequestHandler<CreateBatchCommand<TEntity>, Result<BatchOutcome>>
     where TEntity : class, IEntity
 {
     private readonly ILogger<CreateBatchCommandHandler<TEntity>> _logger;
@@ -34,11 +35,11 @@ public class CreateBatchCommandHandler<TEntity>
     /// </summary>
     /// <param name="request">The command request, containing the entities to create.</param>
     /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
-    /// <returns>A successful <see cref="Result"/>, or a failed result carrying the batch service errors.</returns>
-    public async Task<Result> Handle(CreateBatchCommand<TEntity> request, CancellationToken cancellationToken)
+    /// <returns>A successful <see cref="Result{BatchOutcome}"/>, or a failed result carrying the batch service errors.</returns>
+    public async Task<Result<BatchOutcome>> Handle(CreateBatchCommand<TEntity> request, CancellationToken cancellationToken)
     {
         _logger.LogInformation("Creating {Count} {EntityType} entities in batch.", request.Entities.Count, typeof(TEntity).Name);
 
-        return await _service.AddBatchAsync(request.Entities, cancellationToken).ConfigureAwait(false);
+        return await _service.AddBatchAsync(request.Entities, request.Options, cancellationToken).ConfigureAwait(false);
     }
 }
