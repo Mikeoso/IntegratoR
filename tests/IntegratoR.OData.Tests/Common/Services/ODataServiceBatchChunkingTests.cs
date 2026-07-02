@@ -1,7 +1,10 @@
-using FluentResults;
+using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
 using FluentAssertions;
+using FluentResults;
 using IntegratoR.Abstractions.Common.Batch;
 using IntegratoR.Abstractions.Common.Results;
+using IntegratoR.Abstractions.Domain.Entities;
 using IntegratoR.OData.Common.Services;
 using IntegratoR.OData.Domain.Models;
 using IntegratoR.OData.Interfaces.Services;
@@ -9,6 +12,7 @@ using IntegratoR.TestKit.Assertions;
 using IntegratoR.TestKit.Builders;
 using IntegratoR.TestKit.Doubles.Entities;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Xunit;
 
@@ -112,5 +116,35 @@ public class ODataServiceBatchChunkingTests
         result.Should().BeSuccessful();
         result.Value.AllSucceeded.Should().BeTrue();
         result.Value.Total.Should().Be(3);
+    }
+
+    [Fact]
+    public async Task UpdateBatch_SingleKeyEntity_PopulatesKeyInFailureOutcome()
+    {
+        var client = Substitute.For<IODataClientAdapter>();
+        var sut = new ODataService<SingleKeyEntity>(client, NullLogger<ODataService<SingleKeyEntity>>.Instance);
+        client.BatchUpdateAsync(Arg.Any<string>(),
+                Arg.Any<IEnumerable<(object Key, IDictionary<string, object> Payload)>>(),
+                Arg.Any<BatchFailureMode>(), Arg.Any<CancellationToken>())
+            .Returns(_ => (IReadOnlyList<BatchOperationResult>)
+                [new BatchOperationResult { Index = 0, StatusCode = 400, IsSuccess = false, ErrorMessage = "HTTP 400" }]);
+
+        Result<BatchOutcome> result = await sut.UpdateBatchAsync(
+            [new SingleKeyEntity { RecId = 42 }], cancellationToken: CancellationToken.None);
+
+        result.Should().BeFailed();
+        var error = (BatchIntegrationError)result.GetError()!;
+        BatchItemResult failed = error.Outcome.Failures.Single();
+        failed.Key.Should().NotBeNull();
+        failed.Key!["recId"].Should().Be(42L);
+    }
+
+    private sealed class SingleKeyEntity : BaseEntity
+    {
+        [Key]
+        [JsonPropertyName("recId")]
+        public required long RecId { get; set; }
+
+        public override object[] GetCompositeKey() => [RecId];
     }
 }

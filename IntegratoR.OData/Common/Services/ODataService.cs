@@ -331,7 +331,7 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
         }
 
         List<object> keyObjects = keysResult.Value;
-        var keys = keyObjects.Select(k => k as IReadOnlyDictionary<string, object>).ToList();
+        var keys = keyObjects.Select(KeyToResultDict).ToList();
 
         return RunBatchInChunksAsync(
             "DeleteBatch",
@@ -361,7 +361,7 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
         var items = entityList
             .Select((e, i) => (keyObjects[i], (IDictionary<string, object>)CreatePayload(e, isCreateOperation: false)))
             .ToList();
-        var keys = keyObjects.Select(k => k as IReadOnlyDictionary<string, object>).ToList();
+        var keys = keyObjects.Select(KeyToResultDict).ToList();
 
         return RunBatchInChunksAsync(
             "UpdateBatch",
@@ -466,6 +466,30 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
         }
 
         return Result.Ok(keys);
+    }
+
+    /// <summary>
+    /// Projects a batch key to the wire-name dictionary carried by <see cref="BatchItemResult.Key"/>.
+    /// A composite key is already a dictionary; a single scalar key is wrapped with its sole
+    /// <c>[Key]</c> property's wire name so single-key (e.g. cross-company / global) entities still
+    /// identify the failed record.
+    /// </summary>
+    private static IReadOnlyDictionary<string, object>? KeyToResultDict(object key)
+    {
+        if (key is IDictionary<string, object> dictionary)
+        {
+            return dictionary as IReadOnlyDictionary<string, object> ?? new Dictionary<string, object>(dictionary);
+        }
+
+        PropertyInfo[] keyProperties = KeyPropertyCache.GetOrAdd(typeof(TEntity), type =>
+            type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+                .Where(p => p.GetCustomAttribute<System.ComponentModel.DataAnnotations.KeyAttribute>() is not null)
+                .OrderBy(p => p.MetadataToken)
+                .ToArray());
+
+        return keyProperties.Length == 1
+            ? new Dictionary<string, object> { [PropertyNameResolver.Resolve(keyProperties[0])] = key }
+            : null;
     }
 
     private static Dictionary<string, object> CreatePayload(TEntity entity, bool isCreateOperation)
@@ -593,6 +617,13 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
                 string? message = result.IsSuccess
                     ? null
                     : ODataExceptionHandler<TEntity>.ExtractD365InnerError(result.ResponseBody) ?? result.ErrorMessage;
+
+                if (!result.IsSuccess)
+                {
+                    _logger.LogWarning(
+                        "{Operation} item {Index} (chunk {ChunkIndex}) failed with HTTP {StatusCode}: {Message}",
+                        operationName, globalIndex, chunkIndex, result.StatusCode, message);
+                }
 
                 items.Add(new BatchItemResult
                 {
