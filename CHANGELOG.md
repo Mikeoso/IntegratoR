@@ -14,6 +14,7 @@ Versions are computed automatically by [GitVersion](https://gitversion.net/) in 
 
 ### Changed — Breaking
 - Batch operations return `Result<BatchOutcome>` instead of `Result`. This changes `IBatchService<TEntity>` / `IODataBatchService<TEntity>`, `ODataService<TEntity>`, the generic `CreateBatchCommand<T>` / `UpdateBatchCommand<T>` / `DeleteBatchCommand<T>` (each gains an optional `BatchOptions? Options` parameter) and their handlers, the F&O `*sCommand` handlers, and `IODataClientAdapter.BatchCreateAsync` / `BatchUpdateAsync` / `BatchDeleteAsync` (each gains a `BatchFailureMode` parameter). A failed batch is a failed `Result` whose first error is a `BatchIntegrationError` carrying the full `BatchOutcome`, so the per-item failure list is retrievable from `result.GetError()`. The previous implicit "atomic all-or-nothing" guarantee is now explicit and configurable.
+- `ODataService<TEntity>`'s public constructor gained an optional `IOptions<ODataSettings>? settings` parameter (supplies the batch failure-mode and chunk-size defaults). This is a binary break for code that constructs `ODataService<T>` directly; DI-based consumers are unaffected.
 
 ### Fixed
 - `ODataService.UpdateAsync` returned a successful `Result` with a null `Value` when a composite-key PATCH came back as `204 No Content`; it now returns the written entity.
