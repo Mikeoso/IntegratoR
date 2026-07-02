@@ -1,4 +1,5 @@
 using FluentResults;
+using IntegratoR.Abstractions.Common.Batch;
 using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.OData.FO.Domain.Entities.LedgerJournal;
 using IntegratoR.OData.Interfaces.Services;
@@ -9,7 +10,7 @@ namespace IntegratoR.OData.FO.Features.Commands.LedgerJournals.CreateLedgerJourn
 
 /// <summary>Creates a batch of LedgerJournalHeader entities in D365 F&amp;O, emitting domain-specific structured logs. Retained over the generic CreateBatchCommandHandler&lt;T&gt; because it adds journal-context (Count) logging.</summary>
 /// <typeparam name="TEntity">The type of the entity being created.</typeparam>
-public class CreateLedgerJournalHeadersHandler<TEntity> : IRequestHandler<CreateLedgerJournalHeadersCommand<TEntity>, Result> where TEntity : LedgerJournalHeader
+public class CreateLedgerJournalHeadersHandler<TEntity> : IRequestHandler<CreateLedgerJournalHeadersCommand<TEntity>, Result<BatchOutcome>> where TEntity : LedgerJournalHeader
 {
     private readonly ILogger<CreateLedgerJournalHeadersHandler<TEntity>> _logger;
     private readonly IODataBatchService<TEntity> _service;
@@ -22,22 +23,15 @@ public class CreateLedgerJournalHeadersHandler<TEntity> : IRequestHandler<Create
     }
 
     /// <inheritdoc/>
-    public async Task<Result> Handle(CreateLedgerJournalHeadersCommand<TEntity> request, CancellationToken cancellationToken)
+    public async Task<Result<BatchOutcome>> Handle(CreateLedgerJournalHeadersCommand<TEntity> request, CancellationToken cancellationToken)
     {
         _logger.LogInformation("Creating {Count} LedgerJournalHeader entities in F&O.", request.LedgerJournalHeaders.Count);
 
-        var addResult = await _service.AddBatchAsync(request.LedgerJournalHeaders, cancellationToken).ConfigureAwait(false);
-
-        return addResult.Match(
-            onSuccess: () =>
-            {
-                _logger.LogInformation("Successfully created {Count} LedgerJournalHeader entities in F&O.", request.LedgerJournalHeaders.Count);
-
-                return Result.Ok();
-            },
-            onFailure: error =>
-            {
-                return Result.Fail(error);
-            });
+        Result<BatchOutcome> result = await _service.AddBatchAsync(request.LedgerJournalHeaders, request.Options, cancellationToken).ConfigureAwait(false);
+        if (result.IsSuccess)
+        {
+            _logger.LogInformation("Successfully created {Count} LedgerJournalHeader entities in F&O.", request.LedgerJournalHeaders.Count);
+        }
+        return result;
     }
 }

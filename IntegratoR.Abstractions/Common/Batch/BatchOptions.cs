@@ -13,7 +13,7 @@ public sealed record BatchOptions
 
     /// <summary>
     /// Gets the maximum number of operations per chunk for this call, or <c>null</c> to use the
-    /// configured default. Must be between 1 and 5000 (D365's documented maximum per <c>$batch</c>).
+    /// configured default. Must be between 1 and 200 (D365 F&amp;O's enforced maximum per <c>$batch</c>).
     /// </summary>
     public int? MaxOperationsPerChunk { get; init; }
 }

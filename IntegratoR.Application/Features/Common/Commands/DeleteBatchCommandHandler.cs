@@ -1,4 +1,5 @@
 using FluentResults;
+using IntegratoR.Abstractions.Common.Batch;
 using IntegratoR.Abstractions.Common.CQRS.Commands;
 using IntegratoR.Abstractions.Interfaces.Entity;
 using IntegratoR.Abstractions.Interfaces.Services;
@@ -12,7 +13,7 @@ namespace IntegratoR.Application.Features.Common.Commands;
 /// </summary>
 /// <typeparam name="TEntity">The type of the entities being deleted.</typeparam>
 public class DeleteBatchCommandHandler<TEntity>
-    : IRequestHandler<DeleteBatchCommand<TEntity>, Result>
+    : IRequestHandler<DeleteBatchCommand<TEntity>, Result<BatchOutcome>>
     where TEntity : class, IEntity
 {
     private readonly ILogger<DeleteBatchCommandHandler<TEntity>> _logger;
@@ -34,11 +35,11 @@ public class DeleteBatchCommandHandler<TEntity>
     /// </summary>
     /// <param name="request">The command request, containing the entities to delete.</param>
     /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
-    /// <returns>A successful <see cref="Result"/>, or a failed result carrying the batch service errors.</returns>
-    public async Task<Result> Handle(DeleteBatchCommand<TEntity> request, CancellationToken cancellationToken)
+    /// <returns>A successful <see cref="Result{BatchOutcome}"/>, or a failed result carrying the batch service errors.</returns>
+    public async Task<Result<BatchOutcome>> Handle(DeleteBatchCommand<TEntity> request, CancellationToken cancellationToken)
     {
         _logger.LogInformation("Deleting {Count} {EntityType} entities in batch.", request.Entities.Count, typeof(TEntity).Name);
 
-        return await _service.DeleteBatchAsync(request.Entities, cancellationToken).ConfigureAwait(false);
+        return await _service.DeleteBatchAsync(request.Entities, request.Options, cancellationToken).ConfigureAwait(false);
     }
 }

@@ -1,4 +1,5 @@
 using FluentResults;
+using IntegratoR.Abstractions.Common.Batch;
 using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.Abstractions.Interfaces.Services;
 using IntegratoR.OData.FO.Domain.Entities.LedgerJournal;
@@ -88,8 +89,8 @@ public class CreateLedgerJournalHeaderHandlerTests
         var handler = new CreateLedgerJournalHeadersHandler<LedgerJournalHeader>(logger, service);
 
         var headers = new[] { BuildHeader(), BuildHeader() };
-        service.AddBatchAsync(headers, Arg.Any<CancellationToken>())
-            .Returns(Result.Ok());
+        service.AddBatchAsync(headers, Arg.Any<BatchOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(Result.Ok(new BatchOutcome { Mode = BatchFailureMode.Atomic, ChunkCount = 1, Items = [] }));
 
         var command = new CreateLedgerJournalHeadersCommand<LedgerJournalHeader>(headers);
 
@@ -113,8 +114,8 @@ public class CreateLedgerJournalHeaderHandlerTests
 
         var headers = new[] { BuildHeader() };
         var error = new IntegrationError("LedgerJournalHeader.BatchCreateFailed", "Batch service error", ErrorType.Failure);
-        service.AddBatchAsync(headers, Arg.Any<CancellationToken>())
-            .Returns(Result.Fail(error));
+        service.AddBatchAsync(headers, Arg.Any<BatchOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(Result.Fail<BatchOutcome>(error));
 
         var command = new CreateLedgerJournalHeadersCommand<LedgerJournalHeader>(headers);
 

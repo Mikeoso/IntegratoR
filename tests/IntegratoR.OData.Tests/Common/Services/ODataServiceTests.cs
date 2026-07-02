@@ -1,6 +1,7 @@
 using System.Linq.Expressions;
 using System.Text.Json.Serialization;
 using FluentAssertions;
+using IntegratoR.Abstractions.Common.Batch;
 using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.Abstractions.Domain.Entities;
 using IntegratoR.OData.Common.Services;
@@ -541,15 +542,16 @@ public class ODataServiceTests
         _client.When(x => x.BatchCreateAsync(
             Arg.Any<string>(),
             Arg.Any<IEnumerable<IDictionary<string, object>>>(),
+            Arg.Any<BatchFailureMode>(),
             Arg.Any<CancellationToken>()))
             .Do(_ => throw new InvalidOperationException("batch failed"));
 
         // Act
-        var result = await _sut.AddBatchAsync(entities, CancellationToken.None);
+        var result = await _sut.AddBatchAsync(entities, cancellationToken: CancellationToken.None);
 
         // Assert
         result.Should().BeFailed();
-        result.Should().HaveErrorCode("TestEntity.UnexpectedError");
+        result.Should().HaveErrorCode("TestEntity.BatchFailed");
     }
 
     /// <summary>
@@ -567,15 +569,16 @@ public class ODataServiceTests
         _client.When(x => x.BatchDeleteAsync(
             Arg.Any<string>(),
             Arg.Any<IEnumerable<object>>(),
+            Arg.Any<BatchFailureMode>(),
             Arg.Any<CancellationToken>()))
             .Do(_ => throw new InvalidOperationException("batch failed"));
 
         // Act
-        var result = await _sut.DeleteBatchAsync(entities, CancellationToken.None);
+        var result = await _sut.DeleteBatchAsync(entities, cancellationToken: CancellationToken.None);
 
         // Assert
         result.Should().BeFailed();
-        result.Should().HaveErrorCode("TestEntity.UnexpectedError");
+        result.Should().HaveErrorCode("TestEntity.BatchFailed");
     }
 
     /// <summary>
@@ -593,15 +596,16 @@ public class ODataServiceTests
         _client.When(x => x.BatchUpdateAsync(
             Arg.Any<string>(),
             Arg.Any<IEnumerable<(object Key, IDictionary<string, object> Payload)>>(),
+            Arg.Any<BatchFailureMode>(),
             Arg.Any<CancellationToken>()))
             .Do(_ => throw new InvalidOperationException("batch failed"));
 
         // Act
-        var result = await _sut.UpdateBatchAsync(entities, CancellationToken.None);
+        var result = await _sut.UpdateBatchAsync(entities, cancellationToken: CancellationToken.None);
 
         // Assert
         result.Should().BeFailed();
-        result.Should().HaveErrorCode("TestEntity.UnexpectedError");
+        result.Should().HaveErrorCode("TestEntity.BatchFailed");
     }
 
     /// <summary>
@@ -619,11 +623,12 @@ public class ODataServiceTests
         _client.BatchCreateAsync(
             Arg.Any<string>(),
             Arg.Any<IEnumerable<IDictionary<string, object>>>(),
+            Arg.Any<BatchFailureMode>(),
             Arg.Any<CancellationToken>())
             .Returns(SuccessfulBatchResults(1));
 
         // Act
-        var result = await _sut.AddBatchAsync(entities, CancellationToken.None);
+        var result = await _sut.AddBatchAsync(entities, cancellationToken: CancellationToken.None);
 
         // Assert
         result.Should().BeSuccessful();
@@ -845,6 +850,7 @@ public class ODataServiceTests
         _client.BatchCreateAsync(
             Arg.Any<string>(),
             Arg.Do<IEnumerable<IDictionary<string, object>>>(p => capturedPayloads = p),
+            Arg.Any<BatchFailureMode>(),
             Arg.Any<CancellationToken>())
             .Returns(callInfo => SuccessfulBatchResults(capturedPayloads?.Count() ?? 0));
 
@@ -855,7 +861,7 @@ public class ODataServiceTests
         };
 
         // Act
-        await odataSut.AddBatchAsync(entities, CancellationToken.None);
+        await odataSut.AddBatchAsync(entities, cancellationToken: CancellationToken.None);
 
         // Assert - Id has [ODataField(IgnoreOnCreate = true)] so should NOT appear in batch payloads
         capturedPayloads.Should().NotBeNull();
@@ -879,6 +885,7 @@ public class ODataServiceTests
         _client.BatchUpdateAsync(
             Arg.Any<string>(),
             Arg.Do<IEnumerable<(object Key, IDictionary<string, object> Payload)>>(p => capturedItems = p),
+            Arg.Any<BatchFailureMode>(),
             Arg.Any<CancellationToken>())
             .Returns(callInfo => SuccessfulBatchResults(capturedItems?.Count() ?? 0));
 
@@ -889,7 +896,7 @@ public class ODataServiceTests
         };
 
         // Act
-        await odataSut.UpdateBatchAsync(entities, CancellationToken.None);
+        await odataSut.UpdateBatchAsync(entities, cancellationToken: CancellationToken.None);
 
         // Assert - ReadOnlyField has [ODataField(IgnoreOnUpdate = true)] so should NOT appear
         capturedItems.Should().NotBeNull();
@@ -923,11 +930,12 @@ public class ODataServiceTests
         _client.BatchCreateAsync(
             Arg.Any<string>(),
             Arg.Any<IEnumerable<IDictionary<string, object>>>(),
+            Arg.Any<BatchFailureMode>(),
             Arg.Any<CancellationToken>())
             .Returns(mixedResults);
 
         // Act
-        var result = await _sut.AddBatchAsync(entities, CancellationToken.None);
+        var result = await _sut.AddBatchAsync(entities, cancellationToken: CancellationToken.None);
 
         // Assert
         result.Should().BeFailed();

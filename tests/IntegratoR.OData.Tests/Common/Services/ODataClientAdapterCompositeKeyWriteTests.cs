@@ -4,6 +4,7 @@ using System.Net;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using FluentAssertions;
+using IntegratoR.Abstractions.Common.Batch;
 using IntegratoR.Abstractions.Domain.Entities;
 using IntegratoR.Abstractions.Interfaces.Authentication;
 using IntegratoR.OData.Common.Extensions;
@@ -155,7 +156,7 @@ public sealed class ODataClientAdapterCompositeKeyWriteTests : IDisposable
         };
 
         // Act
-        var results = await adapter.BatchUpdateAsync(EntitySet, items, CancellationToken.None);
+        var results = await adapter.BatchUpdateAsync(EntitySet, items, BatchFailureMode.ContinueOnError, CancellationToken.None);
 
         // Assert
         handler.SentRequests.Should().HaveCount(2);
@@ -184,7 +185,7 @@ public sealed class ODataClientAdapterCompositeKeyWriteTests : IDisposable
         };
 
         // Act
-        var results = await adapter.BatchDeleteAsync(EntitySet, keys, CancellationToken.None);
+        var results = await adapter.BatchDeleteAsync(EntitySet, keys, BatchFailureMode.ContinueOnError, CancellationToken.None);
 
         // Assert
         handler.SentRequests.Should().HaveCount(2);

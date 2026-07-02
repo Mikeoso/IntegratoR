@@ -1,4 +1,5 @@
 using FluentResults;
+using IntegratoR.Abstractions.Common.Batch;
 using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.OData.FO.Domain.Entities.LedgerJournal;
 using IntegratoR.OData.Interfaces.Services;
@@ -9,7 +10,7 @@ namespace IntegratoR.OData.FO.Features.Commands.LedgerJournals.UpdateLedgerJourn
 {
     /// <summary>Updates a batch of LedgerJournalLine entities in D365 F&amp;O, emitting domain-specific structured logs. Retained over the generic UpdateBatchCommandHandler&lt;T&gt; because it adds journal-context (Count) logging.</summary>
     /// <typeparam name="TEntity">The type of the entity being updated.</typeparam>
-    public class UpdateLedgerJournalLinesHandler<TEntity> : IRequestHandler<UpdateLedgerJournalLinesCommand<TEntity>, Result> where TEntity : LedgerJournalLine
+    public class UpdateLedgerJournalLinesHandler<TEntity> : IRequestHandler<UpdateLedgerJournalLinesCommand<TEntity>, Result<BatchOutcome>> where TEntity : LedgerJournalLine
     {
         private readonly ILogger<UpdateLedgerJournalLinesHandler<TEntity>> _logger;
         private readonly IODataBatchService<TEntity> _service;
@@ -22,23 +23,16 @@ namespace IntegratoR.OData.FO.Features.Commands.LedgerJournals.UpdateLedgerJourn
         }
 
         /// <inheritdoc/>
-        public async Task<Result> Handle(UpdateLedgerJournalLinesCommand<TEntity> request, CancellationToken cancellationToken)
+        public async Task<Result<BatchOutcome>> Handle(UpdateLedgerJournalLinesCommand<TEntity> request, CancellationToken cancellationToken)
         {
             _logger.LogInformation("Updating Ledger Journal Lines in batch...");
 
-            var result = await _service.UpdateBatchAsync(request.LedgerJournalLines, cancellationToken).ConfigureAwait(false);
-
-            return result.Match(
-                onSuccess: () =>
-                {
-                    _logger.LogInformation("Successfully updated {Count} Ledger Journal Lines.", request.LedgerJournalLines.Count);
-                    return Result.Ok();
-                },
-                onFailure: error =>
-                {
-                    _logger.LogError("Failed to update Ledger Journal Lines. Error: {Error}", error.Message);
-                    return Result.Fail(error);
-                });
+            Result<BatchOutcome> result = await _service.UpdateBatchAsync(request.LedgerJournalLines, request.Options, cancellationToken).ConfigureAwait(false);
+            if (result.IsSuccess)
+            {
+                _logger.LogInformation("Successfully updated {Count} Ledger Journal Lines.", request.LedgerJournalLines.Count);
+            }
+            return result;
         }
     }
 }

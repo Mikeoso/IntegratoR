@@ -1,4 +1,5 @@
 using System.Linq.Expressions;
+using IntegratoR.Abstractions.Common.Batch;
 using IntegratoR.Abstractions.Interfaces.Entity;
 using IntegratoR.OData.Domain.Models;
 
@@ -120,29 +121,33 @@ public interface IODataClientAdapter
         where TEntity : class, IEntity;
 
     /// <summary>
-    /// Creates multiple entities in an atomic batch changeset using filtered payloads.
-    /// Returns per-operation results for diagnostics.
+    /// Submits a create batch for one chunk of payloads and returns per-operation results. In
+    /// <see cref="BatchFailureMode.Atomic"/> the payloads run as one all-or-nothing changeset; in
+    /// <see cref="BatchFailureMode.ContinueOnError"/> each runs independently and failures are collected.
     /// </summary>
     Task<IReadOnlyList<BatchOperationResult>> BatchCreateAsync(
         string entitySet,
         IEnumerable<IDictionary<string, object>> payloads,
+        BatchFailureMode mode,
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Updates multiple entities in an atomic batch changeset using filtered payloads.
-    /// Returns per-operation results for diagnostics.
+    /// Submits an update batch for one chunk of keyed payloads and returns per-operation results.
+    /// See <see cref="BatchCreateAsync"/> for the <paramref name="mode"/> semantics.
     /// </summary>
     Task<IReadOnlyList<BatchOperationResult>> BatchUpdateAsync(
         string entitySet,
         IEnumerable<(object Key, IDictionary<string, object> Payload)> items,
+        BatchFailureMode mode,
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Deletes multiple entities by key in an atomic batch changeset.
-    /// Returns per-operation results for diagnostics.
+    /// Submits a delete batch for one chunk of keys and returns per-operation results.
+    /// See <see cref="BatchCreateAsync"/> for the <paramref name="mode"/> semantics.
     /// </summary>
     Task<IReadOnlyList<BatchOperationResult>> BatchDeleteAsync(
         string entitySet,
         IEnumerable<object> keys,
+        BatchFailureMode mode,
         CancellationToken cancellationToken = default);
 }

@@ -1,4 +1,5 @@
 using FluentResults;
+using IntegratoR.Abstractions.Common.Batch;
 using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.Abstractions.Interfaces.Services;
 using IntegratoR.OData.FO.Domain.Entities.LedgerJournal;
@@ -90,8 +91,8 @@ public class CreateLedgerJournalLineHandlerTests
         var handler = new CreateLedgerJournalLinesHandler<LedgerJournalLine>(logger, service);
 
         var lines = new[] { BuildLine(), BuildLine() };
-        service.AddBatchAsync(lines, Arg.Any<CancellationToken>())
-            .Returns(Result.Ok());
+        service.AddBatchAsync(lines, Arg.Any<BatchOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(Result.Ok(new BatchOutcome { Mode = BatchFailureMode.Atomic, ChunkCount = 1, Items = [] }));
 
         var command = new CreateLedgerJournalLinesCommand<LedgerJournalLine>(lines);
 
@@ -115,8 +116,8 @@ public class CreateLedgerJournalLineHandlerTests
 
         var lines = new[] { BuildLine() };
         var error = new IntegrationError("LedgerJournalLine.BatchCreateFailed", "Batch service error", ErrorType.Failure);
-        service.AddBatchAsync(lines, Arg.Any<CancellationToken>())
-            .Returns(Result.Fail(error));
+        service.AddBatchAsync(lines, Arg.Any<BatchOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(Result.Fail<BatchOutcome>(error));
 
         var command = new CreateLedgerJournalLinesCommand<LedgerJournalLine>(lines);
 

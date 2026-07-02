@@ -1,7 +1,10 @@
 using System.Linq.Expressions;
 using System.Net;
+using System.Net.Http.Headers;
 using System.Text;
+using IntegratoR.Abstractions.Common.Batch;
 using IntegratoR.Abstractions.Interfaces.Entity;
+using IntegratoR.OData.Common.Batch;
 using IntegratoR.OData.Common.Filters;
 using IntegratoR.OData.Domain.Models;
 using IntegratoR.OData.Interfaces.Services;
@@ -281,90 +284,72 @@ public class ODataClientAdapter : IODataClientAdapter
     public async Task<IReadOnlyList<BatchOperationResult>> BatchCreateAsync(
         string entitySet,
         IEnumerable<IDictionary<string, object>> payloads,
+        BatchFailureMode mode,
         CancellationToken cancellationToken = default)
     {
-        var batch = _client.CreateBatch();
-        batch.Changeset(changeset =>
+        var payloadList = payloads as IList<IDictionary<string, object>> ?? payloads.ToList();
+
+        if (mode == BatchFailureMode.Atomic)
         {
-            foreach (var payload in payloads)
-            {
-                changeset.Create(entitySet, payload);
-            }
-        });
-        ODataBatchResponse response = await batch.ExecuteAsync(cancellationToken).ConfigureAwait(false);
-        return MapBatchResponse(response);
+            List<BatchWriteOperation> operations = payloadList
+                .Select((payload, index) => new BatchWriteOperation(
+                    index + 1, HttpMethod.Post, entitySet, SerializePayload(payload)))
+                .ToList();
+            return await SendAtomicBatchAsync(operations, cancellationToken).ConfigureAwait(false);
+        }
+
+        return await SendPerItemBatchAsync(
+            payloadList.Count,
+            (index, ct) => SendRawAsync(HttpMethod.Post, entitySet, payloadList[index], ct),
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
     public async Task<IReadOnlyList<BatchOperationResult>> BatchUpdateAsync(
         string entitySet,
         IEnumerable<(object Key, IDictionary<string, object> Payload)> items,
+        BatchFailureMode mode,
         CancellationToken cancellationToken = default)
     {
         var itemList = items as IList<(object Key, IDictionary<string, object> Payload)> ?? items.ToList();
 
-        // A batch is homogeneous for a given TEntity: ODataService.BuildBatchKeys yields all-scalar
-        // keys for single-key entities or all-dictionary keys for composite entities, never mixed.
-        // D365 F&O entities are all composite-keyed and cannot use PanoramicData's atomic changeset
-        // (it cannot bind a dictionary key), so when any key is a dictionary, send EVERY item as an
-        // individual HTTP request preserving index order; otherwise keep the atomic changeset path.
-        if (itemList.Any(item => item.Key is IDictionary<string, object>))
+        if (mode == BatchFailureMode.Atomic)
         {
-            return await SendCompositeKeyBatchAsync(
-                itemList.Count,
-                async (index, ct) =>
-                {
-                    // isComposite invariant (the homogeneity above) guarantees this cast is safe.
-                    var (key, payload) = itemList[index];
-                    return await SendCompositeKeyRequestRawAsync(
-                        HttpMethod.Patch, entitySet, (IDictionary<string, object>)key, payload, ct).ConfigureAwait(false);
-                },
-                cancellationToken).ConfigureAwait(false);
+            List<BatchWriteOperation> operations = itemList
+                .Select((item, index) => new BatchWriteOperation(
+                    index + 1, HttpMethod.Patch, BuildKeyUrl(entitySet, item.Key), SerializePayload(item.Payload)))
+                .ToList();
+            return await SendAtomicBatchAsync(operations, cancellationToken).ConfigureAwait(false);
         }
 
-        var batch = _client.CreateBatch();
-        batch.Changeset(changeset =>
-        {
-            foreach (var (key, payload) in itemList)
-            {
-                changeset.Update<object, object>(entitySet, key, payload);
-            }
-        });
-        ODataBatchResponse response = await batch.ExecuteAsync(cancellationToken).ConfigureAwait(false);
-        return MapBatchResponse(response);
+        return await SendPerItemBatchAsync(
+            itemList.Count,
+            (index, ct) => SendRawAsync(HttpMethod.Patch, BuildKeyUrl(entitySet, itemList[index].Key), itemList[index].Payload, ct),
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
     public async Task<IReadOnlyList<BatchOperationResult>> BatchDeleteAsync(
         string entitySet,
         IEnumerable<object> keys,
+        BatchFailureMode mode,
         CancellationToken cancellationToken = default)
     {
         var keyList = keys as IList<object> ?? keys.ToList();
 
-        // Homogeneous-batch invariant (see BatchUpdateAsync): a composite-keyed entity yields all
-        // dictionary keys, so when any key is a dictionary, send EVERY item as an individual HTTP
-        // request preserving index order; otherwise keep the atomic changeset path.
-        if (keyList.Any(key => key is IDictionary<string, object>))
+        if (mode == BatchFailureMode.Atomic)
         {
-            return await SendCompositeKeyBatchAsync(
-                keyList.Count,
-                // isComposite invariant guarantees keyList[index] is an IDictionary here.
-                async (index, ct) => await SendCompositeKeyRequestRawAsync(
-                    HttpMethod.Delete, entitySet, (IDictionary<string, object>)keyList[index], payload: null, ct).ConfigureAwait(false),
-                cancellationToken).ConfigureAwait(false);
+            List<BatchWriteOperation> operations = keyList
+                .Select((key, index) => new BatchWriteOperation(
+                    index + 1, HttpMethod.Delete, BuildKeyUrl(entitySet, key), JsonBody: null))
+                .ToList();
+            return await SendAtomicBatchAsync(operations, cancellationToken).ConfigureAwait(false);
         }
 
-        var batch = _client.CreateBatch();
-        batch.Changeset(changeset =>
-        {
-            foreach (var key in keyList)
-            {
-                changeset.Delete(entitySet, key);
-            }
-        });
-        ODataBatchResponse response = await batch.ExecuteAsync(cancellationToken).ConfigureAwait(false);
-        return MapBatchResponse(response);
+        return await SendPerItemBatchAsync(
+            keyList.Count,
+            (index, ct) => SendRawAsync(HttpMethod.Delete, BuildKeyUrl(entitySet, keyList[index]), payload: null, ct),
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -404,39 +389,44 @@ public class ODataClientAdapter : IODataClientAdapter
     }
 
     /// <summary>
-    /// Issues a single composite-key write and returns the raw outcome (status, body, URL) WITHOUT
-    /// throwing — used by the batch path so per-item failures are collected rather than aborting
-    /// the whole batch. Validates each key field name and the dictionary is non-empty, mirroring
-    /// <see cref="FindByKeyAsync{TEntity}"/>.
+    /// Issues a single composite-key write without throwing, delegating to <see cref="SendRawAsync"/>
+    /// after building the keyed URL.
     /// </summary>
-    private async Task<(HttpStatusCode StatusCode, string? Body, string RequestUrl)> SendCompositeKeyRequestRawAsync(
+    private Task<(HttpStatusCode StatusCode, string? Body, string RequestUrl)> SendCompositeKeyRequestRawAsync(
         HttpMethod method,
         string entitySet,
         IDictionary<string, object> key,
+        object? payload,
+        CancellationToken cancellationToken) =>
+        SendRawAsync(method, BuildCompositeKeyUrl(entitySet, key), payload, cancellationToken);
+
+    /// <summary>
+    /// Issues a single write to a relative OData URL through the named <c>"ODataClient"</c> HttpClient
+    /// (which carries auth + Polly + BaseAddress) and returns the raw outcome without throwing.
+    /// </summary>
+    /// <remarks>
+    /// The relative URL is resolved against the named client's <c>BaseAddress</c>, which always ends
+    /// with '/' (set by <c>NormaliseBaseUrl</c>), so a non-rooted relative URL preserves the base path
+    /// segment (e.g. "https://host/data/" + "LedgerJournalHeaders(...)").
+    /// </remarks>
+    private async Task<(HttpStatusCode StatusCode, string? Body, string RequestUrl)> SendRawAsync(
+        HttpMethod method,
+        string relativeUrl,
         object? payload,
         CancellationToken cancellationToken)
     {
         if (_httpClientFactory is null)
         {
             throw new InvalidOperationException(
-                "Composite-key write operations require the IHttpClientFactory-based constructor of " +
-                "ODataClientAdapter. Production DI uses the two-argument constructor; the single-argument " +
+                "Batch and composite-key write operations require the IHttpClientFactory-based constructor " +
+                "of ODataClientAdapter. Production DI uses the two-argument constructor; the single-argument " +
                 "constructor is for guard tests that never issue HTTP traffic.");
         }
 
-        // requestUrl is a NON-ROOTED relative URI ("EntitySet(...)", no leading '/'). It is resolved
-        // against the named client's HttpClient.BaseAddress, which ApplicationDependencyInjection
-        // always sets via NormaliseBaseUrl (url.TrimEnd('/') + "/"), i.e. it ALWAYS ends with '/'.
-        // That trailing slash is what makes a non-rooted relative compose correctly and PRESERVE the
-        // base path segment (e.g. "https://host/fo/" + "LedgerJournalHeaders(...)" =>
-        // "https://host/fo/LedgerJournalHeaders(...)"). Without it, Uri composition would drop "/fo".
-        string requestUrl = BuildCompositeKeyUrl(entitySet, key);
-
-        using var request = new HttpRequestMessage(method, requestUrl);
+        using var request = new HttpRequestMessage(method, relativeUrl);
         if (payload is not null && method != HttpMethod.Delete)
         {
-            string json = System.Text.Json.JsonSerializer.Serialize(payload, CaseInsensitiveOptions);
-            request.Content = new StringContent(json, Encoding.UTF8, "application/json");
+            request.Content = new StringContent(SerializePayload(payload), Encoding.UTF8, "application/json");
         }
 
         HttpClient client = _httpClientFactory.CreateClient("ODataClient");
@@ -446,19 +436,126 @@ public class ODataClientAdapter : IODataClientAdapter
             ? null
             : await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 
-        return (response.StatusCode, body, requestUrl);
+        return (response.StatusCode, body, relativeUrl);
     }
 
     /// <summary>
-    /// Issues every item of a composite-keyed batch as an individual HTTP request (composite-keyed
-    /// entities cannot use PanoramicData's atomic changeset), assembling a per-item
-    /// <see cref="BatchOperationResult"/> in original index order so the existing
-    /// <c>MapBatchResponse</c>/<c>BuildBatchErrors</c> contract is preserved. Per-item failures are
-    /// collected, never thrown — so a partial failure surfaces as failed indices, not an exception.
+    /// Submits one chunk of write operations as a single atomic changeset <c>$batch</c> (all-or-nothing).
+    /// Maps the changeset outcome onto per-operation <see cref="BatchOperationResult"/>s: if it committed,
+    /// each operation is a success (correlated by Content-ID); if the changeset was rejected — or the whole
+    /// <c>$batch</c> failed — every operation is marked failed, because nothing was applied.
     /// </summary>
-    private static async Task<IReadOnlyList<BatchOperationResult>> SendCompositeKeyBatchAsync(
+    private async Task<IReadOnlyList<BatchOperationResult>> SendAtomicBatchAsync(
+        IReadOnlyList<BatchWriteOperation> operations,
+        CancellationToken cancellationToken)
+    {
+        if (_httpClientFactory is null)
+        {
+            throw new InvalidOperationException(
+                "Batch write operations require the IHttpClientFactory-based constructor of ODataClientAdapter.");
+        }
+
+        ODataBatchRequestBuilder.BuiltBatchRequest built = ODataBatchRequestBuilder.Build(
+            operations,
+            atomic: true,
+            ODataBatchRequestBuilder.NewBoundary("batch"),
+            ODataBatchRequestBuilder.NewBoundary("changeset"));
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "$batch")
+        {
+            Content = new StringContent(built.Body, Encoding.UTF8),
+        };
+        request.Content.Headers.ContentType = MediaTypeHeaderValue.Parse(built.ContentType);
+
+        HttpClient client = _httpClientFactory.CreateClient("ODataClient");
+        using HttpResponseMessage response = await client.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        string? responseBody = response.Content is null
+            ? null
+            : await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+
+        int outerStatus = (int)response.StatusCode;
+
+        // A non-2xx outer status means the whole $batch was rejected (auth, malformed) — nothing ran.
+        if (outerStatus is < 200 or > 299)
+        {
+            return FailAll(operations, outerStatus, responseBody);
+        }
+
+        IReadOnlyList<ODataBatchResponseParser.BatchSubResponse> subResponses;
+        try
+        {
+            subResponses = ODataBatchResponseParser.Parse(
+                response.Content?.Headers.ContentType?.ToString() ?? string.Empty,
+                responseBody ?? string.Empty);
+        }
+        catch (FormatException)
+        {
+            return FailAll(operations, outerStatus, responseBody);
+        }
+
+        bool committed = subResponses.Count == operations.Count
+            && subResponses.All(sub => sub.StatusCode is >= 200 and <= 299);
+
+        if (committed)
+        {
+            return operations.Select((operation, index) =>
+            {
+                ODataBatchResponseParser.BatchSubResponse sub =
+                    subResponses.FirstOrDefault(s => s.ContentId == operation.ContentId) ?? subResponses[index];
+                return new BatchOperationResult
+                {
+                    Index = index,
+                    StatusCode = sub.StatusCode,
+                    IsSuccess = true,
+                    ErrorMessage = null,
+                    ResponseBody = sub.Body,
+                };
+            }).ToList();
+        }
+
+        // Changeset rolled back: surface the failing sub-response against every operation.
+        ODataBatchResponseParser.BatchSubResponse? failure =
+            subResponses.FirstOrDefault(sub => sub.StatusCode is < 200 or > 299);
+        int failStatus = failure?.StatusCode ?? (subResponses.Count > 0 ? subResponses[0].StatusCode : outerStatus);
+        return FailAll(operations, failStatus, failure?.Body ?? responseBody);
+    }
+
+    /// <summary>
+    /// Produces a failed <see cref="BatchOperationResult"/> for every operation in a rejected chunk.
+    /// </summary>
+    private static IReadOnlyList<BatchOperationResult> FailAll(
+        IReadOnlyList<BatchWriteOperation> operations,
+        int statusCode,
+        string? body) =>
+        operations.Select((_, index) => new BatchOperationResult
+        {
+            Index = index,
+            StatusCode = statusCode,
+            IsSuccess = false,
+            ErrorMessage = $"HTTP {statusCode}",
+            ResponseBody = body,
+        }).ToList();
+
+    /// <summary>
+    /// Builds the keyed URL segment for any key shape: a composite <see cref="IDictionary{TKey, TValue}"/>
+    /// via <see cref="BuildCompositeKeyUrl"/>, or a single scalar key as <c>EntitySet(literal)</c>.
+    /// </summary>
+    private static string BuildKeyUrl(string entitySet, object key) =>
+        key is IDictionary<string, object> compositeKey
+            ? BuildCompositeKeyUrl(entitySet, compositeKey)
+            : $"{entitySet}({IntegratoRODataExpressionTranslator.FormatValue(key)})";
+
+    private static string SerializePayload(object payload) =>
+        System.Text.Json.JsonSerializer.Serialize(payload, CaseInsensitiveOptions);
+
+    /// <summary>
+    /// Issues every operation as an individual HTTP request (ContinueOnError mode), assembling a
+    /// per-item <see cref="BatchOperationResult"/> in original index order. Per-item failures are
+    /// collected, never thrown — a partial failure surfaces as failed indices, not an exception.
+    /// </summary>
+    private static async Task<IReadOnlyList<BatchOperationResult>> SendPerItemBatchAsync(
         int count,
-        Func<int, CancellationToken, Task<(HttpStatusCode StatusCode, string? Body, string RequestUrl)>> sendComposite,
+        Func<int, CancellationToken, Task<(HttpStatusCode StatusCode, string? Body, string RequestUrl)>> sendItem,
         CancellationToken cancellationToken)
     {
         var results = new List<BatchOperationResult>(count);
@@ -466,7 +563,7 @@ public class ODataClientAdapter : IODataClientAdapter
         for (int i = 0; i < count; i++)
         {
             (HttpStatusCode statusCode, string? body, _) =
-                await sendComposite(i, cancellationToken).ConfigureAwait(false);
+                await sendItem(i, cancellationToken).ConfigureAwait(false);
 
             int code = (int)statusCode;
             bool isSuccess = code is >= 200 and <= 299;
@@ -551,23 +648,4 @@ public class ODataClientAdapter : IODataClientAdapter
                 $"Failed to deserialize OData response to {typeof(TEntity).Name}. Response was null or incompatible.");
     }
 
-    private static IReadOnlyList<BatchOperationResult> MapBatchResponse(ODataBatchResponse response)
-    {
-        var results = new List<BatchOperationResult>();
-        var index = 0;
-
-        foreach (var result in response.Results)
-        {
-            results.Add(new BatchOperationResult
-            {
-                Index = index++,
-                StatusCode = result.StatusCode,
-                IsSuccess = result.IsSuccess,
-                ErrorMessage = result.ErrorMessage,
-                ResponseBody = result.ResponseBody
-            });
-        }
-
-        return results;
-    }
 }

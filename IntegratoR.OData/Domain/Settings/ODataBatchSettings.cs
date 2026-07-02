@@ -19,9 +19,9 @@ public class ODataBatchSettings
     /// datasets are split into consecutive chunks.
     /// </summary>
     /// <remarks>
-    /// D365 documents a hard maximum of 5000 operations per <c>$batch</c>; the default of 150 is a
-    /// conservative value chosen to stay clear of execution-time and resource throttling, not a
-    /// Microsoft-published recommendation.
+    /// D365 F&amp;O enforces a hard maximum of 200 operations per <c>$batch</c> (verified against the
+    /// live environment; Microsoft's "service protection API limits" doc cites 5000, but the operational
+    /// limit is 200). The default of 150 stays just under that ceiling with headroom.
     /// </remarks>
     /// <value>The default value is <c>150</c>.</value>
     public int MaxOperationsPerChunk { get; set; } = 150;

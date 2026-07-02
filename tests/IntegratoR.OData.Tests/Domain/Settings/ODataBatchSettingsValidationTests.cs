@@ -25,7 +25,8 @@ public class ODataBatchSettingsValidationTests
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
-    [InlineData(5001)]
+    [InlineData(201)]
+    [InlineData(5000)]
     public void Validate_MaxOperationsPerChunkOutOfRange_Fails(int value)
     {
         ODataSettings settings = ValidBase();
@@ -40,7 +41,7 @@ public class ODataBatchSettingsValidationTests
     [Theory]
     [InlineData(1)]
     [InlineData(150)]
-    [InlineData(5000)]
+    [InlineData(200)]
     public void Validate_MaxOperationsPerChunkInRange_Passes(int value)
     {
         ODataSettings settings = ValidBase();

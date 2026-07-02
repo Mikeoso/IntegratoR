@@ -4,13 +4,16 @@ using System.Linq.Expressions;
 using System.Reflection;
 using System.Text.Json.Serialization;
 using FluentResults;
+using IntegratoR.Abstractions.Common.Batch;
 using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.Abstractions.Interfaces.Entity;
 using IntegratoR.OData.Common.Annotations;
 using IntegratoR.OData.Common.Exceptions;
 using IntegratoR.OData.Domain.Models;
+using IntegratoR.OData.Domain.Settings;
 using IntegratoR.OData.Interfaces.Services;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using PanoramicData.OData.Client.Exceptions;
 using Polly.Retry;
 
@@ -31,6 +34,7 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
     private readonly ILogger<ODataService<TEntity>> _logger;
     private readonly ODataExceptionHandler<TEntity> _exceptionHandler;
     private readonly string _entitySetName;
+    private readonly ODataBatchSettings _batchSettings;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ODataService{TEntity}"/> class.
@@ -38,15 +42,18 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
     /// <param name="client">The OData client adapter used to issue requests.</param>
     /// <param name="logger">The logger for structured operation logging.</param>
     /// <param name="retryPolicy">An optional Polly retry policy applied to transient failures; when <see langword="null"/>, no retries are performed.</param>
+    /// <param name="settings">The OData settings; the <c>Batch</c> section supplies the default failure mode and chunk size. When <see langword="null"/>, batch defaults are used.</param>
     public ODataService(
         IODataClientAdapter client,
         ILogger<ODataService<TEntity>> logger,
-        AsyncRetryPolicy? retryPolicy = null)
+        AsyncRetryPolicy? retryPolicy = null,
+        IOptions<ODataSettings>? settings = null)
     {
         _client = client;
         _logger = logger;
         _exceptionHandler = new ODataExceptionHandler<TEntity>(logger, retryPolicy);
         _entitySetName = ResolveEntitySetName();
+        _batchSettings = settings?.Value.Batch ?? new ODataBatchSettings();
     }
 
     #region IService Implementation
@@ -288,82 +295,82 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
     #region IODataBatchService Implementation
 
     /// <inheritdoc />
-    public Task<Result> AddBatchAsync(
+    public Task<Result<BatchOutcome>> AddBatchAsync(
         IEnumerable<TEntity> entities,
+        BatchOptions? options = null,
         CancellationToken cancellationToken = default)
     {
         var entityList = entities as IList<TEntity> ?? entities.ToList();
-
-        return _exceptionHandler.ExecuteNonQueryAsync(
-            operationName: "AddBatch",
-            operation: async () =>
-            {
-                var payloads = entityList.Select(e => CreatePayload(e, isCreateOperation: true)).ToList();
-                IReadOnlyList<BatchOperationResult> results = await _client
-                    .BatchCreateAsync(_entitySetName, payloads, cancellationToken)
-                    .ConfigureAwait(false);
-                return BuildBatchErrors(results, "AddBatch", entityList);
-            },
-            entityKey: () => new object[] { $"{entityList.Count} entities" },
-            cancellationToken: cancellationToken);
-    }
-
-    /// <inheritdoc />
-    public Task<Result> DeleteBatchAsync(
-        IEnumerable<TEntity> entities,
-        CancellationToken cancellationToken = default)
-    {
-        var entityList = entities as IList<TEntity> ?? entities.ToList();
-
-        var keysResult = BuildBatchKeys(entityList);
-        if (keysResult.IsFailed)
-        {
-            return Task.FromResult(Result.Fail(keysResult.Errors));
-        }
-
-        var keys = keysResult.Value;
-
-        return _exceptionHandler.ExecuteNonQueryAsync(
-            operationName: "DeleteBatch",
-            operation: async () =>
-            {
-                IReadOnlyList<BatchOperationResult> results = await _client
-                    .BatchDeleteAsync(_entitySetName, keys, cancellationToken)
-                    .ConfigureAwait(false);
-                return BuildBatchErrors(results, "DeleteBatch", entityList);
-            },
-            entityKey: () => new object[] { $"{entityList.Count} entities" },
-            cancellationToken: cancellationToken);
-    }
-
-    /// <inheritdoc />
-    public Task<Result> UpdateBatchAsync(
-        IEnumerable<TEntity> entities,
-        CancellationToken cancellationToken = default)
-    {
-        var entityList = entities as IList<TEntity> ?? entities.ToList();
-
-        var keysResult = BuildBatchKeys(entityList);
-        if (keysResult.IsFailed)
-        {
-            return Task.FromResult(Result.Fail(keysResult.Errors));
-        }
-
-        var items = entityList
-            .Select((e, i) => (keysResult.Value[i], (IDictionary<string, object>)CreatePayload(e, isCreateOperation: false)))
+        var payloads = entityList
+            .Select(e => (IDictionary<string, object>)CreatePayload(e, isCreateOperation: true))
             .ToList();
+        var keys = new IReadOnlyDictionary<string, object>?[entityList.Count]; // create: server-assigned, no key
 
-        return _exceptionHandler.ExecuteNonQueryAsync(
-            operationName: "UpdateBatch",
-            operation: async () =>
-            {
-                IReadOnlyList<BatchOperationResult> results = await _client
-                    .BatchUpdateAsync(_entitySetName, items, cancellationToken)
-                    .ConfigureAwait(false);
-                return BuildBatchErrors(results, "UpdateBatch", entityList);
-            },
-            entityKey: () => new object[] { $"{entityList.Count} entities" },
-            cancellationToken: cancellationToken);
+        return RunBatchInChunksAsync(
+            "AddBatch",
+            entityList.Count,
+            options,
+            keys,
+            (offset, count, mode, ct) => _client.BatchCreateAsync(
+                _entitySetName, payloads.Skip(offset).Take(count).ToList(), mode, ct),
+            cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public Task<Result<BatchOutcome>> DeleteBatchAsync(
+        IEnumerable<TEntity> entities,
+        BatchOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        var entityList = entities as IList<TEntity> ?? entities.ToList();
+
+        Result<List<object>> keysResult = BuildBatchKeys(entityList);
+        if (keysResult.IsFailed)
+        {
+            return Task.FromResult(Result.Fail<BatchOutcome>(keysResult.Errors));
+        }
+
+        List<object> keyObjects = keysResult.Value;
+        var keys = keyObjects.Select(KeyToResultDict).ToList();
+
+        return RunBatchInChunksAsync(
+            "DeleteBatch",
+            entityList.Count,
+            options,
+            keys,
+            (offset, count, mode, ct) => _client.BatchDeleteAsync(
+                _entitySetName, keyObjects.Skip(offset).Take(count).ToList(), mode, ct),
+            cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public Task<Result<BatchOutcome>> UpdateBatchAsync(
+        IEnumerable<TEntity> entities,
+        BatchOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        var entityList = entities as IList<TEntity> ?? entities.ToList();
+
+        Result<List<object>> keysResult = BuildBatchKeys(entityList);
+        if (keysResult.IsFailed)
+        {
+            return Task.FromResult(Result.Fail<BatchOutcome>(keysResult.Errors));
+        }
+
+        List<object> keyObjects = keysResult.Value;
+        var items = entityList
+            .Select((e, i) => (keyObjects[i], (IDictionary<string, object>)CreatePayload(e, isCreateOperation: false)))
+            .ToList();
+        var keys = keyObjects.Select(KeyToResultDict).ToList();
+
+        return RunBatchInChunksAsync(
+            "UpdateBatch",
+            entityList.Count,
+            options,
+            keys,
+            (offset, count, mode, ct) => _client.BatchUpdateAsync(
+                _entitySetName, items.Skip(offset).Take(count).ToList(), mode, ct),
+            cancellationToken);
     }
 
     #endregion
@@ -461,6 +468,30 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
         return Result.Ok(keys);
     }
 
+    /// <summary>
+    /// Projects a batch key to the wire-name dictionary carried by <see cref="BatchItemResult.Key"/>.
+    /// A composite key is already a dictionary; a single scalar key is wrapped with its sole
+    /// <c>[Key]</c> property's wire name so single-key (e.g. cross-company / global) entities still
+    /// identify the failed record.
+    /// </summary>
+    private static IReadOnlyDictionary<string, object>? KeyToResultDict(object key)
+    {
+        if (key is IDictionary<string, object> dictionary)
+        {
+            return dictionary as IReadOnlyDictionary<string, object> ?? new Dictionary<string, object>(dictionary);
+        }
+
+        PropertyInfo[] keyProperties = KeyPropertyCache.GetOrAdd(typeof(TEntity), type =>
+            type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+                .Where(p => p.GetCustomAttribute<System.ComponentModel.DataAnnotations.KeyAttribute>() is not null)
+                .OrderBy(p => p.MetadataToken)
+                .ToArray());
+
+        return keyProperties.Length == 1
+            ? new Dictionary<string, object> { [PropertyNameResolver.Resolve(keyProperties[0])] = key }
+            : null;
+    }
+
     private static Dictionary<string, object> CreatePayload(TEntity entity, bool isCreateOperation)
     {
         var metadata = PropertyMetadataCache.GetOrAdd(
@@ -533,46 +564,122 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
     }
 
     /// <summary>
-    /// Inspects batch operation results and returns per-entity errors for any failures.
-    /// Returns <c>null</c> when all operations succeeded.
+    /// Runs a batch operation in chunks of at most the configured size, submitting each chunk through
+    /// <paramref name="sendChunk"/>, aggregating the per-item results into a <see cref="BatchOutcome"/>,
+    /// and honouring <c>StopOnFirstFailedChunk</c> in <see cref="BatchFailureMode.Atomic"/> mode. Returns
+    /// a successful result only when every operation committed; otherwise a failed result whose error is a
+    /// <see cref="BatchIntegrationError"/> carrying the outcome.
     /// </summary>
-    private List<IError>? BuildBatchErrors(
-        IReadOnlyList<BatchOperationResult> results,
+    private async Task<Result<BatchOutcome>> RunBatchInChunksAsync(
         string operationName,
-        IList<TEntity> entities)
+        int total,
+        BatchOptions? options,
+        IReadOnlyList<IReadOnlyDictionary<string, object>?> keysForResult,
+        Func<int, int, BatchFailureMode, CancellationToken, Task<IReadOnlyList<BatchOperationResult>>> sendChunk,
+        CancellationToken cancellationToken)
     {
-        var failures = results.Where(r => !r.IsSuccess).ToList();
+        BatchFailureMode mode = options?.Mode ?? _batchSettings.FailureMode;
+        int chunkSize = Math.Max(1, options?.MaxOperationsPerChunk ?? _batchSettings.MaxOperationsPerChunk);
 
-        if (failures.Count == 0)
+        var items = new List<BatchItemResult>(total);
+        int chunkIndex = 0;
+        bool aborted = false;
+
+        for (int offset = 0; offset < total; offset += chunkSize)
         {
-            return null;
+            int count = Math.Min(chunkSize, total - offset);
+
+            IReadOnlyList<BatchOperationResult> chunkResults;
+            try
+            {
+                // The $batch POST rides the named client's Polly (429/5xx) at the HTTP layer; it is NOT
+                // wrapped in the exception handler's retry policy, which would re-POST a processed batch.
+                chunkResults = await sendChunk(offset, count, mode, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogError(ex, "{Operation} chunk {ChunkIndex} failed to send", operationName, chunkIndex);
+                chunkResults = Enumerable.Range(0, count)
+                    .Select(i => new BatchOperationResult
+                    {
+                        Index = i,
+                        StatusCode = 0,
+                        IsSuccess = false,
+                        ErrorMessage = ex.Message,
+                        ResponseBody = null,
+                    })
+                    .ToList();
+            }
+
+            foreach (BatchOperationResult result in chunkResults)
+            {
+                int globalIndex = offset + result.Index;
+                string? message = result.IsSuccess
+                    ? null
+                    : ODataExceptionHandler<TEntity>.ExtractD365InnerError(result.ResponseBody) ?? result.ErrorMessage;
+
+                if (!result.IsSuccess)
+                {
+                    _logger.LogWarning(
+                        "{Operation} item {Index} (chunk {ChunkIndex}) failed with HTTP {StatusCode}: {Message}",
+                        operationName, globalIndex, chunkIndex, result.StatusCode, message);
+                }
+
+                items.Add(new BatchItemResult
+                {
+                    Index = globalIndex,
+                    ChunkIndex = chunkIndex,
+                    IsSuccess = result.IsSuccess,
+                    StatusCode = result.StatusCode,
+                    Key = globalIndex < keysForResult.Count ? keysForResult[globalIndex] : null,
+                    ErrorCode = result.IsSuccess ? null : $"{typeof(TEntity).Name}.BatchOperationFailed",
+                    ErrorMessage = message,
+                });
+            }
+
+            bool chunkFailed = chunkResults.Any(r => !r.IsSuccess);
+            chunkIndex++;
+
+            if (mode == BatchFailureMode.Atomic && _batchSettings.StopOnFirstFailedChunk && chunkFailed)
+            {
+                aborted = true;
+                break;
+            }
         }
 
-        var errors = new List<IError>();
-
-        errors.Add(new IntegrationError(
-            $"{typeof(TEntity).Name}.BatchFailed",
-            $"{failures.Count} of {results.Count} {operationName} operations failed for {typeof(TEntity).Name}",
-            ErrorType.Failure));
-
-        foreach (var failure in failures)
+        var outcome = new BatchOutcome
         {
-            var innerError = ODataExceptionHandler<TEntity>.ExtractD365InnerError(failure.ResponseBody);
+            Mode = mode,
+            ChunkCount = chunkIndex,
+            Items = items,
+        };
 
-            _logger.LogWarning(
-                "{Operation} on {EntityType} - entity at index {Index} failed. " +
-                "StatusCode: {StatusCode}, Error: {ErrorMessage}",
-                operationName, typeof(TEntity).Name, failure.Index,
-                failure.StatusCode, innerError ?? failure.ErrorMessage);
+        return outcome.AllSucceeded && !aborted
+            ? Result.Ok(outcome)
+            : Result.Fail<BatchOutcome>(BuildBatchError(outcome, operationName, aborted));
+    }
 
-            var errorMessage = innerError ?? failure.ErrorMessage
-                ?? $"Operation at index {failure.Index} failed with status {failure.StatusCode}";
+    /// <summary>
+    /// Builds the failed-batch error list: a header <see cref="BatchIntegrationError"/> carrying the full
+    /// <see cref="BatchOutcome"/>, followed by one <see cref="IntegrationError"/> per failed item.
+    /// </summary>
+    private static List<IError> BuildBatchError(BatchOutcome outcome, string operationName, bool aborted)
+    {
+        string entity = typeof(TEntity).Name;
+        string abortNote = aborted ? " (remaining chunks skipped after a failed chunk in Atomic mode)" : string.Empty;
 
-            errors.Add(new IntegrationError(
-                $"{typeof(TEntity).Name}.BatchOperationFailed",
-                $"[Index {failure.Index}, HTTP {failure.StatusCode}] {errorMessage}",
-                ErrorType.Failure));
-        }
+        var errors = new List<IError>
+        {
+            new BatchIntegrationError(
+                $"{entity}.BatchFailed",
+                $"{outcome.Failed} of {outcome.Total} {operationName} operations failed{abortNote}.",
+                outcome),
+        };
+
+        errors.AddRange(outcome.Failures.Select(failure => (IError)new IntegrationError(
+            $"{entity}.BatchOperationFailed",
+            $"[Index {failure.Index}, chunk {failure.ChunkIndex}, HTTP {failure.StatusCode}] {failure.ErrorMessage}",
+            ErrorType.Failure)));
 
         return errors;
     }

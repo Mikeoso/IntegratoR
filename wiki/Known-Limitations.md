@@ -89,27 +89,24 @@ warn: IntegratoR.OData.HttpRetry
 
 **Workaround status:** the range check is a candidate addition to `ODataSettingsValidator`; not yet implemented.
 
-## Composite-key batch Update/Delete is per-item, not atomic
+## Batch atomicity is per-chunk
 
-`CreateBatchCommand<T>` groups its writes into a single atomic OData changeset. `UpdateBatchCommand<T>` and `DeleteBatchCommand<T>` cannot — every D365 F&O entity is composite-keyed, and PanoramicData's changeset cannot bind a dictionary key. `ODataClientAdapter` therefore sends each composite-key update or delete as an individual HTTP request in index order.
+`Atomic` batch mode runs each chunk as one all-or-nothing OData changeset, but a dataset larger than the chunk size (`ODataSettings.Batch.MaxOperationsPerChunk`, default 150; D365 caps a `$batch` at 200 operations) is split across several changesets. Each chunk commits or rolls back independently — a 1,000-row import is not a single transaction.
 
 ```csharp
-var updates = new List<LedgerJournalHeader> { header1, header2, header3 };
-Result result = await mediator.Send(
-    new UpdateBatchCommand<LedgerJournalHeader>(updates), cancellationToken);
-
-if (result.IsFailed)
+// StopOnFirstFailedChunk (default true in Atomic mode) stops submitting further chunks after one
+// fails, but chunks already committed stay committed. Inspect the BatchOutcome to see what landed.
+if (result.IsFailed && result.GetError() is BatchIntegrationError batchError)
 {
-    IntegrationError? error = result.GetError();
-    // Per-item, not transactional: earlier items may already be committed in D365
-    // when a later item fails. Re-read to establish which writes landed.
+    int committed = batchError.Outcome.Succeeded;
+    IEnumerable<BatchItemResult> toRetry = batchError.Outcome.Failures;
 }
 ```
 
-> [!WARNING]
-> A failed composite-key `UpdateBatchCommand`/`DeleteBatchCommand` is not all-or-nothing. Items before the failing one are already committed. Do not treat the batch as a transaction; re-read to reconcile, or drive idempotent per-item commands when you need precise recovery.
+> [!NOTE]
+> There is no server-side option IntegratoR can synthesise for guaranteed all-or-nothing beyond D365's 200-operation `$batch` ceiling. `ContinueOnError` mode currently applies operations per item; its single-`$batch` transport (`Prefer: odata.continue-on-error`) is undocumented for D365 F&O and pending live verification.
 
-**Workaround status:** inherent to D365's composite-key write model. Atomic multi-entity updates would need server-side support IntegratoR cannot synthesise.
+**Workaround status:** inherent to D365's `$batch` operation cap. Size imports to the chunk limit and keep retries idempotent on the composite key.
 
 ## Deferred items
 

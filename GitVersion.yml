@@ -6,11 +6,11 @@ assembly-file-versioning-scheme: MajorMinorPatch
 
 workflow: GitHubFlow/v1
 mode: ContinuousDelivery
-# Bumped to 2.0.0: the architecture-review fix series (PRs #131-135) shipped breaking
-# public-API changes (FindEntriesAsync orderBy param; batch commands IEnumerable->IReadOnlyList;
-# GetDimensionOrdersQuery param rename) that were mis-tagged +semver:minor. This pins the next
+# Bumped to 3.0.0: the configurable OData $batch redesign is a breaking public-API change — batch
+# operations now return Result<BatchOutcome> instead of Result across IBatchService, ODataService,
+# the batch commands/handlers, and IODataClientAdapter (BatchFailureMode param). This pins the next
 # stable release to a MAJOR. See CHANGELOG.md "Changed - Breaking".
-next-version: 2.0.0
+next-version: 3.0.0
 
 branches:
   main:

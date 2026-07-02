@@ -1,4 +1,5 @@
 using FluentResults;
+using IntegratoR.Abstractions.Common.Batch;
 using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.OData.FO.Domain.Entities.LedgerJournal;
 using IntegratoR.OData.Interfaces.Services;
@@ -9,7 +10,7 @@ namespace IntegratoR.OData.FO.Features.Commands.LedgerJournals.CreateLedgerJourn
 
 /// <summary>Creates a batch of LedgerJournalLine entities in D365 F&amp;O, emitting domain-specific structured logs. Retained over the generic CreateBatchCommandHandler&lt;T&gt; because it adds journal-context (Count) logging.</summary>
 /// <typeparam name="TEntity">The type of the entity being created.</typeparam>
-public class CreateLedgerJournalLinesHandler<TEntity> : IRequestHandler<CreateLedgerJournalLinesCommand<TEntity>, Result> where TEntity : LedgerJournalLine
+public class CreateLedgerJournalLinesHandler<TEntity> : IRequestHandler<CreateLedgerJournalLinesCommand<TEntity>, Result<BatchOutcome>> where TEntity : LedgerJournalLine
 {
     private readonly ILogger<CreateLedgerJournalLinesHandler<TEntity>> _logger;
     private readonly IODataBatchService<TEntity> _service;
@@ -22,22 +23,15 @@ public class CreateLedgerJournalLinesHandler<TEntity> : IRequestHandler<CreateLe
     }
 
     /// <inheritdoc/>
-    public async Task<Result> Handle(CreateLedgerJournalLinesCommand<TEntity> request, CancellationToken cancellationToken)
+    public async Task<Result<BatchOutcome>> Handle(CreateLedgerJournalLinesCommand<TEntity> request, CancellationToken cancellationToken)
     {
         _logger.LogInformation("Creating {Count} Ledger Journal Lines in F&O.", request.LedgerJournalLines.Count);
 
-        var addResult = await _service.AddBatchAsync(request.LedgerJournalLines, cancellationToken).ConfigureAwait(false);
-
-        return addResult.Match(
-            onSuccess: () =>
-            {
-                _logger.LogInformation("Successfully created {Count} Ledger Journal Lines in F&O.", request.LedgerJournalLines.Count);
-                return Result.Ok();
-            },
-            onFailure: error =>
-            {
-                _logger.LogError("Failed to create Ledger Journal Lines: {Error}", error.Message);
-                return Result.Fail(error);
-            });
+        Result<BatchOutcome> result = await _service.AddBatchAsync(request.LedgerJournalLines, request.Options, cancellationToken).ConfigureAwait(false);
+        if (result.IsSuccess)
+        {
+            _logger.LogInformation("Successfully created {Count} Ledger Journal Lines in F&O.", request.LedgerJournalLines.Count);
+        }
+        return result;
     }
 }
