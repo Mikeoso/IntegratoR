@@ -31,4 +31,9 @@ public class ODataSettings
     /// Gets or sets the resilience settings (retry and circuit breaker) for the OData client.
     /// </summary>
     public ODataResilienceSettings Resilience { get; set; } = new();
+
+    /// <summary>
+    /// Gets or sets the batch write settings (failure mode and automatic chunking) for the OData client.
+    /// </summary>
+    public ODataBatchSettings Batch { get; set; } = new();
 }
