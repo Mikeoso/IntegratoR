@@ -2,6 +2,7 @@ using System.Linq.Expressions;
 using FluentAssertions;
 using FluentResults;
 using FluentValidation;
+using IntegratoR.Abstractions.Common.Batch;
 using IntegratoR.Abstractions.Common.CQRS.Commands;
 using IntegratoR.Abstractions.Common.CQRS.Queries;
 using IntegratoR.Abstractions.Common.Results;
@@ -445,13 +446,13 @@ public class ServiceCollectionExtensionsTests
 
             // Act — an empty batch must be rejected by the now-live CreateBatchCommandValidator's
             // .Any() rule before the handler/service is reached.
-            Result result =
+            Result<BatchOutcome> result =
                 await mediator.Send(new CreateBatchCommand<LedgerJournalHeader>([]), TestContext.Current.CancellationToken);
 
             // Assert
             result.Should().BeFailed();
             result.Should().HaveErrorType(ErrorType.Validation);
-            await service.DidNotReceive().AddBatchAsync(Arg.Any<IEnumerable<LedgerJournalHeader>>(), Arg.Any<CancellationToken>());
+            await service.DidNotReceive().AddBatchAsync(Arg.Any<IEnumerable<LedgerJournalHeader>>(), Arg.Any<BatchOptions?>(), Arg.Any<CancellationToken>());
         }
     }
 
@@ -474,6 +475,13 @@ public class ServiceCollectionExtensionsTests
         return (services.BuildServiceProvider(), substitute);
     }
 
+    private static BatchOutcome SuccessOutcome() => new()
+    {
+        Mode = BatchFailureMode.Atomic,
+        ChunkCount = 1,
+        Items = [new BatchItemResult { Index = 0, ChunkIndex = 0, IsSuccess = true, StatusCode = 204 }],
+    };
+
     [Fact]
     public async Task AddIntegratoR_ResolvesGenericCreateBatchCommandHandler_ForFOEntity()
     {
@@ -481,19 +489,19 @@ public class ServiceCollectionExtensionsTests
         (ServiceProvider provider, IBatchService<LedgerJournalHeader> service) = BuildProviderWithSubstitutedBatchService();
         await using (provider)
         {
-            service.AddBatchAsync(Arg.Any<IEnumerable<LedgerJournalHeader>>(), Arg.Any<CancellationToken>())
-                .Returns(Task.FromResult(Result.Ok()));
+            service.AddBatchAsync(Arg.Any<IEnumerable<LedgerJournalHeader>>(), Arg.Any<BatchOptions?>(), Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult(Result.Ok(SuccessOutcome())));
 
             using IServiceScope scope = provider.CreateScope();
             IMediator mediator = scope.ServiceProvider.GetRequiredService<IMediator>();
 
             // Act
-            Result result =
+            Result<BatchOutcome> result =
                 await mediator.Send(new CreateBatchCommand<LedgerJournalHeader>(new[] { CreateTestHeader() }), TestContext.Current.CancellationToken);
 
             // Assert
             result.Should().BeSuccessful();
-            await service.Received(1).AddBatchAsync(Arg.Any<IEnumerable<LedgerJournalHeader>>(), Arg.Any<CancellationToken>());
+            await service.Received(1).AddBatchAsync(Arg.Any<IEnumerable<LedgerJournalHeader>>(), Arg.Any<BatchOptions?>(), Arg.Any<CancellationToken>());
         }
     }
 
@@ -504,19 +512,19 @@ public class ServiceCollectionExtensionsTests
         (ServiceProvider provider, IBatchService<LedgerJournalHeader> service) = BuildProviderWithSubstitutedBatchService();
         await using (provider)
         {
-            service.UpdateBatchAsync(Arg.Any<IEnumerable<LedgerJournalHeader>>(), Arg.Any<CancellationToken>())
-                .Returns(Task.FromResult(Result.Ok()));
+            service.UpdateBatchAsync(Arg.Any<IEnumerable<LedgerJournalHeader>>(), Arg.Any<BatchOptions?>(), Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult(Result.Ok(SuccessOutcome())));
 
             using IServiceScope scope = provider.CreateScope();
             IMediator mediator = scope.ServiceProvider.GetRequiredService<IMediator>();
 
             // Act
-            Result result =
+            Result<BatchOutcome> result =
                 await mediator.Send(new UpdateBatchCommand<LedgerJournalHeader>(new[] { CreateTestHeader() }), TestContext.Current.CancellationToken);
 
             // Assert
             result.Should().BeSuccessful();
-            await service.Received(1).UpdateBatchAsync(Arg.Any<IEnumerable<LedgerJournalHeader>>(), Arg.Any<CancellationToken>());
+            await service.Received(1).UpdateBatchAsync(Arg.Any<IEnumerable<LedgerJournalHeader>>(), Arg.Any<BatchOptions?>(), Arg.Any<CancellationToken>());
         }
     }
 
@@ -527,19 +535,19 @@ public class ServiceCollectionExtensionsTests
         (ServiceProvider provider, IBatchService<LedgerJournalHeader> service) = BuildProviderWithSubstitutedBatchService();
         await using (provider)
         {
-            service.DeleteBatchAsync(Arg.Any<IEnumerable<LedgerJournalHeader>>(), Arg.Any<CancellationToken>())
-                .Returns(Task.FromResult(Result.Ok()));
+            service.DeleteBatchAsync(Arg.Any<IEnumerable<LedgerJournalHeader>>(), Arg.Any<BatchOptions?>(), Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult(Result.Ok(SuccessOutcome())));
 
             using IServiceScope scope = provider.CreateScope();
             IMediator mediator = scope.ServiceProvider.GetRequiredService<IMediator>();
 
             // Act
-            Result result =
+            Result<BatchOutcome> result =
                 await mediator.Send(new DeleteBatchCommand<LedgerJournalHeader>(new[] { CreateTestHeader() }), TestContext.Current.CancellationToken);
 
             // Assert
             result.Should().BeSuccessful();
-            await service.Received(1).DeleteBatchAsync(Arg.Any<IEnumerable<LedgerJournalHeader>>(), Arg.Any<CancellationToken>());
+            await service.Received(1).DeleteBatchAsync(Arg.Any<IEnumerable<LedgerJournalHeader>>(), Arg.Any<BatchOptions?>(), Arg.Any<CancellationToken>());
         }
     }
 
@@ -550,14 +558,14 @@ public class ServiceCollectionExtensionsTests
         (ServiceProvider provider, IBatchService<LedgerJournalHeader> service) = BuildProviderWithSubstitutedBatchService();
         await using (provider)
         {
-            service.AddBatchAsync(Arg.Any<IEnumerable<LedgerJournalHeader>>(), Arg.Any<CancellationToken>())
-                .Returns(Task.FromResult(Result.Fail(new IntegrationError("Batch.Create.Failed", "create batch failed", ErrorType.Failure))));
+            service.AddBatchAsync(Arg.Any<IEnumerable<LedgerJournalHeader>>(), Arg.Any<BatchOptions?>(), Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult(Result.Fail<BatchOutcome>(new IntegrationError("Batch.Create.Failed", "create batch failed", ErrorType.Failure))));
 
             using IServiceScope scope = provider.CreateScope();
             IMediator mediator = scope.ServiceProvider.GetRequiredService<IMediator>();
 
             // Act
-            Result result =
+            Result<BatchOutcome> result =
                 await mediator.Send(new CreateBatchCommand<LedgerJournalHeader>(new[] { CreateTestHeader() }), TestContext.Current.CancellationToken);
 
             // Assert -- the handler propagates the service failure unchanged; it does not throw.
@@ -573,14 +581,14 @@ public class ServiceCollectionExtensionsTests
         (ServiceProvider provider, IBatchService<LedgerJournalHeader> service) = BuildProviderWithSubstitutedBatchService();
         await using (provider)
         {
-            service.UpdateBatchAsync(Arg.Any<IEnumerable<LedgerJournalHeader>>(), Arg.Any<CancellationToken>())
-                .Returns(Task.FromResult(Result.Fail(new IntegrationError("Batch.Update.Failed", "update batch failed", ErrorType.Failure))));
+            service.UpdateBatchAsync(Arg.Any<IEnumerable<LedgerJournalHeader>>(), Arg.Any<BatchOptions?>(), Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult(Result.Fail<BatchOutcome>(new IntegrationError("Batch.Update.Failed", "update batch failed", ErrorType.Failure))));
 
             using IServiceScope scope = provider.CreateScope();
             IMediator mediator = scope.ServiceProvider.GetRequiredService<IMediator>();
 
             // Act
-            Result result =
+            Result<BatchOutcome> result =
                 await mediator.Send(new UpdateBatchCommand<LedgerJournalHeader>(new[] { CreateTestHeader() }), TestContext.Current.CancellationToken);
 
             // Assert
@@ -596,14 +604,14 @@ public class ServiceCollectionExtensionsTests
         (ServiceProvider provider, IBatchService<LedgerJournalHeader> service) = BuildProviderWithSubstitutedBatchService();
         await using (provider)
         {
-            service.DeleteBatchAsync(Arg.Any<IEnumerable<LedgerJournalHeader>>(), Arg.Any<CancellationToken>())
-                .Returns(Task.FromResult(Result.Fail(new IntegrationError("Batch.Delete.Failed", "delete batch failed", ErrorType.Failure))));
+            service.DeleteBatchAsync(Arg.Any<IEnumerable<LedgerJournalHeader>>(), Arg.Any<BatchOptions?>(), Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult(Result.Fail<BatchOutcome>(new IntegrationError("Batch.Delete.Failed", "delete batch failed", ErrorType.Failure))));
 
             using IServiceScope scope = provider.CreateScope();
             IMediator mediator = scope.ServiceProvider.GetRequiredService<IMediator>();
 
             // Act
-            Result result =
+            Result<BatchOutcome> result =
                 await mediator.Send(new DeleteBatchCommand<LedgerJournalHeader>(new[] { CreateTestHeader() }), TestContext.Current.CancellationToken);
 
             // Assert
