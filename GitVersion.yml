@@ -6,11 +6,25 @@ assembly-file-versioning-scheme: MajorMinorPatch
 
 workflow: GitHubFlow/v1
 mode: ContinuousDelivery
-next-version: 1.1.0
+# This is the 1.3 hotfix line, branched from tag v1.3.5. The naturally computed patch would be
+# 1.3.6, which is already taken by an unrelated main-line release; republishing it would be
+# swallowed silently by `dotnet nuget push --skip-duplicate`. next-version is root-only (it is not
+# valid under `branches:`) and acts as a floor, so it pins this line to 1.3.7. The setting is
+# branch-local because GitVersion.yml is a file in the branch — main keeps its own pin untouched.
+next-version: 1.3.7
 
 branches:
   main:
     label: 'ci'
+  # Without an explicit entry, support/** falls through to `unknown`, which GitHubFlow/v1 gives
+  # mode: ManualDeployment — pre-release versions then stop incrementing per commit and repeated
+  # pushes would publish the same version over and over.
+  support:
+    regex: ^support[/-]
+    mode: ContinuousDelivery
+    label: 'hotfix'
+    increment: Patch
+    is-main-branch: true
 
 ignore:
   sha: []
