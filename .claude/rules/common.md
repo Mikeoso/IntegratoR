@@ -14,6 +14,33 @@ Workflow and working-discipline rules. C# language, style, error-handling, and c
 - **Branch naming**: `feature/<area>/<desc>`, `fix/<area>/<desc>`, `chore/<desc>`.
 - **Commit style**: Imperative mood, under 72 chars. PRs are squash-merged.
 
+## Hotfix / Support Lines
+
+For a consumer stuck on an older released version that cannot absorb the breaking changes between
+it and `main` — typically a production system several MAJORs behind.
+
+1. Branch `support/<major>.<minor>` from the **release tag**, never from `main`.
+2. Fix + tests on a `fix/...` branch, PR targeting the support branch.
+3. Release via `workflow_dispatch` with `release: true` **on the support branch**.
+
+- **Never merge in either direction.** Merging `main` into a support branch makes newer tags
+  reachable, and GitVersion's tag clamp then raises the computed version off the hotfix line.
+  The fix must already exist on `main` before the support line ships it — a support line never
+  carries something `main` lacks.
+- **Strictly PATCH.** No new public API, no signature change, no `[Obsolete]` — see
+  `api-compatibility.md`.
+- **Versioning is branch-local.** `GitVersion.yml` is a file in the branch, so the support branch
+  carries its own. `next-version` is root-only (not valid under `branches:`) and acts as a *floor*:
+  set it to the intended hotfix version when the naturally computed patch would collide with a tag
+  already taken on another line. Give the branch an explicit `support` entry with
+  `mode: ContinuousDelivery` — without it the branch falls through to `unknown`/`ManualDeployment`,
+  pre-release versions stop incrementing per commit, and `dotnet nuget push --skip-duplicate`
+  swallows the pushes silently.
+- **The review gate is unchanged.** `build` and `claude-review` both run on PRs targeting
+  `support/**`; give the branch the same protection rules as `main`.
+- **A hotfix never claims "Latest".** It ships after the newer main-line releases, so the publish
+  workflow marks the GitHub Release latest only on `main`.
+
 ## Formatting
 
 - `dotnet format` is enforced via a PostToolUse hook that runs automatically on Write/Edit.
