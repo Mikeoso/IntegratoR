@@ -52,7 +52,11 @@
   </ItemGroup>
 
   <ItemGroup Label="Tooling">
-    <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="10.0.103" />
+    <!-- 10.0.303 is the patched release for CVE-2026-62900 (GHSA-23fw-v26w-5fgq, 2026-09-08); it
+         pulls Microsoft.Build.Tasks.Git 10.0.303. Earlier 10.0.1xx and 10.0.30x releases are
+         flagged by the "Check vulnerable packages" build step. Build-only (PrivateAssets="All"),
+         so this does not change the shipped packages' dependencies. -->
+    <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="10.0.303" />
     <PackageVersion Include="OData2Poco.CommandLine" Version="6.4.0" />
   </ItemGroup>
 
