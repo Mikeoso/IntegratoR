@@ -1,5 +1,8 @@
 using System.Linq.Expressions;
+using System.Net.Http.Headers;
+using System.Text;
 using IntegratoR.Abstractions.Interfaces.Entity;
+using IntegratoR.OData.Common.Batch;
 using IntegratoR.OData.Common.Filters;
 using IntegratoR.OData.Domain.Models;
 using IntegratoR.OData.Interfaces.Services;
@@ -28,10 +31,32 @@ public class ODataClientAdapter : IODataClientAdapter
         };
 
     private readonly ODataClient _client;
+    private readonly IHttpClientFactory? _httpClientFactory;
 
+    /// <summary>
+    /// Initialises a new instance without a named-client factory.
+    /// </summary>
+    /// <param name="client">The underlying PanoramicData OData client.</param>
+    /// <remarks>
+    /// Batch writes are unavailable through this constructor and throw
+    /// <see cref="InvalidOperationException"/>. They never worked through it either: PanoramicData's
+    /// changeset path threw on serialisation. Production DI always uses the two-argument overload;
+    /// this one is retained for guard tests that issue no HTTP traffic.
+    /// </remarks>
     public ODataClientAdapter(ODataClient client)
     {
         _client = client;
+    }
+
+    /// <summary>
+    /// Initialises a new instance with the named-client factory required by batch writes.
+    /// </summary>
+    /// <param name="client">The underlying PanoramicData OData client.</param>
+    /// <param name="httpClientFactory">Factory that must resolve the <c>"ODataClient"</c> named client, so batch requests carry the same authentication, Polly resilience, and base address as PanoramicData's own traffic.</param>
+    public ODataClientAdapter(ODataClient client, IHttpClientFactory httpClientFactory)
+    {
+        _client = client;
+        _httpClientFactory = httpClientFactory;
     }
 
     /// <inheritdoc />
@@ -217,16 +242,15 @@ public class ODataClientAdapter : IODataClientAdapter
         IEnumerable<IDictionary<string, object>> payloads,
         CancellationToken cancellationToken = default)
     {
-        var batch = _client.CreateBatch();
-        batch.Changeset(changeset =>
-        {
-            foreach (var payload in payloads)
-            {
-                changeset.Create(entitySet, payload);
-            }
-        });
-        ODataBatchResponse response = await batch.ExecuteAsync(cancellationToken).ConfigureAwait(false);
-        return MapBatchResponse(response);
+        IReadOnlyList<IDictionary<string, object>> payloadList =
+            payloads as IReadOnlyList<IDictionary<string, object>> ?? payloads.ToList();
+
+        List<BatchWriteOperation> operations = payloadList
+            .Select((payload, index) => new BatchWriteOperation(
+                index + 1, HttpMethod.Post, entitySet, SerializePayload(payload)))
+            .ToList();
+
+        return await SendAtomicBatchAsync(operations, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -235,16 +259,15 @@ public class ODataClientAdapter : IODataClientAdapter
         IEnumerable<(object Key, IDictionary<string, object> Payload)> items,
         CancellationToken cancellationToken = default)
     {
-        var batch = _client.CreateBatch();
-        batch.Changeset(changeset =>
-        {
-            foreach (var (key, payload) in items)
-            {
-                changeset.Update<object, object>(entitySet, key, payload);
-            }
-        });
-        ODataBatchResponse response = await batch.ExecuteAsync(cancellationToken).ConfigureAwait(false);
-        return MapBatchResponse(response);
+        IReadOnlyList<(object Key, IDictionary<string, object> Payload)> itemList =
+            items as IReadOnlyList<(object Key, IDictionary<string, object> Payload)> ?? items.ToList();
+
+        List<BatchWriteOperation> operations = itemList
+            .Select((item, index) => new BatchWriteOperation(
+                index + 1, HttpMethod.Patch, BuildKeyUrl(entitySet, item.Key), SerializePayload(item.Payload)))
+            .ToList();
+
+        return await SendAtomicBatchAsync(operations, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -253,16 +276,14 @@ public class ODataClientAdapter : IODataClientAdapter
         IEnumerable<object> keys,
         CancellationToken cancellationToken = default)
     {
-        var batch = _client.CreateBatch();
-        batch.Changeset(changeset =>
-        {
-            foreach (var key in keys)
-            {
-                changeset.Delete(entitySet, key);
-            }
-        });
-        ODataBatchResponse response = await batch.ExecuteAsync(cancellationToken).ConfigureAwait(false);
-        return MapBatchResponse(response);
+        IReadOnlyList<object> keyList = keys as IReadOnlyList<object> ?? keys.ToList();
+
+        List<BatchWriteOperation> operations = keyList
+            .Select((key, index) => new BatchWriteOperation(
+                index + 1, HttpMethod.Delete, BuildKeyUrl(entitySet, key)))
+            .ToList();
+
+        return await SendAtomicBatchAsync(operations, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -278,23 +299,159 @@ public class ODataClientAdapter : IODataClientAdapter
                 $"Failed to deserialize OData response to {typeof(TEntity).Name}. Response was null or incompatible.");
     }
 
-    private static IReadOnlyList<BatchOperationResult> MapBatchResponse(ODataBatchResponse response)
+    /// <summary>
+    /// Submits the write operations as a single atomic changeset <c>$batch</c> (all-or-nothing) and maps
+    /// the outcome onto per-operation <see cref="BatchOperationResult"/>s: if the changeset committed,
+    /// each operation is a success (correlated by Content-ID); if it was rejected — or the whole
+    /// <c>$batch</c> failed — every operation is marked failed, because nothing was applied.
+    /// </summary>
+    /// <remarks>
+    /// The body is hand-assembled rather than delegated to PanoramicData's changeset API: that API
+    /// serialises each sub-request through <c>HttpMessageContent</c>, which reads
+    /// <c>Uri.PathAndQuery</c> on a relative sub-request URI and throws
+    /// <see cref="InvalidOperationException"/> before any byte reaches the network. Building the
+    /// request line as text avoids <see cref="Uri"/> entirely; relative URLs in a sub-request line are
+    /// what OData v4.01 §11.7.7 specifies anyway.
+    /// </remarks>
+    private async Task<IReadOnlyList<BatchOperationResult>> SendAtomicBatchAsync(
+        IReadOnlyList<BatchWriteOperation> operations,
+        CancellationToken cancellationToken)
     {
-        var results = new List<BatchOperationResult>();
-        var index = 0;
-
-        foreach (var result in response.Results)
+        if (_httpClientFactory is null)
         {
-            results.Add(new BatchOperationResult
-            {
-                Index = index++,
-                StatusCode = result.StatusCode,
-                IsSuccess = result.IsSuccess,
-                ErrorMessage = result.ErrorMessage,
-                ResponseBody = result.ResponseBody
-            });
+            throw new InvalidOperationException(
+                "Batch write operations require the IHttpClientFactory-based constructor of ODataClientAdapter.");
         }
 
-        return results;
+        if (operations.Count == 0)
+        {
+            return [];
+        }
+
+        ODataBatchRequestBuilder.BuiltBatchRequest built = ODataBatchRequestBuilder.Build(
+            operations,
+            atomic: true,
+            ODataBatchRequestBuilder.NewBoundary("batch"),
+            ODataBatchRequestBuilder.NewBoundary("changeset"));
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "$batch")
+        {
+            Content = new StringContent(built.Body, Encoding.UTF8),
+        };
+        request.Content.Headers.ContentType = MediaTypeHeaderValue.Parse(built.ContentType);
+
+        HttpClient client = _httpClientFactory.CreateClient("ODataClient");
+        using HttpResponseMessage response = await client.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        string? responseBody = response.Content is null
+            ? null
+            : await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+
+        int outerStatus = (int)response.StatusCode;
+
+        // A non-2xx outer status means the whole $batch was rejected (auth, malformed) — nothing ran.
+        if (outerStatus is < 200 or > 299)
+        {
+            return FailAll(operations, outerStatus, responseBody);
+        }
+
+        IReadOnlyList<ODataBatchResponseParser.BatchSubResponse> subResponses;
+        try
+        {
+            subResponses = ODataBatchResponseParser.Parse(
+                response.Content?.Headers.ContentType?.ToString() ?? string.Empty,
+                responseBody ?? string.Empty);
+        }
+        catch (FormatException)
+        {
+            return FailAll(operations, outerStatus, responseBody);
+        }
+
+        bool committed = subResponses.Count == operations.Count
+            && subResponses.All(sub => sub.StatusCode is >= 200 and <= 299);
+
+        if (committed)
+        {
+            return operations.Select((operation, index) =>
+            {
+                ODataBatchResponseParser.BatchSubResponse sub =
+                    subResponses.FirstOrDefault(s => s.ContentId == operation.ContentId) ?? subResponses[index];
+                return new BatchOperationResult
+                {
+                    Index = index,
+                    StatusCode = sub.StatusCode,
+                    IsSuccess = true,
+                    ErrorMessage = null,
+                    ResponseBody = sub.Body,
+                };
+            }).ToList();
+        }
+
+        // Changeset rolled back: surface the failing sub-response against every operation.
+        ODataBatchResponseParser.BatchSubResponse? failure =
+            subResponses.FirstOrDefault(sub => sub.StatusCode is < 200 or > 299);
+        int failStatus = failure?.StatusCode ?? (subResponses.Count > 0 ? subResponses[0].StatusCode : outerStatus);
+        return FailAll(operations, failStatus, failure?.Body ?? responseBody);
     }
+
+    /// <summary>
+    /// Produces a failed <see cref="BatchOperationResult"/> for every operation in a rejected batch.
+    /// </summary>
+    private static IReadOnlyList<BatchOperationResult> FailAll(
+        IReadOnlyList<BatchWriteOperation> operations,
+        int statusCode,
+        string? body) =>
+        operations.Select((_, index) => new BatchOperationResult
+        {
+            Index = index,
+            StatusCode = statusCode,
+            IsSuccess = false,
+            ErrorMessage = $"HTTP {statusCode}",
+            ResponseBody = body,
+        }).ToList();
+
+    /// <summary>
+    /// Builds the keyed URL segment for any key shape: a composite <see cref="IDictionary{TKey, TValue}"/>
+    /// via <see cref="BuildCompositeKeyUrl"/>, or a single scalar key as <c>EntitySet(literal)</c>.
+    /// </summary>
+    private static string BuildKeyUrl(string entitySet, object key) =>
+        key is IDictionary<string, object> compositeKey
+            ? BuildCompositeKeyUrl(entitySet, compositeKey)
+            : $"{entitySet}({IntegratoRODataExpressionTranslator.FormatValue(key)})";
+
+    /// <summary>
+    /// Builds the keyed URL segment <c>EntitySet(field=literal,…)</c> for a composite key, reusing the
+    /// same OData v4 literal formatter as the read path. Validates each field name and rejects empty
+    /// dictionaries, mirroring <see cref="FindByKeyAsync{TEntity}"/>.
+    /// </summary>
+    private static string BuildCompositeKeyUrl(string entitySet, IDictionary<string, object> key)
+    {
+        if (key.Count == 0)
+        {
+            throw new ArgumentException(
+                "Composite key dictionary must contain at least one key field. " +
+                "An empty dictionary would emit a keyless URL segment.",
+                nameof(key));
+        }
+
+        foreach (KeyValuePair<string, object> kv in key)
+        {
+            if (!IsValidODataFieldName(kv.Key))
+            {
+                throw new ArgumentException(
+                    $"Composite key field name '{kv.Key}' is not a valid OData property identifier. " +
+                    "Keys must match the pattern ^[A-Za-z_][A-Za-z0-9_.]*$ and come from entity " +
+                    "reflection (attribute-derived wire names), not user input.",
+                    nameof(key));
+            }
+        }
+
+        string segments = string.Join(
+            ",",
+            key.Select(kv => $"{kv.Key}={IntegratoRODataExpressionTranslator.FormatValue(kv.Value)}"));
+
+        return $"{entitySet}({segments})";
+    }
+
+    private static string SerializePayload(object payload) =>
+        System.Text.Json.JsonSerializer.Serialize(payload, CaseInsensitiveOptions);
 }
