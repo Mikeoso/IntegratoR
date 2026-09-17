@@ -33,7 +33,6 @@ jobs:
 
       - name: Test
         run: dotnet test --no-build --configuration Release --verbosity normal
-        continue-on-error: true
 
       - name: Check formatting
         run: dotnet format --no-restore --verify-no-changes
