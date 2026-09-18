@@ -33,6 +33,13 @@ public class ODataClientAdapter : IODataClientAdapter
             Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() }
         };
 
+    /// <summary>
+    /// Reported against every operation of a batch whose outcome the response does not explain:
+    /// HTTP 502, because the failure is that the server's answer could not be used, not that any
+    /// particular operation was rejected.
+    /// </summary>
+    private const int IndeterminateBatchStatus = 502;
+
     private readonly ODataClient _client;
     private readonly IHttpClientFactory? _httpClientFactory;
 
@@ -516,7 +523,12 @@ public class ODataClientAdapter : IODataClientAdapter
         // Changeset rolled back: surface the failing sub-response against every operation.
         ODataBatchResponseParser.BatchSubResponse? failure =
             subResponses.FirstOrDefault(sub => sub.StatusCode is < 200 or > 299);
-        int failStatus = failure?.StatusCode ?? (subResponses.Count > 0 ? subResponses[0].StatusCode : outerStatus);
+
+        // The changeset did not commit, yet no sub-response explains why — either none parsed, or
+        // they are all 2xx but cannot be reconciled with the operations sent. A non-2xx outer status
+        // already returned above, so anything borrowed from here would be a success code stamped on
+        // a failed operation. Report the response as unusable instead of contradicting ourselves.
+        int failStatus = failure?.StatusCode ?? IndeterminateBatchStatus;
         return FailAll(operations, failStatus, failure?.Body ?? responseBody);
     }
 
@@ -543,7 +555,38 @@ public class ODataClientAdapter : IODataClientAdapter
     private static string BuildKeyUrl(string entitySet, object key) =>
         key is IDictionary<string, object> compositeKey
             ? BuildCompositeKeyUrl(entitySet, compositeKey)
-            : $"{entitySet}({IntegratoRODataExpressionTranslator.FormatValue(key)})";
+            : $"{entitySet}({FormatKeyLiteral(key)})";
+
+    /// <summary>
+    /// Formats a key value as an OData literal, rejecting control characters.
+    /// </summary>
+    /// <remarks>
+    /// Most write paths hand the URL to <see cref="Uri"/>, which rejects a stray CR or LF. The atomic
+    /// <c>$batch</c> path does not: its body is assembled as text, so the literal lands directly in an
+    /// embedded <c>METHOD url HTTP/1.1</c> request line with nothing in the chain to catch one. A key
+    /// value carrying CRLF would terminate that request line early and inject headers, or a second
+    /// request, into the part. <see cref="IntegratoRODataExpressionTranslator.FormatValue"/> escapes
+    /// quotes only, so the guard belongs here rather than in the shared formatter, whose
+    /// <c>$filter</c> callers keep their own <see cref="Uri"/>-backed protection.
+    /// </remarks>
+    private static string FormatKeyLiteral(object? value)
+    {
+        string literal = IntegratoRODataExpressionTranslator.FormatValue(value);
+
+        foreach (char c in literal)
+        {
+            if (char.IsControl(c))
+            {
+                throw new ArgumentException(
+                    "Key values must not contain control characters. The batch request line is " +
+                    "assembled as text, so a carriage return or line feed would terminate it early " +
+                    "and inject content into the sub-request.",
+                    nameof(value));
+            }
+        }
+
+        return literal;
+    }
 
     private static string SerializePayload(object payload) =>
         System.Text.Json.JsonSerializer.Serialize(payload, CaseInsensitiveOptions);
@@ -610,7 +653,7 @@ public class ODataClientAdapter : IODataClientAdapter
 
         string segments = string.Join(
             ",",
-            key.Select(kv => $"{kv.Key}={IntegratoRODataExpressionTranslator.FormatValue(kv.Value)}"));
+            key.Select(kv => $"{kv.Key}={FormatKeyLiteral(kv.Value)}"));
 
         return $"{entitySet}({segments})";
     }

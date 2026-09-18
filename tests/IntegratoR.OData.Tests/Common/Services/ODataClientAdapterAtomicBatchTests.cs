@@ -166,6 +166,80 @@ public sealed class ODataClientAdapterAtomicBatchTests : IDisposable
         results.Should().ContainSingle(r => r.IsSuccess);
     }
 
+    /// <summary>
+    /// The atomic body is assembled as text, so a key value carrying CR or LF would terminate the
+    /// embedded <c>METHOD url HTTP/1.1</c> request line early and inject headers — or a forged
+    /// request — into that part. The per-item path is shielded by <see cref="Uri"/>; this one is not.
+    /// </summary>
+    [Theory]
+    [InlineData("USMF') HTTP/1.1\r\nX-Injected: 1\r\n\r\n{\"evil\":\"body\"}")]
+    [InlineData("USMF\r\nX-Injected: 1")]
+    [InlineData("USMF\n")]
+    public async Task BatchUpdate_Atomic_CompositeKeyValueWithControlCharacters_ThrowsAndSendsNothing(
+        string tainted)
+    {
+        (ServiceProvider provider, FakeHttpMessageHandler handler) = BuildHarness();
+        ODataClientAdapter adapter = ResolveAdapter(provider);
+
+        var items = new List<(object Key, IDictionary<string, object> Payload)>
+        {
+            (new Dictionary<string, object> { ["dataAreaId"] = tainted, ["JournalBatchNumber"] = "B1" },
+                new Dictionary<string, object> { ["Description"] = "a" })
+        };
+
+        Func<Task> act = () =>
+            adapter.BatchUpdateAsync(EntitySet, items, BatchFailureMode.Atomic, CancellationToken.None);
+
+        await act.Should().ThrowAsync<ArgumentException>().WithMessage("*control characters*");
+        handler.SentRequests.Should().BeEmpty(because: "the guard runs before anything is sent");
+    }
+
+    [Fact]
+    public async Task BatchDelete_Atomic_ScalarKeyWithControlCharacters_ThrowsAndSendsNothing()
+    {
+        (ServiceProvider provider, FakeHttpMessageHandler handler) = BuildHarness();
+        ODataClientAdapter adapter = ResolveAdapter(provider);
+
+        var keys = new List<object> { "B1') HTTP/1.1\r\nX-Injected: 1" };
+
+        Func<Task> act = () =>
+            adapter.BatchDeleteAsync(EntitySet, keys, BatchFailureMode.Atomic, CancellationToken.None);
+
+        await act.Should().ThrowAsync<ArgumentException>().WithMessage("*control characters*");
+        handler.SentRequests.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// Fewer sub-responses than operations, all of them 2xx: the changeset did not commit and nothing
+    /// in the response says which operation failed, so no operation may carry a success status.
+    /// </summary>
+    [Fact]
+    public async Task BatchUpdate_Atomic_UnreconcilableResponse_DoesNotReportASuccessStatus()
+    {
+        (ServiceProvider provider, FakeHttpMessageHandler handler) = BuildHarness();
+        ODataClientAdapter adapter = ResolveAdapter(provider);
+
+        handler.Queue(MultipartResponse(Wire(
+            "--resp",
+            "Content-Type: multipart/mixed; boundary=cs",
+            "",
+            "--cs",
+            "Content-Type: application/http",
+            "Content-ID: 1",
+            "",
+            "HTTP/1.1 204 No Content",
+            "",
+            "--cs--",
+            "--resp--")));
+
+        IReadOnlyList<BatchOperationResult> results =
+            await adapter.BatchUpdateAsync(EntitySet, TwoUpdates(), BatchFailureMode.Atomic, CancellationToken.None);
+
+        results.Should().HaveCount(2).And.OnlyContain(r => !r.IsSuccess);
+        results.Should().OnlyContain(r => r.StatusCode == 502,
+            because: "borrowing the 204 would stamp a success code on a failed operation");
+    }
+
     /// <inheritdoc />
     public void Dispose()
     {
