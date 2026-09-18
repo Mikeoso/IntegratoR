@@ -75,19 +75,26 @@ public sealed class LedgerJournalBatchSmokeTestTrigger
                 new LedgerJournalBatchSmokeTestResponse(false, null, steps), cancellationToken).ConfigureAwait(false);
         }
 
+        // The lower bound is load-bearing, not cosmetic: two or more rows is what makes this a batch,
+        // and it is also what keeps the "found.Count > 0" guard below from ever skipping the delete
+        // step on a run that still reports success. The upper bound stops an anonymous endpoint
+        // aiming a huge changeset at a customer sandbox — D365 caps one at roughly 200 operations,
+        // and this line has no chunking.
         if (input is null
             || string.IsNullOrWhiteSpace(input.Company)
             || string.IsNullOrWhiteSpace(input.JournalName)
-            || input.HeaderCount < 2)
+            || input.HeaderCount is < 2 or > 20)
         {
             steps.Add(new SmokeTestStep("ParseRequest", false, "SmokeTest.MissingFields",
                 ErrorType.Validation.ToString(),
-                "Company and JournalName are required, and HeaderCount must be at least 2."));
+                "Company and JournalName are required, and HeaderCount must be between 2 and 20."));
             return await WriteResponse(req, HttpStatusCode.BadRequest,
                 new LedgerJournalBatchSmokeTestResponse(false, null, steps), cancellationToken).ConfigureAwait(false);
         }
 
-        string runId = $"BATCH-{DateTime.UtcNow:yyyyMMddHHmmss}-{Guid.NewGuid():N}"[..24];
+        // "BATCH-" + 14-char timestamp + "-" is already 21 characters, so the cut has to leave enough
+        // GUID for two runs in the same second not to share descriptions and delete each other's rows.
+        string runId = $"BATCH-{DateTime.UtcNow:yyyyMMddHHmmss}-{Guid.NewGuid():N}"[..30];
         string[] descriptions = Enumerable
             .Range(1, input.HeaderCount)
             .Select(i => $"{runId}-{i}")
@@ -119,11 +126,11 @@ public sealed class LedgerJournalBatchSmokeTestTrigger
 
         steps.Add(BuildStep("CreateBatch", createResult, $"{headers.Count} headers submitted"));
 
-        if (createResult.IsFailed)
-        {
-            return await WriteResponse(req, HttpStatusCode.OK,
-                new LedgerJournalBatchSmokeTestResponse(false, runId, steps), cancellationToken).ConfigureAwait(false);
-        }
+        // Deliberately no early return on a failed create. "Create failed" does not prove "nothing
+        // was written": SendAtomicBatchAsync also reports every operation failed when the response
+        // cannot be parsed, and D365 may have committed the changeset regardless. Falling through
+        // turns an unknown state into a verified one and still cleans up. The run cannot go green
+        // either way — steps.All already sees the failed CreateBatch step.
 
         // -----------------------------------------------------------------------------------
         // 2. Read back from the server. A batch that applied nothing would otherwise look the
@@ -145,9 +152,8 @@ public sealed class LedgerJournalBatchSmokeTestTrigger
         // -----------------------------------------------------------------------------------
         // 3. Delete whatever was created in one $batch — the batch delete path, and the cleanup.
         // -----------------------------------------------------------------------------------
-        // Batch delete, not one at a time: the batch path builds its own composite-key URL and works
-        // here, whereas the single-entity delete cannot address a composite key on this line at all.
-        // Exercising it also closes the gap the unit tests alone would leave.
+        // Batch delete, not one at a time: it is the only path here that can address a composite key
+        // at all. Exercising it also closes the gap the unit tests alone would leave.
         if (found.Count > 0)
         {
             Result deleteResult = await _batchService
@@ -169,11 +175,30 @@ public sealed class LedgerJournalBatchSmokeTestTrigger
         // release gate green on a run that never verified anything.
         bool verifiedClean = deleteLookupFailure is null && remaining.Count == 0;
 
-        steps.Add(deleteLookupFailure ?? (verifiedClean
-            ? new SmokeTestStep("VerifyDeleted", true, Details: "no rows remain")
-            : new SmokeTestStep("VerifyDeleted", false, "SmokeTest.OrphansRemain",
+        if (deleteLookupFailure is not null)
+        {
+            steps.Add(deleteLookupFailure);
+        }
+        else if (verifiedClean)
+        {
+            steps.Add(new SmokeTestStep("VerifyDeleted", true, Details: "no rows remain"));
+        }
+        else
+        {
+            // The composite keys themselves, not just the run marker: an operator can delete these
+            // directly instead of hunting by Description. Logged as well, so the list survives a
+            // response that never reaches the caller.
+            string orphanKeys = string.Join(", ", remaining.Select(header =>
+                $"(dataAreaId='{header.DataAreaId}',JournalBatchNumber='{header.JournalBatchNumber}')"));
+
+            _logger.LogWarning(
+                "Batch smoke test {RunId} left {OrphanCount} header(s) behind in {Company}: {OrphanKeys}",
+                runId, remaining.Count, input.Company, orphanKeys);
+
+            steps.Add(new SmokeTestStep("VerifyDeleted", false, "SmokeTest.OrphansRemain",
                 ErrorType.Failure.ToString(),
-                $"{remaining.Count} header(s) still present — search Description for '{runId}'.")));
+                $"{remaining.Count} header(s) still present: {orphanKeys}"));
+        }
 
         bool success = allCreated && verifiedClean && steps.All(step => step.Success);
 
