@@ -2,9 +2,9 @@ name: Build & Validate
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'support/**']
   pull_request:
-    branches: [main]
+    branches: [main, 'support/**']
 
 permissions:
   contents: read
@@ -33,7 +33,6 @@ jobs:
 
       - name: Test
         run: dotnet test --no-build --configuration Release --verbosity normal
-        continue-on-error: true
 
       - name: Check formatting
         run: dotnet format --no-restore --verify-no-changes

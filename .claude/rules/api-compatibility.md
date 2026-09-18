@@ -24,3 +24,7 @@ Seal only leaf infrastructure with no inheritance story (as already done for `In
 - Versioning is GitVersion-driven (ContinuousDelivery); it defaults to **PATCH** and ignores conventional-commit prefixes.
 - A public removal/rename/visibility-narrowing/signature change is **MAJOR**; additive API is **MINOR** — signal with a `+semver: minor|major` commit marker or `next-version` in `GitVersion.yml`. Never tag manually; the publish workflow tags.
 - Deprecate before removing: `[Obsolete("since vX.Y; use …")]` for at least one MINOR, remove in the next MAJOR.
+- **Support lines are strictly PATCH.** A `support/<major>.<minor>` hotfix (see `common.md`) fixes
+  behaviour only: no new public type or member, no signature change, no new `[Obsolete]`. A consumer
+  pinned to that line took it precisely because it cannot absorb API churn. Anything that needs new
+  surface belongs on `main`, not on a support line.
