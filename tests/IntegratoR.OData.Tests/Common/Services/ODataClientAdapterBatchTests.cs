@@ -329,4 +329,125 @@ public class ODataClientAdapterBatchTests
         results.Should().BeEmpty();
         _handler.Sent.Should().BeEmpty();
     }
+
+    /// <summary>
+    /// The batch body is assembled as text, so a key value carrying CR or LF would terminate the
+    /// embedded <c>METHOD url HTTP/1.1</c> request line early and inject headers — or a forged
+    /// request — into that part. The read path is shielded by <see cref="Uri"/>; this path is not,
+    /// so the guard has to live in the URL builder.
+    /// </summary>
+    [Theory]
+    [InlineData("USMF') HTTP/1.1\r\nX-Injected: 1\r\n\r\n{\"evil\":\"body\"}")]
+    [InlineData("USMF\r\nX-Injected: 1")]
+    [InlineData("USMF\n")]
+    [InlineData("USMF\tB")]
+    public async Task BatchUpdateAsync_CompositeKeyValueWithControlCharacters_ThrowsAndSendsNothing(
+        string tainted)
+    {
+        // Arrange
+        ODataClientAdapter adapter = CreateAdapter();
+        var items = new List<(object Key, IDictionary<string, object> Payload)>
+        {
+            (new Dictionary<string, object>
+                {
+                    ["dataAreaId"] = tainted,
+                    ["JournalBatchNumber"] = "B1"
+                },
+                new Dictionary<string, object> { ["Description"] = "x" })
+        };
+
+        // Act
+        Func<Task> act = () =>
+            adapter.BatchUpdateAsync(EntitySet, items, TestContext.Current.CancellationToken);
+
+        // Assert
+        await act.Should().ThrowAsync<ArgumentException>().WithMessage("*control characters*");
+        _handler.Sent.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task BatchDeleteAsync_ScalarKeyWithControlCharacters_ThrowsAndSendsNothing()
+    {
+        // Arrange
+        ODataClientAdapter adapter = CreateAdapter();
+        var keys = new List<object> { "B1') HTTP/1.1\r\nX-Injected: 1" };
+
+        // Act
+        Func<Task> act = () =>
+            adapter.BatchDeleteAsync(EntitySet, keys, TestContext.Current.CancellationToken);
+
+        // Assert
+        await act.Should().ThrowAsync<ArgumentException>().WithMessage("*control characters*");
+        _handler.Sent.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// Correlation is by <c>Content-ID</c>, not by position. Every other fixture here returns
+    /// sub-responses in request order, so the positional fallback alone would satisfy them even if
+    /// Content-ID matching were broken — this one returns them reversed to pin the real behaviour.
+    /// </summary>
+    [Fact]
+    public async Task BatchCreateAsync_SubResponsesOutOfOrder_CorrelatesByContentId()
+    {
+        // Arrange
+        ODataClientAdapter adapter = CreateAdapter();
+        QueueBatchResponse(HttpStatusCode.OK, "b1", Wire(
+            "--b1", "Content-Type: multipart/mixed; boundary=cs1", "",
+            "--cs1", "Content-Type: application/http", "Content-ID: 2", "",
+            "HTTP/1.1 204 No Content", "",
+            "--cs1", "Content-Type: application/http", "Content-ID: 1", "",
+            "HTTP/1.1 201 Created", "",
+            "--cs1--", "--b1--"));
+
+        // Act
+        IReadOnlyList<BatchOperationResult> results =
+            await adapter.BatchCreateAsync(EntitySet, TwoPayloads(), TestContext.Current.CancellationToken);
+
+        // Assert — operation 0 carries Content-ID 1 (201), operation 1 carries Content-ID 2 (204).
+        // Positional correlation would yield 204, 201.
+        results.Select(r => r.StatusCode).Should().Equal(201, 204);
+    }
+
+    [Fact]
+    public async Task BatchDeleteAsync_ChangesetRolledBack_MapsEveryOperationToFailure()
+    {
+        // Arrange
+        ODataClientAdapter adapter = CreateAdapter();
+        QueueBatchResponse(HttpStatusCode.OK, "b1", Wire(
+            "--b1", "Content-Type: multipart/mixed; boundary=cs1", "",
+            "--cs1", "Content-Type: application/http", "",
+            "HTTP/1.1 409 Conflict", "Content-Type: application/json", "",
+            "{\"error\":{\"code\":\"Locked\",\"message\":\"Journal B2 is in use\"}}",
+            "--cs1--", "--b1--"));
+        var keys = new List<object> { Key("B1"), Key("B2") };
+
+        // Act
+        IReadOnlyList<BatchOperationResult> results =
+            await adapter.BatchDeleteAsync(EntitySet, keys, TestContext.Current.CancellationToken);
+
+        // Assert
+        results.Should().HaveCount(2);
+        results.Should().OnlyContain(r => !r.IsSuccess && r.StatusCode == 409);
+        results.Should().OnlyContain(r => r.ResponseBody!.Contains("Journal B2 is in use"));
+    }
+
+    /// <summary>
+    /// Fewer sub-responses than operations, all of them 2xx: the changeset outcome is ambiguous, so
+    /// the conservative reading is that nothing can be reported as committed.
+    /// </summary>
+    [Fact]
+    public async Task BatchCreateAsync_FewerSubResponsesThanOperations_DoesNotReportSuccess()
+    {
+        // Arrange
+        ODataClientAdapter adapter = CreateAdapter();
+        QueueBatchResponse(HttpStatusCode.OK, "b1", OneCommitted(201, "Created"));
+
+        // Act
+        IReadOnlyList<BatchOperationResult> results =
+            await adapter.BatchCreateAsync(EntitySet, TwoPayloads(), TestContext.Current.CancellationToken);
+
+        // Assert
+        results.Should().HaveCount(2);
+        results.Should().OnlyContain(r => !r.IsSuccess);
+    }
 }

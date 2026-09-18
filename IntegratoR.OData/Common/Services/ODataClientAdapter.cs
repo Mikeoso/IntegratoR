@@ -416,7 +416,38 @@ public class ODataClientAdapter : IODataClientAdapter
     private static string BuildKeyUrl(string entitySet, object key) =>
         key is IDictionary<string, object> compositeKey
             ? BuildCompositeKeyUrl(entitySet, compositeKey)
-            : $"{entitySet}({IntegratoRODataExpressionTranslator.FormatValue(key)})";
+            : $"{entitySet}({FormatKeyLiteral(key)})";
+
+    /// <summary>
+    /// Formats a key value as an OData literal, rejecting control characters.
+    /// </summary>
+    /// <remarks>
+    /// The read path hands its literals to <see cref="Uri"/>, which rejects a stray CR or LF. The
+    /// batch body is assembled as text instead, so the literal lands directly in an embedded
+    /// <c>METHOD url HTTP/1.1</c> request line with nothing in the chain to catch one — a key value
+    /// carrying CRLF would terminate the request line early and inject headers, or a second request,
+    /// into that part. <see cref="IntegratoRODataExpressionTranslator.FormatValue"/> escapes quotes
+    /// only, so the guard belongs here rather than in the shared formatter, whose <c>$filter</c>
+    /// callers keep their own <see cref="Uri"/>-backed protection.
+    /// </remarks>
+    private static string FormatKeyLiteral(object? value)
+    {
+        string literal = IntegratoRODataExpressionTranslator.FormatValue(value);
+
+        foreach (char c in literal)
+        {
+            if (char.IsControl(c))
+            {
+                throw new ArgumentException(
+                    "Key values must not contain control characters. The batch request line is " +
+                    "assembled as text, so a carriage return or line feed would terminate it early " +
+                    "and inject content into the sub-request.",
+                    nameof(value));
+            }
+        }
+
+        return literal;
+    }
 
     /// <summary>
     /// Builds the keyed URL segment <c>EntitySet(field=literal,…)</c> for a composite key, reusing the
@@ -447,7 +478,7 @@ public class ODataClientAdapter : IODataClientAdapter
 
         string segments = string.Join(
             ",",
-            key.Select(kv => $"{kv.Key}={IntegratoRODataExpressionTranslator.FormatValue(kv.Value)}"));
+            key.Select(kv => $"{kv.Key}={FormatKeyLiteral(kv.Value)}"));
 
         return $"{entitySet}({segments})";
     }
