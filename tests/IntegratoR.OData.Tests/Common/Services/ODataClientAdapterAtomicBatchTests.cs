@@ -194,6 +194,29 @@ public sealed class ODataClientAdapterAtomicBatchTests : IDisposable
         handler.SentRequests.Should().BeEmpty(because: "the guard runs before anything is sent");
     }
 
+    /// <summary>
+    /// For a batch create the entity set is the whole relative URL, so it reaches the request line
+    /// with nothing around it. The only production caller passes a <c>[Table]</c>-derived name, but
+    /// the adapter is public API and the parameter is a bare string.
+    /// </summary>
+    [Fact]
+    public async Task BatchCreate_Atomic_EntitySetWithControlCharacters_ThrowsAndSendsNothing()
+    {
+        (ServiceProvider provider, FakeHttpMessageHandler handler) = BuildHarness();
+        ODataClientAdapter adapter = ResolveAdapter(provider);
+
+        var payloads = new List<IDictionary<string, object>>
+        {
+            new Dictionary<string, object> { ["Description"] = "a" }
+        };
+
+        Func<Task> act = () => adapter.BatchCreateAsync(
+            "LedgerJournalHeaders\r\nX-Injected: 1", payloads, BatchFailureMode.Atomic, CancellationToken.None);
+
+        await act.Should().ThrowAsync<ArgumentException>().WithMessage("*not a valid OData identifier*");
+        handler.SentRequests.Should().BeEmpty();
+    }
+
     [Fact]
     public async Task BatchDelete_Atomic_ScalarKeyWithControlCharacters_ThrowsAndSendsNothing()
     {

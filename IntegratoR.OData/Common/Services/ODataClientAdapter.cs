@@ -294,6 +294,8 @@ public class ODataClientAdapter : IODataClientAdapter
         BatchFailureMode mode,
         CancellationToken cancellationToken = default)
     {
+        EnsureValidEntitySet(entitySet);
+
         var payloadList = payloads as IList<IDictionary<string, object>> ?? payloads.ToList();
 
         if (mode == BatchFailureMode.Atomic)
@@ -318,6 +320,8 @@ public class ODataClientAdapter : IODataClientAdapter
         BatchFailureMode mode,
         CancellationToken cancellationToken = default)
     {
+        EnsureValidEntitySet(entitySet);
+
         var itemList = items as IList<(object Key, IDictionary<string, object> Payload)> ?? items.ToList();
 
         if (mode == BatchFailureMode.Atomic)
@@ -342,6 +346,8 @@ public class ODataClientAdapter : IODataClientAdapter
         BatchFailureMode mode,
         CancellationToken cancellationToken = default)
     {
+        EnsureValidEntitySet(entitySet);
+
         var keyList = keys as IList<object> ?? keys.ToList();
 
         if (mode == BatchFailureMode.Atomic)
@@ -558,16 +564,41 @@ public class ODataClientAdapter : IODataClientAdapter
             : $"{entitySet}({FormatKeyLiteral(key)})";
 
     /// <summary>
+    /// Validates the entity-set name before it is spliced into a batch request line.
+    /// </summary>
+    /// <remarks>
+    /// For a batch create the entity set IS the whole relative URL, and for keyed operations it is
+    /// its leading segment; either way it reaches the embedded request line unescaped. The only
+    /// production caller passes <c>ODataService</c>'s <c>[Table]</c>-derived name, but this adapter
+    /// is public API and the parameter is a bare string, so a direct caller could otherwise inject.
+    /// </remarks>
+    private static void EnsureValidEntitySet(string entitySet)
+    {
+        if (!IsValidODataFieldName(entitySet))
+        {
+            throw new ArgumentException(
+                $"Entity set name '{entitySet}' is not a valid OData identifier. It is spliced into " +
+                "the batch request line verbatim, so it must match ^[A-Za-z_][A-Za-z0-9_.]*$ and " +
+                "come from entity metadata, not user input.",
+                nameof(entitySet));
+        }
+    }
+
+    /// <summary>
     /// Formats a key value as an OData literal, rejecting control characters.
     /// </summary>
     /// <remarks>
-    /// Most write paths hand the URL to <see cref="Uri"/>, which rejects a stray CR or LF. The atomic
-    /// <c>$batch</c> path does not: its body is assembled as text, so the literal lands directly in an
-    /// embedded <c>METHOD url HTTP/1.1</c> request line with nothing in the chain to catch one. A key
-    /// value carrying CRLF would terminate that request line early and inject headers, or a second
-    /// request, into the part. <see cref="IntegratoRODataExpressionTranslator.FormatValue"/> escapes
-    /// quotes only, so the guard belongs here rather than in the shared formatter, whose
-    /// <c>$filter</c> callers keep their own <see cref="Uri"/>-backed protection.
+    /// The other write paths build an <see cref="HttpRequestMessage"/>, and <see cref="HttpClient"/>
+    /// serialises the request line from the canonical <see cref="Uri"/> form, which percent-encodes a
+    /// CR or LF to <c>%0D%0A</c>. Note that this is escaping, not rejection: <see cref="Uri"/> accepts
+    /// the characters and keeps them in <see cref="Uri.OriginalString"/>. The atomic <c>$batch</c>
+    /// path has no such step — its body is assembled as text, so the literal lands directly in an
+    /// embedded <c>METHOD url HTTP/1.1</c> request line and a CRLF would terminate it early, injecting
+    /// headers or a second request into the part. Anything that starts reading
+    /// <see cref="Uri.OriginalString"/> instead of the canonical form loses the other paths' cover too.
+    /// <see cref="IntegratoRODataExpressionTranslator.FormatValue"/> escapes quotes only, so the guard
+    /// belongs here rather than in the shared formatter, whose <c>$filter</c> callers are covered by
+    /// that same canonicalisation.
     /// </remarks>
     private static string FormatKeyLiteral(object? value)
     {
