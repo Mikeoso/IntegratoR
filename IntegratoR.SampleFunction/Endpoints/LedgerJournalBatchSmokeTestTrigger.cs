@@ -5,6 +5,8 @@ using IntegratoR.Abstractions.Common.CQRS.Commands;
 using IntegratoR.Abstractions.Common.CQRS.Queries;
 using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.OData.FO.Domain.Entities.LedgerJournal;
+using IntegratoR.OData.FO.Features.Commands.LedgerJournals.CreateLedgerJournalHeader;
+using IntegratoR.OData.Interfaces.Services;
 using IntegratoR.SampleFunction.Domain.DTOs.SmokeTest;
 using MediatR;
 using Microsoft.Azure.Functions.Worker;
@@ -32,13 +34,23 @@ namespace IntegratoR.SampleFunction.Endpoints;
 public sealed class LedgerJournalBatchSmokeTestTrigger
 {
     private readonly IMediator _mediator;
+    private readonly IODataBatchService<LedgerJournalHeader> _batchService;
     private readonly ILogger<LedgerJournalBatchSmokeTestTrigger> _logger;
 
+    /// <param name="batchService">
+    /// Injected directly, against the usual "endpoints go through IMediator" rule: this line has no
+    /// batch-delete command, and the single-entity <c>DeleteCommand</c> cannot delete a composite-key
+    /// row here — PanoramicData cannot address one, D365 answers 404, and
+    /// <c>treatNotFoundAsSuccess</c> reports that as success. Cleanup through the command would
+    /// therefore leave orphans behind while claiming to have removed them.
+    /// </param>
     public LedgerJournalBatchSmokeTestTrigger(
         IMediator mediator,
+        IODataBatchService<LedgerJournalHeader> batchService,
         ILogger<LedgerJournalBatchSmokeTestTrigger> logger)
     {
         _mediator = mediator;
+        _batchService = batchService;
         _logger = logger;
     }
 
@@ -97,8 +109,12 @@ public sealed class LedgerJournalBatchSmokeTestTrigger
             })
             .ToList();
 
+        // CreateLedgerJournalHeadersCommand derives from CreateBatchCommand and its handler calls
+        // IODataBatchService.AddBatchAsync — the exact path the reported production stack trace took.
+        // The generic batch handlers do not exist on this line (they arrived in 2.0.0), so this is
+        // also the only batch command that resolves here.
         Result createResult = await _mediator
-            .Send(new CreateBatchCommand<LedgerJournalHeader>(headers), cancellationToken)
+            .Send(new CreateLedgerJournalHeadersCommand<LedgerJournalHeader>(headers), cancellationToken)
             .ConfigureAwait(false);
 
         steps.Add(BuildStep("CreateBatch", createResult, $"{headers.Count} headers submitted"));
@@ -129,10 +145,13 @@ public sealed class LedgerJournalBatchSmokeTestTrigger
         // -----------------------------------------------------------------------------------
         // 3. Delete whatever was created in one $batch — the batch delete path, and the cleanup.
         // -----------------------------------------------------------------------------------
+        // Batch delete, not one at a time: the batch path builds its own composite-key URL and works
+        // here, whereas the single-entity delete cannot address a composite key on this line at all.
+        // Exercising it also closes the gap the unit tests alone would leave.
         if (found.Count > 0)
         {
-            Result deleteResult = await _mediator
-                .Send(new DeleteBatchCommand<LedgerJournalHeader>(found), cancellationToken)
+            Result deleteResult = await _batchService
+                .DeleteBatchAsync(found, cancellationToken)
                 .ConfigureAwait(false);
 
             steps.Add(BuildStep("DeleteBatch", deleteResult, $"{found.Count} headers deleted"));
