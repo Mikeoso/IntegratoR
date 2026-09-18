@@ -113,12 +113,18 @@ public sealed class LedgerJournalBatchSmokeTestTrigger
         // 2. Read back from the server. A batch that applied nothing would otherwise look the
         //    same as one that worked, which is exactly the failure mode being guarded against.
         // -----------------------------------------------------------------------------------
-        (List<LedgerJournalHeader> found, SmokeTestStep verifyStep) =
+        (List<LedgerJournalHeader> found, SmokeTestStep? createLookupFailure) =
             await FindByDescriptions("VerifyCreated", input.Company, descriptions, cancellationToken)
                 .ConfigureAwait(false);
-        steps.Add(verifyStep);
 
-        bool allCreated = found.Count == descriptions.Length;
+        bool allCreated = createLookupFailure is null && found.Count == descriptions.Length;
+
+        steps.Add(createLookupFailure ?? (allCreated
+            ? new SmokeTestStep("VerifyCreated", true,
+                Details: $"found {found.Count}/{descriptions.Length}")
+            : new SmokeTestStep("VerifyCreated", false, "SmokeTest.CountMismatch",
+                ErrorType.Failure.ToString(),
+                $"Expected {descriptions.Length} header(s), found {found.Count}.")));
 
         // -----------------------------------------------------------------------------------
         // 3. Delete whatever was created in one $batch — the batch delete path, and the cleanup.
@@ -135,18 +141,22 @@ public sealed class LedgerJournalBatchSmokeTestTrigger
         // -----------------------------------------------------------------------------------
         // 4. Confirm the sandbox is clean, so a green run never leaves orphans behind.
         // -----------------------------------------------------------------------------------
-        (List<LedgerJournalHeader> remaining, SmokeTestStep cleanupStep) =
+        (List<LedgerJournalHeader> remaining, SmokeTestStep? deleteLookupFailure) =
             await FindByDescriptions("VerifyDeleted", input.Company, descriptions, cancellationToken)
                 .ConfigureAwait(false);
 
-        steps.Add(remaining.Count == 0
-            ? new SmokeTestStep("VerifyDeleted", true, Details: "no rows remain")
-            : new SmokeTestStep("VerifyDeleted", false, "SmokeTest.OrphansRemain", ErrorType.Failure.ToString(),
-                $"{remaining.Count} header(s) still present — search Description for '{runId}'."));
+        // An empty result only means "clean" when the lookup actually finished. FindByDescriptions
+        // returns early on a failed query, so treating a bare count of zero as proof would turn the
+        // release gate green on a run that never verified anything.
+        bool verifiedClean = deleteLookupFailure is null && remaining.Count == 0;
 
-        bool success = allCreated
-            && remaining.Count == 0
-            && steps.All(step => step.Success);
+        steps.Add(deleteLookupFailure ?? (verifiedClean
+            ? new SmokeTestStep("VerifyDeleted", true, Details: "no rows remain")
+            : new SmokeTestStep("VerifyDeleted", false, "SmokeTest.OrphansRemain",
+                ErrorType.Failure.ToString(),
+                $"{remaining.Count} header(s) still present — search Description for '{runId}'.")));
+
+        bool success = allCreated && verifiedClean && steps.All(step => step.Success);
 
         return await WriteResponse(req, HttpStatusCode.OK,
             new LedgerJournalBatchSmokeTestResponse(success, runId, steps), cancellationToken).ConfigureAwait(false);
@@ -156,7 +166,12 @@ public sealed class LedgerJournalBatchSmokeTestTrigger
     /// Looks each description up individually. Batch creates return no server-generated keys, so the
     /// unique per-run Description is the only handle on the rows that were just written.
     /// </summary>
-    private async Task<(List<LedgerJournalHeader> Found, SmokeTestStep Step)> FindByDescriptions(
+    /// <returns>
+    /// The rows found, and a step describing a **query** failure — <c>null</c> when every lookup
+    /// completed. The caller may judge the row count only against a <c>null</c> failure: after an
+    /// early return the count is partial and proves nothing either way.
+    /// </returns>
+    private async Task<(List<LedgerJournalHeader> Found, SmokeTestStep? QueryFailure)> FindByDescriptions(
         string stepName,
         string company,
         IReadOnlyList<string> descriptions,
@@ -182,14 +197,7 @@ public sealed class LedgerJournalBatchSmokeTestTrigger
             found.AddRange(result.Value);
         }
 
-        bool complete = found.Count == descriptions.Count;
-        return (found, new SmokeTestStep(
-            stepName,
-            complete,
-            complete ? null : "SmokeTest.CountMismatch",
-            complete ? null : ErrorType.Failure.ToString(),
-            complete ? null : $"Expected {descriptions.Count} header(s), found {found.Count}.",
-            $"found {found.Count}/{descriptions.Count}"));
+        return (found, null);
     }
 
     private static SmokeTestStep BuildStep(string name, Result result, string successDetails)
