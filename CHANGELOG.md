@@ -31,11 +31,25 @@ Versions are computed automatically by [GitVersion](https://gitversion.net/) in 
   - Semantics are unchanged: one atomic changeset, all-or-nothing. When it rolls back, every operation
     is reported as failed, because nothing was applied.
 
+### Security
+
+- **Key values are rejected when they contain control characters.** The batch body is assembled as
+  text, so a composite-key or scalar key value carrying CR or LF ended up in the embedded
+  `METHOD url HTTP/1.1` request line and could terminate it early, injecting headers — or a forged
+  request — into that part. The read path never had this exposure: its literals pass through
+  `System.Uri`, which rejects a stray CR or LF. Moving writes off PanoramicData is what removed that
+  safety net, so the guard ships with the same change. Entity payloads were never affected
+  (`System.Text.Json` escapes control characters, and batch boundaries are per-request GUIDs).
+
 ### Changed
 
 - `ODataClientAdapter` gained a second constructor taking `IHttpClientFactory`, which DI now uses.
   Batch writes require it; the single-argument constructor throws a message naming the one to use.
   This is additive — the existing constructor is unchanged, and batch never worked through it either.
+- **An empty batch no longer issues an HTTP request.** 1.3.5 sent an empty `$batch` to D365 when
+  handed zero entities; the batch methods now return an empty result without going to the wire.
+  Callers see no difference — `AddBatchAsync` and its siblings already reported success for an empty
+  result — but the network round-trip, and whatever D365 made of an empty changeset, are gone.
 
 ## [Unreleased]
 
