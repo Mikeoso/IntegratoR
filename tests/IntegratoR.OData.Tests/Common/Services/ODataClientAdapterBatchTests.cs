@@ -449,5 +449,29 @@ public class ODataClientAdapterBatchTests
         // Assert
         results.Should().HaveCount(2);
         results.Should().OnlyContain(r => !r.IsSuccess);
+        // Not 201: borrowing the sub-response's status would stamp a success code on a failed
+        // operation. The response could not be reconciled, so that is what gets reported.
+        results.Should().OnlyContain(r => r.StatusCode == 502);
+    }
+
+    /// <summary>
+    /// A 2xx outer status whose body parses to no sub-responses at all explains nothing about the
+    /// operations, so no operation may carry a success status.
+    /// </summary>
+    [Fact]
+    public async Task BatchCreateAsync_NoParseableSubResponses_ReportsFailureWithoutASuccessStatus()
+    {
+        // Arrange
+        ODataClientAdapter adapter = CreateAdapter();
+        QueueBatchResponse(HttpStatusCode.OK, "b1", Wire("--b1--"));
+
+        // Act
+        IReadOnlyList<BatchOperationResult> results =
+            await adapter.BatchCreateAsync(EntitySet, TwoPayloads(), TestContext.Current.CancellationToken);
+
+        // Assert
+        results.Should().HaveCount(2);
+        results.Should().OnlyContain(r => !r.IsSuccess);
+        results.Should().OnlyContain(r => r.StatusCode == 502);
     }
 }

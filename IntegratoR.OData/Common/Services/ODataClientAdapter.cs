@@ -30,6 +30,13 @@ public class ODataClientAdapter : IODataClientAdapter
             Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() }
         };
 
+    /// <summary>
+    /// Reported against every operation of a batch whose outcome the response does not explain:
+    /// HTTP 502, because the failure is that the server's answer could not be used, not that any
+    /// particular operation was rejected.
+    /// </summary>
+    private const int IndeterminateBatchStatus = 502;
+
     private readonly ODataClient _client;
     private readonly IHttpClientFactory? _httpClientFactory;
 
@@ -389,7 +396,12 @@ public class ODataClientAdapter : IODataClientAdapter
         // Changeset rolled back: surface the failing sub-response against every operation.
         ODataBatchResponseParser.BatchSubResponse? failure =
             subResponses.FirstOrDefault(sub => sub.StatusCode is < 200 or > 299);
-        int failStatus = failure?.StatusCode ?? (subResponses.Count > 0 ? subResponses[0].StatusCode : outerStatus);
+
+        // The changeset did not commit, yet no sub-response explains why — either none parsed, or
+        // they are all 2xx but cannot be reconciled with the operations sent. A non-2xx outer status
+        // already returned above, so anything borrowed from here would be a success code stamped on
+        // a failed operation. Report the response as unusable instead of contradicting ourselves.
+        int failStatus = failure?.StatusCode ?? IndeterminateBatchStatus;
         return FailAll(operations, failStatus, failure?.Body ?? responseBody);
     }
 
