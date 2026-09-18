@@ -1,7 +1,6 @@
 using System.Net;
 using System.Text.Json;
 using FluentResults;
-using IntegratoR.Abstractions.Common.CQRS.Commands;
 using IntegratoR.Abstractions.Common.CQRS.Queries;
 using IntegratoR.Abstractions.Common.Results;
 using IntegratoR.OData.FO.Domain.Entities.LedgerJournal;
@@ -38,11 +37,15 @@ public sealed class LedgerJournalBatchSmokeTestTrigger
     private readonly ILogger<LedgerJournalBatchSmokeTestTrigger> _logger;
 
     /// <param name="batchService">
-    /// Injected directly, against the usual "endpoints go through IMediator" rule: this line has no
-    /// batch-delete command, and the single-entity <c>DeleteCommand</c> cannot delete a composite-key
-    /// row here — PanoramicData cannot address one, D365 answers 404, and
-    /// <c>treatNotFoundAsSuccess</c> reports that as success. Cleanup through the command would
-    /// therefore leave orphans behind while claiming to have removed them.
+    /// Injected directly, against the usual "endpoints go through IMediator" rule, because no
+    /// mediator route to a batch delete exists on this line. <c>DeleteBatchCommand</c> has a
+    /// validator but no handler anywhere in the solution, so sending it fails to resolve — the same
+    /// way the create path did before this trigger was corrected. The single-entity
+    /// <c>DeleteCommand</c> does resolve, but cannot delete a composite-key row here: PanoramicData
+    /// cannot address one, D365 answers 404, and <c>treatNotFoundAsSuccess</c> reports that as
+    /// success, so cleanup would leave orphans behind while claiming to have removed them.
+    /// Adding a command and handler would mean new public surface in a packable library, which a
+    /// support line may not take — see <c>api-compatibility.md</c>. Host code is the right place.
     /// </param>
     public LedgerJournalBatchSmokeTestTrigger(
         IMediator mediator,
