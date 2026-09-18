@@ -29,13 +29,17 @@ it and `main` — typically a production system several MAJORs behind.
   carries something `main` lacks.
 - **Strictly PATCH.** No new public API, no signature change, no `[Obsolete]` — see
   `api-compatibility.md`.
+- **Nothing is published on push.** Only `main` publishes on push; a support branch publishes solely
+  on an explicit `workflow_dispatch`. A maintenance line has no audience for a running prerelease
+  stream, and it keeps a half-finished hotfix off the public feed — which matters because a NuGet
+  package can be unlisted but never deleted.
 - **Versioning is branch-local.** `GitVersion.yml` is a file in the branch, so the support branch
   carries its own. `next-version` is root-only (not valid under `branches:`) and acts as a *floor*:
   set it to the intended hotfix version when the naturally computed patch would collide with a tag
   already taken on another line. Give the branch an explicit `support` entry with
-  `mode: ContinuousDelivery` — without it the branch falls through to `unknown`/`ManualDeployment`,
-  pre-release versions stop incrementing per commit, and `dotnet nuget push --skip-duplicate`
-  swallows the pushes silently.
+  `mode: ContinuousDelivery` — without it the branch falls through to `unknown`/`ManualDeployment`
+  and pre-release versions stop incrementing per commit, so two dispatched prereleases would carry
+  the same version and `dotnet nuget push --skip-duplicate` would swallow the second silently.
 - **The review gate is unchanged.** `build` and `claude-review` both run on PRs targeting
   `support/**`; give the branch the same protection rules as `main`.
 - **A hotfix never claims "Latest".** It ships after the newer main-line releases, so the publish

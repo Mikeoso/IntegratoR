@@ -1,8 +1,12 @@
 name: Publish NuGet Packages
 
 on:
+  # Only main publishes on push. A support/** hotfix line publishes solely on an explicit
+  # workflow_dispatch: a maintenance line has no audience for a running prerelease stream, and a
+  # half-finished hotfix has no business on the public feed. The jobs below still accept support/**
+  # so a dispatched release from one works.
   push:
-    branches: [main, 'support/**']
+    branches: [main]
   workflow_dispatch:
     inputs:
       release:
