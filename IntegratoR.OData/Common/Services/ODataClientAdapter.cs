@@ -33,6 +33,13 @@ public class ODataClientAdapter : IODataClientAdapter
             Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() }
         };
 
+    /// <summary>
+    /// Reported against every operation of a batch whose outcome the response does not explain:
+    /// HTTP 502, because the failure is that the server's answer could not be used, not that any
+    /// particular operation was rejected.
+    /// </summary>
+    private const int IndeterminateBatchStatus = 502;
+
     private readonly ODataClient _client;
     private readonly IHttpClientFactory? _httpClientFactory;
 
@@ -287,6 +294,8 @@ public class ODataClientAdapter : IODataClientAdapter
         BatchFailureMode mode,
         CancellationToken cancellationToken = default)
     {
+        EnsureValidEntitySet(entitySet);
+
         var payloadList = payloads as IList<IDictionary<string, object>> ?? payloads.ToList();
 
         if (mode == BatchFailureMode.Atomic)
@@ -311,6 +320,8 @@ public class ODataClientAdapter : IODataClientAdapter
         BatchFailureMode mode,
         CancellationToken cancellationToken = default)
     {
+        EnsureValidEntitySet(entitySet);
+
         var itemList = items as IList<(object Key, IDictionary<string, object> Payload)> ?? items.ToList();
 
         if (mode == BatchFailureMode.Atomic)
@@ -335,6 +346,8 @@ public class ODataClientAdapter : IODataClientAdapter
         BatchFailureMode mode,
         CancellationToken cancellationToken = default)
     {
+        EnsureValidEntitySet(entitySet);
+
         var keyList = keys as IList<object> ?? keys.ToList();
 
         if (mode == BatchFailureMode.Atomic)
@@ -516,7 +529,12 @@ public class ODataClientAdapter : IODataClientAdapter
         // Changeset rolled back: surface the failing sub-response against every operation.
         ODataBatchResponseParser.BatchSubResponse? failure =
             subResponses.FirstOrDefault(sub => sub.StatusCode is < 200 or > 299);
-        int failStatus = failure?.StatusCode ?? (subResponses.Count > 0 ? subResponses[0].StatusCode : outerStatus);
+
+        // The changeset did not commit, yet no sub-response explains why — either none parsed, or
+        // they are all 2xx but cannot be reconciled with the operations sent. A non-2xx outer status
+        // already returned above, so anything borrowed from here would be a success code stamped on
+        // a failed operation. Report the response as unusable instead of contradicting ourselves.
+        int failStatus = failure?.StatusCode ?? IndeterminateBatchStatus;
         return FailAll(operations, failStatus, failure?.Body ?? responseBody);
     }
 
@@ -543,7 +561,63 @@ public class ODataClientAdapter : IODataClientAdapter
     private static string BuildKeyUrl(string entitySet, object key) =>
         key is IDictionary<string, object> compositeKey
             ? BuildCompositeKeyUrl(entitySet, compositeKey)
-            : $"{entitySet}({IntegratoRODataExpressionTranslator.FormatValue(key)})";
+            : $"{entitySet}({FormatKeyLiteral(key)})";
+
+    /// <summary>
+    /// Validates the entity-set name before it is spliced into a batch request line.
+    /// </summary>
+    /// <remarks>
+    /// For a batch create the entity set IS the whole relative URL, and for keyed operations it is
+    /// its leading segment; either way it reaches the embedded request line unescaped. The only
+    /// production caller passes <c>ODataService</c>'s <c>[Table]</c>-derived name, but this adapter
+    /// is public API and the parameter is a bare string, so a direct caller could otherwise inject.
+    /// </remarks>
+    private static void EnsureValidEntitySet(string entitySet)
+    {
+        if (!IsValidODataFieldName(entitySet))
+        {
+            throw new ArgumentException(
+                $"Entity set name '{entitySet}' is not a valid OData identifier. It is spliced into " +
+                "the batch request line verbatim, so it must match ^[A-Za-z_][A-Za-z0-9_.]*$ and " +
+                "come from entity metadata, not user input.",
+                nameof(entitySet));
+        }
+    }
+
+    /// <summary>
+    /// Formats a key value as an OData literal, rejecting control characters.
+    /// </summary>
+    /// <remarks>
+    /// The other write paths build an <see cref="HttpRequestMessage"/>, and <see cref="HttpClient"/>
+    /// serialises the request line from the canonical <see cref="Uri"/> form, which percent-encodes a
+    /// CR or LF to <c>%0D%0A</c>. Note that this is escaping, not rejection: <see cref="Uri"/> accepts
+    /// the characters and keeps them in <see cref="Uri.OriginalString"/>. The atomic <c>$batch</c>
+    /// path has no such step — its body is assembled as text, so the literal lands directly in an
+    /// embedded <c>METHOD url HTTP/1.1</c> request line and a CRLF would terminate it early, injecting
+    /// headers or a second request into the part. Anything that starts reading
+    /// <see cref="Uri.OriginalString"/> instead of the canonical form loses the other paths' cover too.
+    /// <see cref="IntegratoRODataExpressionTranslator.FormatValue"/> escapes quotes only, so the guard
+    /// belongs here rather than in the shared formatter, whose <c>$filter</c> callers are covered by
+    /// that same canonicalisation.
+    /// </remarks>
+    private static string FormatKeyLiteral(object? value)
+    {
+        string literal = IntegratoRODataExpressionTranslator.FormatValue(value);
+
+        foreach (char c in literal)
+        {
+            if (char.IsControl(c))
+            {
+                throw new ArgumentException(
+                    "Key values must not contain control characters. The batch request line is " +
+                    "assembled as text, so a carriage return or line feed would terminate it early " +
+                    "and inject content into the sub-request.",
+                    nameof(value));
+            }
+        }
+
+        return literal;
+    }
 
     private static string SerializePayload(object payload) =>
         System.Text.Json.JsonSerializer.Serialize(payload, CaseInsensitiveOptions);
@@ -610,7 +684,7 @@ public class ODataClientAdapter : IODataClientAdapter
 
         string segments = string.Join(
             ",",
-            key.Select(kv => $"{kv.Key}={IntegratoRODataExpressionTranslator.FormatValue(kv.Value)}"));
+            key.Select(kv => $"{kv.Key}={FormatKeyLiteral(kv.Value)}"));
 
         return $"{entitySet}({segments})";
     }
