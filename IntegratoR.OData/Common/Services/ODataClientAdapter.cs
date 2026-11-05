@@ -216,8 +216,8 @@ public class ODataClientAdapter : IODataClientAdapter
     /// without an <see cref="IHttpClientFactory"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// Thrown when a composite-key dictionary is empty or contains a field name that is not a valid
-    /// OData property identifier.
+    /// Thrown when a composite-key dictionary is empty, names a field that is not a valid OData
+    /// property identifier, or has a value containing control characters.
     /// </exception>
     public async Task<TEntity> UpdateAsync<TEntity>(
         string entitySet,
@@ -253,8 +253,8 @@ public class ODataClientAdapter : IODataClientAdapter
     /// without an <see cref="IHttpClientFactory"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// Thrown when a composite-key dictionary is empty or contains a field name that is not a valid
-    /// OData property identifier.
+    /// Thrown when a composite-key dictionary is empty, names a field that is not a valid OData
+    /// property identifier, or has a value containing control characters.
     /// </exception>
     public async Task DeleteAsync(
         string entitySet,
@@ -288,6 +288,9 @@ public class ODataClientAdapter : IODataClientAdapter
     }
 
     /// <inheritdoc />
+    /// <exception cref="ArgumentException">
+    /// Thrown when <paramref name="entitySet"/> is not a valid OData identifier.
+    /// </exception>
     public async Task<IReadOnlyList<BatchOperationResult>> BatchCreateAsync(
         string entitySet,
         IEnumerable<IDictionary<string, object>> payloads,
@@ -314,6 +317,13 @@ public class ODataClientAdapter : IODataClientAdapter
     }
 
     /// <inheritdoc />
+    /// <exception cref="ArgumentException">
+    /// Thrown when <paramref name="entitySet"/> is not a valid OData identifier.
+    /// -or-
+    /// Thrown when a key is an empty composite-key dictionary, names a field that is not a valid OData
+    /// property identifier, or has a value containing control characters. Every key is checked before
+    /// anything is sent.
+    /// </exception>
     public async Task<IReadOnlyList<BatchOperationResult>> BatchUpdateAsync(
         string entitySet,
         IEnumerable<(object Key, IDictionary<string, object> Payload)> items,
@@ -324,22 +334,32 @@ public class ODataClientAdapter : IODataClientAdapter
 
         var itemList = items as IList<(object Key, IDictionary<string, object> Payload)> ?? items.ToList();
 
+        // Built up front so a rejected key fails the call before any item is applied.
+        List<string> urls = itemList.Select(item => BuildKeyUrl(entitySet, item.Key)).ToList();
+
         if (mode == BatchFailureMode.Atomic)
         {
             List<BatchWriteOperation> operations = itemList
                 .Select((item, index) => new BatchWriteOperation(
-                    index + 1, HttpMethod.Patch, BuildKeyUrl(entitySet, item.Key), SerializePayload(item.Payload)))
+                    index + 1, HttpMethod.Patch, urls[index], SerializePayload(item.Payload)))
                 .ToList();
             return await SendAtomicBatchAsync(operations, cancellationToken).ConfigureAwait(false);
         }
 
         return await SendPerItemBatchAsync(
             itemList.Count,
-            (index, ct) => SendRawAsync(HttpMethod.Patch, BuildKeyUrl(entitySet, itemList[index].Key), itemList[index].Payload, ct),
+            (index, ct) => SendRawAsync(HttpMethod.Patch, urls[index], itemList[index].Payload, ct),
             cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
+    /// <exception cref="ArgumentException">
+    /// Thrown when <paramref name="entitySet"/> is not a valid OData identifier.
+    /// -or-
+    /// Thrown when a key is an empty composite-key dictionary, names a field that is not a valid OData
+    /// property identifier, or has a value containing control characters. Every key is checked before
+    /// anything is sent.
+    /// </exception>
     public async Task<IReadOnlyList<BatchOperationResult>> BatchDeleteAsync(
         string entitySet,
         IEnumerable<object> keys,
@@ -350,18 +370,20 @@ public class ODataClientAdapter : IODataClientAdapter
 
         var keyList = keys as IList<object> ?? keys.ToList();
 
+        // Built up front so a rejected key fails the call before any item is applied.
+        List<string> urls = keyList.Select(key => BuildKeyUrl(entitySet, key)).ToList();
+
         if (mode == BatchFailureMode.Atomic)
         {
-            List<BatchWriteOperation> operations = keyList
-                .Select((key, index) => new BatchWriteOperation(
-                    index + 1, HttpMethod.Delete, BuildKeyUrl(entitySet, key), JsonBody: null))
+            List<BatchWriteOperation> operations = urls
+                .Select((url, index) => new BatchWriteOperation(index + 1, HttpMethod.Delete, url, JsonBody: null))
                 .ToList();
             return await SendAtomicBatchAsync(operations, cancellationToken).ConfigureAwait(false);
         }
 
         return await SendPerItemBatchAsync(
             keyList.Count,
-            (index, ct) => SendRawAsync(HttpMethod.Delete, BuildKeyUrl(entitySet, keyList[index]), payload: null, ct),
+            (index, ct) => SendRawAsync(HttpMethod.Delete, urls[index], payload: null, ct),
             cancellationToken).ConfigureAwait(false);
     }
 
