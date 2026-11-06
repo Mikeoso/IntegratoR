@@ -2,7 +2,7 @@
 
 ## Secrets and Credentials
 
-- No secrets in code, CLAUDE.md, or committed config files — ever.
+- No secrets in code, docs, or committed config files — ever.
 - `local.settings.json` is gitignored — never commit it.
 - Never read `.env` or `.env.*` files (denied in settings).
 - OAuth credentials (`ClientSecret`) must be stored in Azure Key Vault for production.

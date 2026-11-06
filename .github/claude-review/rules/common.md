@@ -1,6 +1,6 @@
 # Common Rules
 
-Workflow and working-discipline rules. C# language, style, error-handling, and code-quality conventions live in the `csharp-coding-standards` skill; the `Result<T>` never-throw invariant is a CLAUDE.md Hard Rule.
+Workflow and working-discipline rules. C# language, style, error-handling, and code-quality conventions live in `.github/claude-review/csharp-coding-standards.md`; the `Result<T>` never-throw invariant is a .github/claude-review/project-rules.md Hard Rule.
 
 ## Git Workflow
 

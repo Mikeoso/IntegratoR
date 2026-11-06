@@ -1,6 +1,6 @@
 # Performance and Reliability
 
-> Async *language* style (`ConfigureAwait(false)`, no sync-over-async, no `Task.Run`) is a coding standard — see the `csharp-coding-standards` skill and the CLAUDE.md Hard Rules. This file owns runtime reliability: HTTP, resilience, caching, logging.
+> Async *language* style (`ConfigureAwait(false)`, no sync-over-async, no `Task.Run`) is a coding standard — see `.github/claude-review/csharp-coding-standards.md` and the .github/claude-review/project-rules.md Hard Rules. This file owns runtime reliability: HTTP, resilience, caching, logging.
 
 ## Outbound HTTP
 

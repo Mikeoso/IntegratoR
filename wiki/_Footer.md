@@ -1,1 +1,0 @@
-[Source on GitHub](https://github.com/Mikeoso/IntegratoR) · [NuGet](https://www.nuget.org/packages?q=IntegratoR) · [Releases](https://github.com/Mikeoso/IntegratoR/releases) · [Release Notes](Release-Notes-and-Versioning)

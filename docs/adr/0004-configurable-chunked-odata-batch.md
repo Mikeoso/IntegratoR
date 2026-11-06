@@ -48,7 +48,7 @@ global entities. PanoramicData's changeset is dropped for writes.
   via `GitVersion.yml next-version: 3.0.0`.
 - **Atomicity is per-chunk, not per-dataset.** A dataset larger than the chunk size spans several
   changesets; each commits or rolls back independently. This is inherent to D365's 200-op cap, not a
-  choice — documented in `wiki/Known-Limitations.md`. Keep imports idempotent on the composite key.
+  choice — documented in [Known Limitations](https://github.com/Mikeoso/IntegratoR/wiki/Known-Limitations). Keep imports idempotent on the composite key.
 - **`ContinueOnError` is per-item today.** The single-`$batch` transport (`Prefer:
   odata.continue-on-error`) is undocumented for D365 F&O; enabling it is deferred behind a live-JFI
   `$batch` smoke run that also confirms changeset atomicity end-to-end.
