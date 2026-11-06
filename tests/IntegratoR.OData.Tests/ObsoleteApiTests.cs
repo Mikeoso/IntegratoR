@@ -9,13 +9,13 @@ namespace IntegratoR.OData.Tests;
 
 /// <summary>
 /// Reflection pins that assert the deprecation markers on public OData API remain in place.
-/// These guard against premature removal of an <see cref="ObsoleteAttribute"/> before the next MAJOR.
+/// These guard against premature removal of an <see cref="ObsoleteAttribute"/> before a future major version removes it.
 /// </summary>
 public sealed class ObsoleteApiTests
 {
     /// <summary>
     /// <see cref="ODataBatchException"/> is never thrown (batch failures surface via <c>Result&lt;T&gt;</c>)
-    /// and must stay <c>[Obsolete]</c> until removed next MAJOR.
+    /// and must stay <c>[Obsolete]</c> until a future major version removes it.
     /// </summary>
     [Fact]
     public void ODataBatchException_IsMarkedObsolete()
@@ -30,7 +30,7 @@ public sealed class ObsoleteApiTests
 
     /// <summary>
     /// The dead, never-injected <see cref="ODataMetadataProvider"/> must stay <c>[Obsolete]</c>
-    /// until removed next MAJOR.
+    /// until a future major version removes it.
     /// </summary>
     [Fact]
     public void ODataMetadataProvider_IsMarkedObsolete()
@@ -45,7 +45,7 @@ public sealed class ObsoleteApiTests
 
     /// <summary>
     /// <see cref="IODataService{TEntity}.FindAll"/> must stay <c>[Obsolete]</c> (callers should use
-    /// <c>FindAllAsync</c>) until removed next MAJOR.
+    /// <c>FindAllAsync</c>) until a future major version removes it.
     /// </summary>
     [Fact]
     public void FindAll_IsMarkedObsolete()

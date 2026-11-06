@@ -34,7 +34,7 @@ public sealed class TestCacheableQuery<TResponse> : ICacheableQuery<TResponse>
     public TimeSpan? CacheDuration => _cacheDuration;
 
     // GetCacheKeyValues/GenerateCacheKey are [Obsolete] on ICacheableQuery but must still be
-    // implemented until the next MAJOR removes the interface members.
+    // implemented until a future major version removes the interface members.
 #pragma warning disable CS0618 // Type or member is obsolete
     /// <inheritdoc/>
     public object[] GetCacheKeyValues() => _cacheKeyValues;

@@ -8,13 +8,13 @@ namespace IntegratoR.Abstractions.Tests;
 
 /// <summary>
 /// Reflection pins that assert the deprecation markers on public Abstractions API remain in place.
-/// These guard against premature removal of an <see cref="ObsoleteAttribute"/> before the next MAJOR.
+/// These guard against premature removal of an <see cref="ObsoleteAttribute"/> before a future major version removes it.
 /// </summary>
 public sealed class ObsoleteApiTests
 {
     /// <summary>
     /// <see cref="BaseEntity{TKey}"/> must stay <c>[Obsolete]</c> (the non-generic
-    /// <see cref="BaseEntity"/> is the supported base) until removed next MAJOR.
+    /// <see cref="BaseEntity"/> is the supported base) until a future major version removes it.
     /// </summary>
     [Fact]
     public void GenericBaseEntity_IsMarkedObsolete()

@@ -5,7 +5,7 @@ namespace IntegratoR.OData.Common.Exceptions;
 /// <summary>
 /// Represents the error that occurs when one or more operations within an OData batch request fail.
 /// </summary>
-[Obsolete("since v1.4.0; never thrown; batch failures surface via Result<T>; removed next MAJOR")]
+[Obsolete("since v2.0.0; never thrown; batch failures surface via Result<T>; planned for removal in a future major version")]
 public class ODataBatchException : Exception
 {
     /// <summary>

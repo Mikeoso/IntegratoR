@@ -8,7 +8,7 @@ namespace IntegratoR.OData.Common.Services;
 /// <summary>
 /// Provides D365 F&amp;O OData metadata from a local XML file rather than fetching it over HTTP.
 /// </summary>
-[Obsolete("since v1.4.0; unused — D365 $metadata is not loaded at runtime; removed next MAJOR")]
+[Obsolete("since v2.0.0; unused — D365 $metadata is not loaded at runtime; planned for removal in a future major version")]
 public class ODataMetadataProvider
 {
     private readonly ILogger<ODataMetadataProvider> _logger;

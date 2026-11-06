@@ -223,7 +223,7 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
     #region IODataService Implementation
 
     /// <inheritdoc />
-    [Obsolete("Since v1.4.0; the Func-based orderBy was never applied to the OData query (it was silently dropped). Use the overload taking IReadOnlyList<(Expression<Func<TEntity, object>> KeySelector, bool Descending)> orderBy.")]
+    [Obsolete("Since v2.0.0; the Func-based orderBy was never applied to the OData query (it was silently dropped). Use the overload taking IReadOnlyList<(Expression<Func<TEntity, object>> KeySelector, bool Descending)> orderBy.")]
     public Task<Result<IEnumerable<TEntity>>> QueryAsync(
         Expression<Func<TEntity, bool>>? filter = null,
         Func<IQueryable<TEntity>, IOrderedQueryable<TEntity>>? orderBy = null,
@@ -273,7 +273,7 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
     }
 
     /// <inheritdoc />
-    [Obsolete("since v1.4.0; use FindAllAsync; removed next MAJOR")]
+    [Obsolete("since v2.0.0; use FindAllAsync; planned for removal in a future major version")]
     public Task<Result<IEnumerable<TEntity>>> FindAll(CancellationToken cancellationToken = default)
         => FindAllAsync(cancellationToken);
 
