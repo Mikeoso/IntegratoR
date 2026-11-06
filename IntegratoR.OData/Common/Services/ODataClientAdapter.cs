@@ -610,17 +610,10 @@ public class ODataClientAdapter : IODataClientAdapter
     /// Formats a key value as an OData literal, rejecting control characters.
     /// </summary>
     /// <remarks>
-    /// The other write paths build an <see cref="HttpRequestMessage"/>, and <see cref="HttpClient"/>
-    /// serialises the request line from the canonical <see cref="Uri"/> form, which percent-encodes a
-    /// CR or LF to <c>%0D%0A</c>. Note that this is escaping, not rejection: <see cref="Uri"/> accepts
-    /// the characters and keeps them in <see cref="Uri.OriginalString"/>. The atomic <c>$batch</c>
-    /// path has no such step — its body is assembled as text, so the literal lands directly in an
-    /// embedded <c>METHOD url HTTP/1.1</c> request line and a CRLF would terminate it early, injecting
-    /// headers or a second request into the part. Anything that starts reading
-    /// <see cref="Uri.OriginalString"/> instead of the canonical form loses the other paths' cover too.
-    /// <see cref="IntegratoRODataExpressionTranslator.FormatValue"/> escapes quotes only, so the guard
-    /// belongs here rather than in the shared formatter, whose <c>$filter</c> callers are covered by
-    /// that same canonicalisation.
+    /// The atomic <c>$batch</c> body is assembled as text, so a CR or LF in a key would end the embedded
+    /// <c>METHOD url HTTP/1.1</c> request line early and inject content into the part. The guard sits
+    /// here rather than in the shared formatter because its <c>$filter</c> callers go through
+    /// <see cref="Uri"/>, which percent-encodes these characters.
     /// </remarks>
     private static string FormatKeyLiteral(object? value)
     {
