@@ -16,7 +16,10 @@ public interface ICacheableQuery<TResponse> : IQuery<TResponse>
     /// <summary>
     /// Gets the duration for which the query's response should be cached.
     /// </summary>
-    /// <remarks>A <see langword="null"/> value bypasses the cache for this query instance.</remarks>
+    /// <remarks>
+    /// A <see langword="null"/> value does not bypass the cache: the response is still stored, with the cache
+    /// service's default expiration (30 minutes for the built-in services).
+    /// </remarks>
     TimeSpan? CacheDuration { get; }
 
     /// <summary>
