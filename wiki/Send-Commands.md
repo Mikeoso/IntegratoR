@@ -1,7 +1,7 @@
 # Send Commands
-> Last verified against v2.0.1
+> Last verified against v3.0.0
 
-Commands modify D365 F&O state through OData create (POST), update (PATCH), and delete (DELETE) requests. Send them with `IMediator.Send`; each returns a `Result<T>` (single) or `Result` (batch) — no command throws for a business failure.
+Commands modify D365 F&O state through OData create (POST), update (PATCH), and delete (DELETE) requests. Send them with `IMediator.Send`; each returns a `Result<T>` (single) or `Result<BatchOutcome>` (batch) — no command throws for a business failure.
 
 ```csharp
 using FluentResults;
@@ -71,7 +71,8 @@ Result<LedgerJournalHeader> result = await mediator
 if (result.IsFailed)
 {
     IntegrationError? error = result.GetError();
-    // A read-only field in the payload surfaces here as a Failure with the D365 403 message.
+    // A read-only field in the payload surfaces here as LedgerJournalHeader.Unauthorized (HTTP 403,
+    // ErrorType.Failure). The message is generic; the D365 detail is in the host log and error.Exception.
     return error?.Type switch
     {
         ErrorType.Validation => HttpStatusCode.BadRequest,
@@ -86,13 +87,27 @@ if (result.IsFailed)
 
 ## Send a batch
 
-Batch commands apply one operation across a collection. They take `IReadOnlyList<TEntity>` and return `Result<BatchOutcome>` — a per-item report of what committed and what failed. Every batch is submitted as OData `$batch` and split automatically into chunks (`ODataSettings.Batch.MaxOperationsPerChunk`, default 150; D365 caps a `$batch` at 200 operations).
+Batch commands apply one operation across a collection. They take `IReadOnlyList<TEntity>` plus optional `BatchOptions`, and return `Result<BatchOutcome>` — a per-item report of what committed and what failed (since v3.0.0). Input larger than `ODataSettings.Batch.MaxOperationsPerChunk` (default 150) is split into chunks automatically; D365 caps a `$batch` at 200 operations.
 
 ```csharp
+using IntegratoR.Abstractions.Common.Batch;
+
+DateTimeOffset transDate = new(DateTime.UtcNow.Date, TimeSpan.Zero);
+
+// AccountDisplayValue and TransDate are compiler-required but [ODataField(IgnoreOnCreate = true)],
+// so D365 does not receive them on create — see Known Limitations.
 IReadOnlyList<LedgerJournalLine> lines =
 [
-    new() { DataAreaId = "USMF", JournalBatchNumber = "B0001", DebitAmount = 1000m, CreditAmount = 0m, CurrencyCode = "USD" },
-    new() { DataAreaId = "USMF", JournalBatchNumber = "B0001", DebitAmount = 0m, CreditAmount = 1000m, CurrencyCode = "USD" },
+    new()
+    {
+        DataAreaId = "USMF", JournalBatchNumber = "B0001", AccountDisplayValue = "110180-",
+        TransDate = transDate, DebitAmount = 1000m, CreditAmount = 0m, CurrencyCode = "USD",
+    },
+    new()
+    {
+        DataAreaId = "USMF", JournalBatchNumber = "B0001", AccountDisplayValue = "211100-",
+        TransDate = transDate, DebitAmount = 0m, CreditAmount = 1000m, CurrencyCode = "USD",
+    },
 ];
 
 Result<BatchOutcome> result = await mediator
@@ -105,9 +120,18 @@ if (result.IsSuccess)
 }
 ```
 
+See [Known Limitations](Known-Limitations#ledgerjournalline-attribute-audit-incomplete) for the `LedgerJournalLine` create-payload gap.
+
 ### Choose a failure mode
 
-`BatchFailureMode.Atomic` (the default) runs each chunk as one all-or-nothing changeset; `ContinueOnError` applies operations independently and collects every failure. Override per call with `BatchOptions`, or set the default in `ODataSettings.Batch.FailureMode`.
+`BatchFailureMode` decides how each chunk goes over the wire. No batch write uses PanoramicData; every request goes through the named `"ODataClient"` with the same authentication, Polly resilience, and `BaseAddress` as a single write.
+
+| Mode | Sent as | Atomicity |
+|---|---|---|
+| `Atomic` (default) | One multipart `$batch` POST per chunk, carrying a single changeset | All-or-nothing **per chunk** |
+| `ContinueOnError` | One POST / PATCH / DELETE per item, in sequence | None — each item commits or fails on its own |
+
+Override per call with `BatchOptions`, or set the defaults under `ODataSettings.Batch` (see [Configure OData](Configure-OData#batch-options)):
 
 ```csharp
 Result<BatchOutcome> result = await mediator.Send(
@@ -117,28 +141,52 @@ Result<BatchOutcome> result = await mediator.Send(
     cancellationToken);
 ```
 
+A per-call `MaxOperationsPerChunk` is clamped to 1–200; the configured default is validated to the same range at startup.
+
+> [!CAUTION]
+> `Atomic` is all-or-nothing **per chunk**, not per dataset — a collection larger than the chunk size becomes several independent changesets. `StopOnFirstFailedChunk` (default `true`, `Atomic` only) halts after the first failed chunk, but chunks already committed stay committed. The batch write path is covered by unit and integration tests; it has not yet been verified against a live D365 environment. See [Known Limitations](Known-Limitations#batch-atomicity-is-per-chunk).
+
 ### Read the failure list
 
-On failure the result is failed and its error is a `BatchIntegrationError` carrying the full outcome, so you can pinpoint which records to retry:
+A batch that ran and lost at least one operation is a failed result whose first error is a `BatchIntegrationError` carrying the full outcome, so you can pinpoint which records to retry:
 
 ```csharp
-if (result.IsFailed && result.GetError() is BatchIntegrationError batchError)
+if (result.IsFailed)
 {
-    foreach (BatchItemResult failure in batchError.Outcome.Failures)
+    IntegrationError? error = result.GetError();
+
+    if (error is BatchIntegrationError batchError)
     {
-        // failure.Index, failure.ChunkIndex, failure.Key, failure.StatusCode, failure.ErrorMessage
+        foreach (BatchItemResult failure in batchError.Outcome.Failures)
+        {
+            // failure.Index, failure.ChunkIndex, failure.Key, failure.StatusCode, failure.ErrorMessage
+        }
+    }
+    else
+    {
+        // Rejected before anything was sent: Validation.Error, {Entity}.InvalidKey, {Entity}.KeyCountMismatch.
     }
 }
 ```
+
+Not every failure carries an outcome:
+
+- **Null or empty list** — `ValidationBehaviour` returns `Validation.Error` before the handler runs.
+- **Bad key on update or delete** — a null key element or one containing a control character returns `{Entity}.InvalidKey`; a key whose value count does not match the `[Key]` properties returns `{Entity}.KeyCountMismatch`. Both are `ErrorType.Validation`, and every entity is checked before the first chunk is sent (control-character rejection since v3.0.0).
+- **Missing required field on create** — a null `[ODataField(IsRequired = true)]` field returns `{Entity}.RequiredFieldMissing` (`ErrorType.Validation`) before anything is sent, as a single create does. Required fields are not checked on update.
+
+Inside an outcome, two status codes need reading:
+
+- **`StatusCode` 0** — the chunk could not be sent or its response was lost (a socket failure that outlasted the retries, an open circuit breaker, or an `HttpClient` timeout). Every item in that chunk is marked failed with the exception message, and whether D365 applied it is unknown.
+- **`StatusCode` 502** — an atomic changeset did not commit and its sub-responses could not be matched to the operations sent (since v3.0.0).
+
+Only your own cancellation propagates as an exception. See [Handle Errors](Handle-Errors#what-still-throws).
 
 | Command | HTTP method | Use |
 |---|---|---|
 | `CreateBatchCommand<TEntity>` | POST | Bulk insert |
 | `UpdateBatchCommand<TEntity>` | PATCH | Bulk update |
 | `DeleteBatchCommand<TEntity>` | DELETE | Bulk delete |
-
-> [!CAUTION]
-> `Atomic` is all-or-nothing **per chunk**, not per dataset — a collection larger than the chunk size becomes several independent changesets. `StopOnFirstFailedChunk` (default `true`) halts after the first failed chunk, but chunks already committed stay committed. See [Known Limitations](Known-Limitations#batch-atomicity-is-per-chunk).
 
 ## Send an entity-specific command
 
@@ -154,7 +202,7 @@ await mediator.Send(new CreateLedgerJournalHeaderCommand<LedgerJournalHeader>(he
     .ConfigureAwait(false);
 ```
 
-The shipped records include `CreateLedgerJournalHeaderCommand<T>`, `UpdateLedgerJournalHeaderCommand<T>`, `CreateLedgerJournalLineCommand<T>`, `UpdateLedgerJournalLineCommand<T>`, and plural batch variants (`…HeadersCommand<T>`, `…LinesCommand<T>`). Each constrains `T` to the matching entity — for example `CreateLedgerJournalHeaderCommand<TEntity> where TEntity : LedgerJournalHeader`.
+The shipped records include `CreateLedgerJournalHeaderCommand<T>`, `UpdateLedgerJournalHeaderCommand<T>`, `CreateLedgerJournalLineCommand<T>`, `UpdateLedgerJournalLineCommand<T>`, and plural batch variants (`…HeadersCommand<T>`, `…LinesCommand<T>`). Each constrains `T` to the matching entity — for example `CreateLedgerJournalHeaderCommand<TEntity> where TEntity : LedgerJournalHeader`. The plural records take only the list, so they run with the `ODataSettings.Batch` defaults unless you set `Options` in an object initialiser.
 
 **Prefer the generic command.** Choose an entity-specific command when its ledger logging context is genuinely useful in your telemetry; choose the generic `CreateCommand<T>` otherwise.
 
@@ -166,8 +214,16 @@ For entity-specific defaults, chained operations, or a bound D365 action, define
 using FluentResults;
 using IntegratoR.Abstractions.Interfaces.Commands;
 
-public record PostJournalCommand(string DataAreaId, string JournalBatchNumber)
-    : ICommand<Result>;
+public record PostJournalCommand(string DataAreaId, string JournalBatchNumber) : ICommand<Result>
+{
+    // ICommand<T> carries IContext; LoggingBehaviour reads this for structured logs.
+    public IReadOnlyDictionary<string, object> GetLoggingContext() =>
+        new Dictionary<string, object>
+        {
+            ["DataAreaId"] = DataAreaId,
+            ["JournalBatchNumber"] = JournalBatchNumber,
+        };
+}
 ```
 
 ```csharp
@@ -192,7 +248,7 @@ Register the handler's assembly through the `AddConsumerHandlers(...)` step insi
 
 ## Where commands run in the pipeline
 
-Every command flows through the MediatR pipeline — Logging, then Validation, then Caching, then the handler — before it reaches `ODataService<TEntity>`. Polly retry and the circuit breaker sit below that, at the `HttpClient` layer, and are transparent to the command. See [Extend the Pipeline](Extend-the-Pipeline) for the behaviour chain and [Configure Resilience](Configure-Resilience) for the retry and circuit-breaker settings.
+Every command flows through the MediatR pipeline — Logging, then Validation, then Caching, then the handler — before it reaches `ODataService<TEntity>`. Polly retry and the circuit breaker sit below that, at the `HttpClient` layer, and are transparent to the command — including for writes, which are retried today (see [Known Limitations](Known-Limitations#writes-are-retried)). See [Extend the Pipeline](Extend-the-Pipeline) for the behaviour chain and [Configure Resilience](Configure-Resilience) for the retry and circuit-breaker settings.
 
 ## See Also
 

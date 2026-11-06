@@ -1,6 +1,6 @@
 # Cache Query Results
 
-> Last verified against v2.0.1
+> Last verified against v3.0.0
 
 Cache a read-only query by implementing `ICacheableQuery<TResponse>` on it. The `CachingBehaviour` pipeline step checks the cache before the handler runs, and stores the handler's response on a miss. Caching works out of the box — `AddIntegratoR` registers an in-memory cache, so a cacheable query is served from cache without any extra wiring.
 
@@ -10,13 +10,19 @@ using IntegratoR.Abstractions.Interfaces.Queries;
 using IntegratoR.OData.FO.Domain.Enums.Dimensions;
 using IntegratoR.OData.FO.Domain.Models.FinancialDimensions;
 
-// A cacheable query supplies two members: CacheKey and CacheDuration.
+// A cacheable query supplies CacheKey and CacheDuration, plus the two [Obsolete] members
+// the interface still requires.
 public record GetDimensionFormatQuery(string DimensionFormat, DimensionHierarchyType HierarchyType)
     : ICacheableQuery<Result<DimensionFormat>>
 {
     public string CacheKey => $"{nameof(GetDimensionFormatQuery)}-{DimensionFormat}-{HierarchyType}";
 
     public TimeSpan? CacheDuration => TimeSpan.FromMinutes(15);
+
+    // CachingBehaviour never calls these; implement them as pass-throughs.
+    public string GenerateCacheKey() => CacheKey;
+
+    public object[] GetCacheKeyValues() => [nameof(GetDimensionFormatQuery), DimensionFormat, HierarchyType];
 
     public IReadOnlyDictionary<string, object> GetLoggingContext() => new Dictionary<string, object>
     {
@@ -43,7 +49,7 @@ if (second.IsSuccess)
 `ICacheableQuery<TResponse>` already extends `IQuery<TResponse>`, so declare only `ICacheableQuery` — never list `IQuery<...>` as well. `GetLoggingContext()` comes from the shared `IContext` base and is the same member every command and query carries.
 
 > [!NOTE]
-> `ICacheableQuery` also declares `GenerateCacheKey()` and `GetCacheKeyValues()`, but both are `[Obsolete]` (since v1.4.0) and the behaviour reads `CacheKey` directly. Do not build new keys through them; `GetDimensionOrdersQuery` still implements them only to satisfy the interface until the next MAJOR removes them.
+> `GenerateCacheKey()` and `GetCacheKeyValues()` are `[Obsolete]` since v2.0.0 and the behaviour reads `CacheKey` directly, but the interface still declares them, so every cacheable query must implement them — the shipped `GetDimensionOrdersQuery` does the same. Do not build new keys through them. v3.0.0 still requires them; removal is planned for a future major version (v4 at the earliest).
 
 ## Handle the failure path
 
@@ -64,30 +70,28 @@ if (result.IsFailed)
 
 Failure-non-caching is deliberate: a transient D365 outage or a `NotFound` on the first call must not poison the cache for the entries that follow.
 
-## Bypass the cache for one instance
+## Force a fresh read
 
-Return `null` from `CacheDuration` to skip caching for a specific query instance while the query type stays cacheable. `CacheDuration` is read after the lookup, so a `null` still allows a cache hit — it only prevents storing the response.
+There is no per-instance bypass: the behaviour looks up every `ICacheableQuery` and stores every successful result. To force the handler to run, evict the entry through the injected `ICacheService` before you send:
 
 ```csharp
-public record GetDimensionFormatQuery(string DimensionFormat, DimensionHierarchyType HierarchyType, bool ForceRefresh)
-    : ICacheableQuery<Result<DimensionFormat>>
-{
-    public string CacheKey => $"{nameof(GetDimensionFormatQuery)}-{DimensionFormat}-{HierarchyType}";
+// cacheService is the ICacheService registered by AddIntegratoR.
+await cacheService.RemoveAsync(query.CacheKey);
 
-    public TimeSpan? CacheDuration => ForceRefresh ? null : TimeSpan.FromMinutes(15);
-
-    public IReadOnlyDictionary<string, object> GetLoggingContext() => new Dictionary<string, object>
-    {
-        ["DimensionFormat"] = DimensionFormat,
-    };
-}
+Result<DimensionFormat> fresh = await mediator.Send(query, cancellationToken);  // cache miss -> handler runs, result re-stored
 ```
 
-To force a fresh fetch that also misses the lookup, vary `CacheKey` as well (fold a version token into it) so the behaviour cannot return an already-stored response.
+```csharp
+// DON'T: a null CacheDuration does not skip the cache. The lookup still runs, and the
+// successful result is stored for the cache service's 30-minute default.
+public TimeSpan? CacheDuration => ForceRefresh ? null : TimeSpan.FromMinutes(15);
+```
+
+To keep separate entries per variant instead, fold the varying input (a version token, a company) into `CacheKey`.
 
 ## Choose between in-memory and distributed cache
 
-`AddIntegratoR` registers `InMemoryCacheService` as the `ICacheService`, backed by `IMemoryCache` with a **30-minute default** duration when `CacheDuration` is `null`. This is the default and needs no configuration.
+`AddIntegratoR` registers `InMemoryCacheService` as the `ICacheService`, backed by `IMemoryCache`; a `null` `CacheDuration` stores the entry for a **30-minute default** (`DistributedCacheService` uses the same default). This is the default and needs no configuration.
 
 **Keep the in-memory default for a single-instance host.** Switch to `DistributedCacheService` only when cache consistency across scaled-out worker instances matters — it shares one Redis-backed store, so every instance sees the same entries.
 

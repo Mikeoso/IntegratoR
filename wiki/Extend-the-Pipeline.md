@@ -1,5 +1,5 @@
 # Extend the Pipeline
-> Last verified against v2.0.1
+> Last verified against v3.0.0
 
 The MediatR pipeline is the extension point. Add your own commands, queries, pipeline behaviours, and validators in a consumer assembly, then hand that assembly to `AddConsumerHandlers` so the framework discovers them.
 

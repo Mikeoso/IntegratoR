@@ -1,7 +1,7 @@
 # Configure OData
-> Last verified against v2.0.1
+> Last verified against v3.0.0
 
-`ODataSettings` governs every HTTP call to D365 F&O — the endpoint URL, the authentication mode and its credentials, and the retry/circuit-breaker policies. Bind the `"ODataSettings"` section and wire it with `AddIntegratoR`; the framework validates it at startup.
+`ODataSettings` governs every HTTP call to D365 F&O — the endpoint URL, the authentication mode and its credentials, the retry/circuit-breaker policies, and how batch writes are chunked. Bind the `"ODataSettings"` section and wire it with `AddIntegratoR`; the framework validates it at startup.
 
 ```json
 {
@@ -23,6 +23,11 @@
       "UseCircuitBreaker": true,
       "CircuitBreakerThreshold": 5,
       "CircuitBreakerDurationInSeconds": 30
+    },
+    "Batch": {
+      "FailureMode": "Atomic",
+      "MaxOperationsPerChunk": 150,
+      "StopOnFirstFailedChunk": true
     }
   }
 }
@@ -42,6 +47,7 @@ services.AddIntegratoR(configuration, integrator =>
     {
         settings.Timeout = 180;
         settings.Resilience.RetryCount = 5;
+        settings.Batch.MaxOperationsPerChunk = 100;
     });
 });
 ```
@@ -52,9 +58,10 @@ services.AddIntegratoR(configuration, integrator =>
 |---|---|---|---|
 | `Url` | `string` | `""` | Base URL of the D365 F&O OData endpoint, including the `/data` path segment. The framework normalises it to end with `/` so relative request URIs preserve the path; it throws `ArgumentException` at DI resolution if the value is null or whitespace. |
 | `Timeout` | `double` | `120` | Per-request HTTP timeout in seconds, applied to `HttpClient.Timeout`. |
-| `MetadataFilePath` | `string?` | `null` | Local path to a `metadata.xml` snapshot. When set, the client reads it instead of fetching CSDL from the server. |
+| `MetadataFilePath` | `string?` | `null` | Not read by the framework — IntegratoR does not load `$metadata` at runtime, so setting it has no effect. |
 | `Authentication` | `ODataAuthenticationSettings` | `new()` | Nested authentication settings — see below. |
 | `Resilience` | `ODataResilienceSettings` | `new()` | Nested retry and circuit-breaker settings — see below. |
+| `Batch` | `ODataBatchSettings` | `new()` | Nested batch-write defaults (since v3.0.0) — see below. |
 
 ## Authentication options
 
@@ -86,7 +93,20 @@ The default mode is `ApiKey` to match an APIM-fronted topology. Set `"Mode": "OA
 | `Resilience.CircuitBreakerThreshold` | `int` | `5` | Consecutive transient failures before the circuit opens. |
 | `Resilience.CircuitBreakerDurationInSeconds` | `int` | `30` | Seconds the circuit stays open before moving to half-open. |
 
-Retry and circuit breaker toggle independently — disabling one leaves the other running. See [Configure Resilience](Configure-Resilience) for what gets retried, the backoff-with-jitter formula, and the circuit-breaker state machine.
+Retry and circuit breaker toggle independently — disabling one leaves the other running. The retry policy does not distinguish reads from writes, so POST, PATCH, DELETE, and every `$batch` chunk are retried too — see [Known Limitations](Known-Limitations#writes-are-retried). See [Configure Resilience](Configure-Resilience) for what gets retried, the backoff-with-jitter formula, and the circuit-breaker state machine.
+
+## Batch options
+
+These are the defaults for `CreateBatchCommand<T>`, `UpdateBatchCommand<T>`, and `DeleteBatchCommand<T>` (since v3.0.0). A call overrides `FailureMode` and `MaxOperationsPerChunk` through `BatchOptions`; see [Send Commands](Send-Commands#send-a-batch).
+
+| Property | Type | Default | Purpose |
+|---|---|---|---|
+| `Batch.FailureMode` | `BatchFailureMode` | `Atomic` | `Atomic` sends one all-or-nothing `$batch` changeset per chunk; `ContinueOnError` sends one request per item and collects every failure. |
+| `Batch.MaxOperationsPerChunk` | `int` | `150` | Operations per chunk; larger input is split into consecutive chunks. Must be 1–200 — D365 F&O rejects a `$batch` of more than 200 operations — and the validator fails startup outside that range. |
+| `Batch.StopOnFirstFailedChunk` | `bool` | `true` | In `Atomic` mode, skip the remaining chunks once one fails. Chunks already committed stay committed. |
+
+> [!CAUTION]
+> Atomicity is per chunk, not per dataset. A 1,000-row `Atomic` import at the default chunk size is seven independent changesets. See [Known Limitations](Known-Limitations#batch-atomicity-is-per-chunk).
 
 ## Fail-fast validation
 
@@ -96,12 +116,14 @@ Retry and circuit breaker toggle independently — disabling one leaves the othe
 - Mode is `ApiKey` but `SubscriptionKey` or `SubscriptionHeaderKey` is blank.
 - Mode is `OAuth` but any of `ClientId`, `ClientSecret`, `TenantId`, `Resource` is blank.
 - `Mode` holds an unrecognised value (e.g. a typo in config binding).
+- `Batch.MaxOperationsPerChunk` is below 1 or above 200.
 
 ```csharp
 // Startup fails fast with the accumulated reasons — for example:
 // OptionsValidationException:
 //   ODataSettings.Authentication.OAuth.ClientSecret must be set when AuthenticationMode is OAuth.
-//   ODataSettings.Authentication.OAuth.TenantId must be set when AuthenticationMode is OAuth.
+//   ODataSettings.Batch.MaxOperationsPerChunk must be between 1 and 200 (D365 F&O's enforced maximum
+//   operations per $batch). The configured value was 500.
 ```
 
 A blank `Url` is caught separately: `NormaliseBaseUrl` throws `ArgumentException` when the OData client is resolved, with a message pointing at your configuration.
@@ -115,23 +137,14 @@ ODataSettings__Url                             = https://...
 ODataSettings__Authentication__Mode            = OAuth
 ODataSettings__Authentication__OAuth__ClientId = ...
 ODataSettings__Resilience__RetryCount          = 3
+ODataSettings__Batch__MaxOperationsPerChunk    = 150
 ```
 
 Mixed sources compose: JSON defaults with App Settings overrides, last value wins.
-
-## Local metadata snapshot
-
-D365 F&O serves its full CSDL at `<Url>/$metadata`. The document runs to tens of megabytes and can trip DTD parsing in PanoramicData.OData.Client. Point `MetadataFilePath` at a local snapshot to skip the fetch:
-
-```json
-{ "ODataSettings": { "MetadataFilePath": "metadata.xml" } }
-```
-
-The trade-off is a manual refresh whenever the D365 metadata changes.
 
 ## See Also
 
 - [Authentication Modes](Authentication-Modes) — OAuth versus API Key, end to end
 - [Configure Resilience](Configure-Resilience) — retry set, backoff formula, circuit-breaker mechanics
-- [Set Up Azure Functions Host](Set-Up-Azure-Functions-Host) — where `AddIntegratoR` and configuration are wired
+- [Send Commands](Send-Commands) — batch failure modes and `BatchOptions`
 - [Troubleshoot Common Issues](Troubleshoot-Common-Issues) — startup and connection errors

@@ -1,5 +1,5 @@
 # Handle Errors
-> Last verified against v2.0.1
+> Last verified against v3.0.0
 
 Every operation that can fail returns `FluentResults.Result<T>`. Business failures never throw — the result carries success state, and on failure an `IntegrationError` with a machine-readable `Code`, an `ErrorType`, and the original `Exception` when one was wrapped. Inspect the result rather than wrapping calls in `try`/`catch`.
 
@@ -35,7 +35,7 @@ else
 
 | Member | What it holds |
 |---|---|
-| `Code` | Machine-readable, dotted-segment string — `Validation.Error`, `Auth.Msal.invalid_client`. Match on the prefix. |
+| `Code` | Machine-readable, dotted-segment string — `Validation.Error`, `LedgerJournalHeader.NotFound`. Match on the prefix. |
 | `Type` | An `ErrorType` for HTTP-status and log-level mapping. |
 | `Exception` | The wrapped exception when the failure originated from one; otherwise `null`. |
 
@@ -76,17 +76,21 @@ string summary = result.Match(
     onFailure: error => $"Failed: [{error.Type} {error.Code}]");
 ```
 
-The non-generic overload matches a valueless `Result` from a batch command:
+A batch command returns `Result<BatchOutcome>` (since v3.0.0), so it uses the same generic overload. A batch that ran hands `onFailure` a `BatchIntegrationError` carrying the per-item outcome; a batch rejected before sending (empty list, bad key) hands it a plain `Validation` error:
 
 ```csharp
-Result batchResult = await mediator
+Result<BatchOutcome> batchResult = await mediator
     .Send(new CreateBatchCommand<LedgerJournalLine>(lines), cancellationToken)
     .ConfigureAwait(false);
 
 string summary = batchResult.Match(
-    onSuccess: () => "Batch complete",
-    onFailure: error => $"Batch failed: {error.Code}");
+    onSuccess: outcome => $"Created {outcome.Succeeded} lines",
+    onFailure: error => error is BatchIntegrationError batchError
+        ? $"{batchError.Outcome.Failed} of {batchError.Outcome.Total} lines failed"
+        : $"Batch rejected before sending: {error.Code}");
 ```
+
+The non-generic overload matches a valueless `Result` — for example from a custom `ICommand` handler or `IService<T>.DeleteAsync`. See [Send Commands](Send-Commands#read-the-failure-list) for reading the failure list item by item.
 
 ## Concrete D365 rejections
 
@@ -97,7 +101,7 @@ Each downstream rejection reaches you as a failed `Result<T>` with a distinct `C
 D365 marks several `LedgerJournalHeader` fields read-only after create: `JournalName`, `IsPosted`, `JournalTotalDebit`, `JournalTotalCredit`, and `AccountingCurrency`. Each carries `[ODataField(IgnoreOnUpdate = true)]`, so the serialiser drops it from the PATCH payload.
 
 > [!WARNING]
-> If even one `IgnoreOnUpdate` field reaches the payload, D365 rejects the **whole** PATCH with HTTP 403 (`ODataSecurityException`, `"update not allowed for field 'X'"`) — not only that field. Audit every field against D365's update semantics before shipping an entity. The failed `Result<T>` surfaces as a `Failure`-typed `IntegrationError` whose `Exception` holds the client exception.
+> If even one `IgnoreOnUpdate` field reaches the payload, D365 rejects the **whole** PATCH with HTTP 403 (`ODataSecurityException`, `"update not allowed for field 'X'"`) — not only that field. Audit every field against D365's update semantics before shipping an entity. The failed `Result<T>` surfaces as `{Entity}.Unauthorized`, a `Failure`-typed `IntegrationError` whose `Exception` holds the client exception.
 
 ```csharp
 Result<LedgerJournalHeader> result = await mediator
@@ -107,7 +111,7 @@ Result<LedgerJournalHeader> result = await mediator
 if (result.IsFailed)
 {
     IntegrationError? error = result.GetError();
-    // error.Type == ErrorType.Failure; error.Exception carries the ODataClientException (HTTP 403).
+    // error.Code == "LedgerJournalHeader.Unauthorized"; error.Exception carries the ODataClientException (HTTP 403).
     logger.LogError(error?.Exception, "Update rejected: [{Code}]", error?.Code);
 }
 ```
@@ -126,7 +130,7 @@ if (result.IsFailed && result.GetError()?.Type == ErrorType.Validation)
 
 ### Authentication — 401
 
-An OAuth token-acquisition failure returns `IntegrationError("Auth.Msal.{code}", "Token acquisition failed", ErrorType.Failure, ex)`, where `{code}` is the MSAL error code and `ex` is the MSAL exception. On the HTTP path the `ODataAuthenticationHandler` short-circuits with a 401 whose `ReasonPhrase` is the fixed string `"Authentication failed"`. See [Authentication Modes](Authentication-Modes).
+An OAuth token-acquisition failure returns `IntegrationError("Auth.Msal.{code}", "Token acquisition failed", ErrorType.Failure, ex)` from the authenticator, where `{code}` is the MSAL error code and `ex` is the MSAL exception. On the HTTP path the `ODataAuthenticationHandler` short-circuits with a 401 whose `ReasonPhrase` is the fixed string `"Authentication failed"`, so a single-entity command or query surfaces it as `{Entity}.Unauthorized` (for example `LedgerJournalHeader.Unauthorized`) with the generic message `"Authentication or authorisation failure"`, and a batch reports `StatusCode` 401 on each item. See [Authentication Modes](Authentication-Modes).
 
 > [!WARNING]
 > Never copy `error.Message` or `error.Exception` detail into an HTTP `ReasonPhrase` or response body — tenant IDs, MSAL/AADSTS codes, and D365 inner-error payloads leak that way. Return a generic message to the caller and log the full error server-side only.
@@ -170,7 +174,16 @@ if (upstream.IsFailed)
 
 ## What still throws
 
-`Result<T>` covers business-logic failures. Genuine infrastructure faults still propagate as exceptions: transient network faults Polly cannot recover, `NullReferenceException` from a real bug, and `OperationCanceledException` from the cancellation token. The `LoggingBehaviour` logs an unhandled exception at `Error` level and re-throws; Polly absorbs transient HTTP faults before they reach the pipeline. See [Configure Resilience](Configure-Resilience).
+`ODataService<T>` catches what goes wrong below it on a single-entity operation and returns a failed result instead: a timeout becomes `{Entity}.Timeout`, cancellation `{Entity}.Cancelled`, an unrecognised exception (for example a translator `NotSupportedException`) `{Entity}.UnexpectedError` — all `ErrorType.Failure`, with the exception in `error.Exception`.
+
+These still reach you as exceptions:
+
+- **Your own cancellation during a batch.** Cancelling the `CancellationToken` you passed propagates `OperationCanceledException`. A failed chunk send does not throw — an `HttpClient` timeout included, it comes back as failed items with `StatusCode` 0.
+- **`GetDimensionOrdersQuery` against a non-hyphen delimiter.** `ArgumentOutOfRangeException` — see [Known Limitations](Known-Limitations#dimension-segment-delimiters).
+- **Direct `IODataClientAdapter` calls.** The adapter throws `ArgumentException` for a key value containing a control character, an invalid entity-set name, or a malformed composite-key field name (since v3.0.0 for control characters and entity sets).
+- **Genuine bugs** — a `NullReferenceException` in your own handler.
+
+`LoggingBehaviour` logs an unhandled exception at `Error` level and re-throws it. Polly absorbs transient HTTP faults before they reach either path; see [Configure Resilience](Configure-Resilience).
 
 ## See Also
 

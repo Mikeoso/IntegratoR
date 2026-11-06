@@ -1,5 +1,5 @@
 # Authentication Modes
-> Last verified against v2.0.1
+> Last verified against v3.0.0
 
 The OData layer authenticates to D365 F&O one of two ways, selected by `ODataSettings.Authentication.Mode`: **OAuth** (a Bearer token acquired directly from Azure AD) or **ApiKey** (a subscription key for an Azure API Management gateway). `ODataAuthenticationHandler` reads the mode on every outgoing request and attaches the matching header.
 
@@ -44,7 +44,7 @@ Register the app as a service user inside D365 as well: *System administration �
 
 ### Handle the failure path
 
-Token acquisition never throws. A failure returns a failed `Result<string>` carrying an `IntegrationError`, and `ODataAuthenticationHandler` short-circuits the request:
+Token acquisition never throws. `IAuthenticator.GetAccessTokenAsync` returns a failed `Result<string>` carrying an `IntegrationError`:
 
 ```csharp
 Result<string> token = await authenticator.GetAccessTokenAsync(
@@ -52,17 +52,17 @@ Result<string> token = await authenticator.GetAccessTokenAsync(
 
 if (token.IsFailed)
 {
-    IError error = token.GetError();
-    // error.Code    == "Auth.Msal.invalid_client"  (Auth.Msal.{MSAL error code})
-    // error.Message == "Token acquisition failed"
-    // ((IntegrationError)error).Type == ErrorType.Failure
-    // ((IntegrationError)error).Exception holds the MsalException for server-side logging
+    IntegrationError? error = token.GetError();
+    // error?.Code    == "Auth.Msal.invalid_client"  (Auth.Msal.{MSAL error code})
+    // error?.Message == "Token acquisition failed"
+    // error?.Type    == ErrorType.Failure
+    // error?.Exception holds the MsalException for server-side logging
 }
 ```
 
-The error `Code` is `Auth.Msal.{code}` where `{code}` is the MSAL error code (for example `invalid_client`, `unauthorized_client`). The full MSAL message — which can carry AADSTS codes and tenant IDs — stays on the inner exception for server-side logging, never in `error.Message`.
+The error `Code` is `Auth.Msal.{code}` where `{code}` is the MSAL error code (for example `invalid_client`, `unauthorized_client`). The full MSAL message — which can carry AADSTS codes and tenant IDs — stays on the inner exception, never in `error.Message`.
 
-On the HTTP path, the handler returns an immediate `401 Unauthorized` with `ReasonPhrase "Authentication failed"` and no request reaches D365. That response carries no error code and no MSAL detail. Polly does not retry a 401, so the failure surfaces to the caller at once.
+`ODataAuthenticationHandler` calls the same method on every OAuth request. On a failure it returns an immediate `401 Unauthorized` with `ReasonPhrase "Authentication failed"`, and no request reaches D365. The handler sits outside the retry and breaker handlers, so the short-circuit is never retried. It also discards the MSAL result and nothing logs it: through `IMediator` the failure arrives as `{Entity}.Unauthorized` (for example `LedgerJournalHeader.Unauthorized`), with no `Auth.Msal.*` code. To diagnose a bad credential, call `GetAccessTokenAsync` directly as above — see [Troubleshoot Common Issues](Troubleshoot-Common-Issues).
 
 > [!WARNING]
 > Never surface `IntegrationError.Exception` or the raw MSAL message in an HTTP response. The 401 `ReasonPhrase` is deliberately generic to keep tenant IDs and AADSTS codes out of client-visible output.
@@ -96,25 +96,9 @@ Use `ApiKey` when Azure API Management fronts D365 and owns the authentication t
 
 ## Send a command under either mode
 
-The authentication mode is transparent to callers. The same `IMediator.Send` works regardless of mode, because the handler applies the header on the outbound HTTP call. This creates a `LedgerJournalHeader` in company `USMF`:
+The authentication mode is transparent to callers. The same `IMediator.Send` works regardless of mode, because the handler applies the header on the outbound HTTP call. This creates the shipped `LedgerJournalHeader` (`IntegratoR.OData.FO`) in company `USMF`:
 
 ```csharp
-public sealed class LedgerJournalHeader : BaseEntity
-{
-    [JsonPropertyName("dataAreaId")]
-    public required string DataAreaId { get; set; }
-
-    [ODataField(IgnoreOnCreate = true)]
-    public string JournalBatchNumber { get; set; } = string.Empty;
-
-    [ODataField(IgnoreOnUpdate = true)]
-    public required string JournalName { get; set; }
-
-    public required string Description { get; set; }
-
-    public override object[] GetCompositeKey() => [DataAreaId, JournalBatchNumber];
-}
-
 Result<LedgerJournalHeader> result = await mediator.Send(
     new CreateCommand<LedgerJournalHeader>(new LedgerJournalHeader
     {
@@ -128,7 +112,7 @@ if (result.IsFailed)
 {
     IntegrationError? error = result.GetError();
     // OAuth mode with a bad secret: the 401 short-circuit surfaces here as a failed Result —
-    // Code "Auth.Msal.invalid_client", Message "Token acquisition failed".
+    // Code "LedgerJournalHeader.Unauthorized", Message "Authentication or authorisation failure".
     return;
 }
 
@@ -152,7 +136,7 @@ Both `ClientSecret` and `SubscriptionKey` are secrets. Keep them out of source c
 | Local development | `local.settings.json` (gitignored — never commit) |
 | Deployed | Azure Key Vault, resolved via Managed Identity / `DefaultAzureCredential` |
 
-The host wires Key Vault in `SampleFunction/Program.cs` with `DefaultAzureCredential` and the `Azure.Extensions.AspNetCore.Configuration.Secrets` provider — see [Set Up Azure Functions Host](Set-Up-Azure-Functions-Host). The framework never structured-logs the whole `ODataSettings`; only `Url` and `Mode` are visible at startup, never the credentials.
+The host wires Key Vault in `SampleFunction/Program.cs` with `DefaultAzureCredential` and the `Azure.Extensions.AspNetCore.Configuration.Secrets` provider — see [Set Up Azure Functions Host](Set-Up-Azure-Functions-Host). The framework never logs `ODataSettings` as a whole; at startup it logs only the normalised base URL, never the credentials.
 
 > [!CAUTION]
 > Never log `ClientSecret`, `SubscriptionKey`, or an acquired bearer token — not in application logs, not in an HTTP response body, not in a `ReasonPhrase`.

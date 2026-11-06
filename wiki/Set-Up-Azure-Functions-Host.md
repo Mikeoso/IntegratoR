@@ -1,6 +1,6 @@
 # Set Up Azure Functions Host
 
-> Last verified against v2.0.1
+> Last verified against v3.0.0
 
 The production `Program.cs` for an isolated-worker Functions host wires four things on top of the minimal setup in [Getting Started](Getting-Started): Azure Key Vault for secrets, Application Insights for telemetry, string-valued enums in HTTP bodies, and the Newtonsoft `Result<T>` converters for HTTP-trigger payloads. `AddIntegratoR` is the only IntegratoR call — it registers the whole framework.
 
@@ -156,7 +156,7 @@ services.AddIntegratoR(context.Configuration, integrator =>
 
 `ConfigureOData` and `ConfigureFO` are `PostConfigure` hooks — they run after JSON binding, so they override `ODataSettings`/`FOSettings` values from configuration. See [Configure OData](Configure-OData) for the settings tree.
 
-`ODataSettingsValidator` runs at startup (`ValidateOnStart`), so an authentication header smuggled into `DefaultHeaders`, missing credentials for the selected `AuthenticationMode`, or an unrecognised mode value fails the host before it serves a request. A missing `Url` is caught separately at OData-client resolution — `NormaliseBaseUrl` returns a clear `ArgumentException` rather than a misleading `UriFormatException`.
+`ODataSettingsValidator` runs at startup (`ValidateOnStart`), so an authentication header smuggled into `DefaultHeaders`, missing credentials for the selected `AuthenticationMode`, an unrecognised mode value, or an `ODataSettings.Batch.MaxOperationsPerChunk` outside 1–200 (D365's per-`$batch` cap) fails the host before it serves a request. A missing `Url` is caught separately at OData-client resolution — `NormaliseBaseUrl` throws a clear `ArgumentException` rather than a misleading `UriFormatException`.
 
 ## Project file
 
@@ -197,7 +197,7 @@ curl -s -X POST \
      -d '{"Company":"USMF","JournalName":"GenJrn","AccountDisplayValue":"...","OffsetAccountDisplayValue":"...","Amount":100,"CurrencyCode":"USD"}'
 ```
 
-The trigger runs a full `LedgerJournalHeader` CRUD cycle in the given company and returns a per-step response with a top-level `Success` flag. Pass account display values that exist in the target sandbox's chart of accounts. Each step reports its `Result<T>` outcome — on failure the step carries the `IntegrationError` `Code` and `Type` plus a generic `"Operation failed; see host logs for details."` message; the full server message is logged host-side only, never returned. A read-only field left in an update PATCH fails the step (HTTP 403 `ODataSecurityException`) as a `Result` rather than throwing. See [Run Smoke Tests](Run-Smoke-Tests) and [Handle Errors](Handle-Errors).
+The trigger runs a full CRUD cycle across `LedgerJournalHeader` and `LedgerJournalLine` in the given company and returns a per-step response with a top-level `Success` flag. Pass account display values that exist in the target sandbox's chart of accounts. Each step reports its `Result<T>` outcome — on failure the step carries the `IntegrationError` `Code` and `Type` plus a generic `"Operation failed; see host logs for details."` message; the full server message is logged host-side only, never returned. A read-only field left in an update PATCH fails the step (HTTP 403 `ODataSecurityException`) as a `Result` rather than throwing. See [Run Smoke Tests](Run-Smoke-Tests) and [Handle Errors](Handle-Errors).
 
 ## See Also
 
