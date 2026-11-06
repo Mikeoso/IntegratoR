@@ -22,7 +22,7 @@ jobs:
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     permissions:
-      contents: read          # read repo files + .claude/ rules and agents
+      contents: read          # read repo files + .github/claude-review/ rules and agents
       pull-requests: write     # REQUIRED: create the PR review + inline comments
       issues: write            # recommended for full GitHub comment integration
       id-token: write          # OIDC for the action
@@ -127,12 +127,14 @@ jobs:
 
             ## Stage 0 — Ground yourself in IntegratoR's standards
             Read these repo files before judging anything:
-            - `.claude/agents/code-reviewer.md`  (the authoritative correctness +
+            - `.github/claude-review/project-rules.md` (the project's hard rules)
+            - `.github/claude-review/code-reviewer.md`  (the authoritative correctness +
               hard-rule + architecture + test-adequacy rubric and its
               Blocker/Major/Minor/Nit + verdict output format — apply it verbatim)
-            - `.claude/skills/csharp-coding-standards/SKILL.md` (the C# conventions)
-            - `.claude/rules/architecture.md`, `.claude/rules/perf-reliability.md`,
-              `.claude/rules/common.md`
+            - `.github/claude-review/csharp-coding-standards.md` (the C# conventions)
+            - `.github/claude-review/rules/architecture.md`,
+              `.github/claude-review/rules/perf-reliability.md`,
+              `.github/claude-review/rules/common.md`
             Then read the PR diff (`gh pr diff ${{ github.event.pull_request.number }}`)
             and the changed files + their tests in full.
 
@@ -157,7 +159,7 @@ jobs:
 
             ## Stage 2 — Security review (ONLY if security flag == 'true')
             If ${{ steps.scope.outputs.security }} is 'true', also read
-            `.claude/agents/security-reviewer.md` and `.claude/rules/security.md`,
+            `.github/claude-review/security-reviewer.md` and `.github/claude-review/rules/security.md`,
             then review the auth/secret/header/error-response/logging surface:
             no secrets in code or committed config; `AuthenticationMode` set
             explicitly; token-acquisition failures return 401 and short-circuit;
@@ -170,7 +172,7 @@ jobs:
 
             ## Stage 3 — Public API compatibility (ONLY if api flag == 'true')
             If ${{ steps.scope.outputs.api }} is 'true', read
-            `.claude/rules/api-compatibility.md` and flag any non-additive change
+            `.github/claude-review/rules/api-compatibility.md` and flag any non-additive change
             to a published `IntegratoR.*` library surface (removed/renamed/
             visibility-narrowed member, changed signature, new required parameter,
             an optional parameter added to an already-shipped method, or changed

@@ -57,11 +57,11 @@ local.settings.json
 secrets.json
 CLAUDE.local.md
 
-# Claude Code local settings
-.claude/settings.local.json
-.claude/*.local.md
-.claude/worktrees/
-.claude/plans/
+# Claude Code setup and wiki source are local-only. The claude-review workflow reads its own
+# copy of the review rules from .github/claude-review/; the wiki is versioned in its own repo.
+.claude/
+CLAUDE.md
+wiki/
 
 # Local tooling config (not committed). context7.json holds a per-project key —
 # keep it local; .mcp.json defines per-developer MCP servers.

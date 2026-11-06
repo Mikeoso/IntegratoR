@@ -42,7 +42,7 @@ Thank you for your interest in contributing to IntegratoR! This document provide
 
 - **British spelling is intentional** throughout the codebase (e.g., `Behaviour` not `Behavior`)
 - Enable nullable reference types in all new code
-- Follow the existing patterns found in `.claude/rules/dotnet/`
+- Follow the conventions in `.github/claude-review/csharp-coding-standards.md` and `.github/claude-review/rules/`
 - Use `Result<T>` from FluentResults for operation outcomes (no exceptions for flow control)
 - Propagate `CancellationToken` through all async call chains
 - Use `ConfigureAwait(false)` in library code

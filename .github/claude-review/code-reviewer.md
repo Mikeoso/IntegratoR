@@ -14,7 +14,7 @@ IntegratoR is a .NET 10 framework for D365 Finance & Operations integration via 
 ## Before Reviewing
 
 1. **Read the diff.** `git diff` (and `git diff --staged`) to see exactly what changed.
-2. **Read the rules.** `.claude/rules/` holds the detailed architecture, .NET, OData, perf/reliability, and security rules — they are the source of truth for conventions.
+2. **Read the rules.** `.github/claude-review/rules/` holds the detailed architecture, .NET, OData, perf/reliability, and security rules — they are the source of truth for conventions.
 3. **Read the changed files and their tests** in full, not just the hunks.
 
 ## What to Check

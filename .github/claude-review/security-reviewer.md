@@ -14,13 +14,13 @@ IntegratoR talks to D365 F&O (OData, via APIM or direct OAuth). Auth runs in a `
 ## Before Reviewing
 
 1. **Read the diff.** `git diff` (and `git diff --staged`).
-2. **Read `.claude/rules/security.md`** — the source of truth for the rules below.
+2. **Read `.github/claude-review/rules/security.md`** — the source of truth for the rules below.
 3. **Read the changed auth / HTTP / config files** in full.
 
 ## What to Check
 
 **Secrets & credentials**
-- No secrets in code, `CLAUDE.md`, or committed config — ever. `local.settings.json` stays gitignored.
+- No secrets in code, docs, or committed config — ever. `local.settings.json` stays gitignored.
 - Never read `.env` / `.env.*`.
 - OAuth `ClientSecret` belongs in Azure Key Vault for production.
 - Subscription keys and tokens are sensitive — never logged.

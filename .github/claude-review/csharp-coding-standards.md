@@ -13,13 +13,13 @@ description: >-
 
 # IntegratoR C# Coding Standards
 
-> C#-specific conventions for the IntegratoR framework (.NET 10 / C# 14, `LangVersion=preview`). Pairs with the project rules in `.claude/rules/` — this skill owns the *language and style* conventions; the rules files own architecture, domain (OData/resilience), workflow, and security.
+> C#-specific conventions for the IntegratoR framework (.NET 10 / C# 14, `LangVersion=preview`). Pairs with the project rules in `.github/claude-review/rules/` — this skill owns the *language and style* conventions; the rules files own architecture, domain (OData/resilience), workflow, and security.
 
 ## Scope
 
 **Applies to**: `.cs` files, `.csproj` projects, C# code blocks in this repo.
 **Does NOT apply to**: F#, VB.NET, PowerShell, non-.NET code.
-**Defers to**: `.claude/rules/architecture.md` (Clean Architecture, CQRS/MediatR, serialisation), `.claude/rules/odata-conventions.md` (entities, settings), `.claude/rules/perf-reliability.md` (HTTP/resilience), `.claude/rules/security.md`, and `.claude/rules/api-compatibility.md` / the `csharp-api-design` skill (public library surface).
+**Defers to**: `.github/claude-review/rules/architecture.md` (Clean Architecture, CQRS/MediatR, serialisation), `.github/claude-review/rules/odata-conventions.md` (entities, settings), `.github/claude-review/rules/perf-reliability.md` (HTTP/resilience), `.github/claude-review/rules/security.md`, and `.github/claude-review/rules/api-compatibility.md` / the `csharp-api-design` skill (public library surface).
 
 ## Core Principles
 
