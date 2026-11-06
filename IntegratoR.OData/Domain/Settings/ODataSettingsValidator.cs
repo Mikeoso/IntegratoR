@@ -91,7 +91,7 @@ public sealed class ODataSettingsValidator : IValidateOptions<ODataSettings>
         if (options.Batch.MaxOperationsPerChunk is < 1 or > ODataBatchSettings.MaxOperationsPerBatchLimit)
         {
             failures.Add(
-                $"ODataSettings.Batch.MaxOperationsPerChunk must be between 1 and 200 (D365 F&O's enforced maximum " +
+                $"ODataSettings.Batch.MaxOperationsPerChunk must be between 1 and {ODataBatchSettings.MaxOperationsPerBatchLimit} (D365 F&O's enforced maximum " +
                 $"operations per $batch). The configured value was {options.Batch.MaxOperationsPerChunk}.");
         }
 

@@ -33,5 +33,6 @@ public class ODataBatchSettings
     /// <value>The default value is <c>true</c>.</value>
     public bool StopOnFirstFailedChunk { get; set; } = true;
 
+    // D365 F&O's enforced maximum operations per $batch (see MaxOperationsPerChunk).
     internal const int MaxOperationsPerBatchLimit = 200;
 }
