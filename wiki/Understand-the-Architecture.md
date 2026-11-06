@@ -1,5 +1,5 @@
 # Understand the Architecture
-> Last verified against v2.0.1
+> Last verified against v3.0.0
 
 IntegratoR is Clean Architecture with dependencies pointing inward: the concrete infrastructure layers (`OData`, `OData.FO`, `Application`, `Hosting`) reference the abstract core (`Abstractions`), never the reverse. A consumer wires the whole graph with one call — `AddIntegratoR(configuration)` — and drives it through `IMediator`. The rest of this page states the durable invariants that outlive any single file.
 
@@ -50,7 +50,7 @@ public class LedgerJournalHeader : BaseEntity
 }
 ```
 
-The generic `BaseEntity<TKey>` is `[Obsolete]` (the type parameter was never used) and is removed next MAJOR. Never use it. See [Define Entities](Define-Entities) for the full `[ODataField]`/`[JsonPropertyName]` matrix.
+The generic `BaseEntity<TKey>` is `[Obsolete]` since v2.0.0 (the type parameter was never used); removal is planned for a future major version, v4 at the earliest. Never use it. See [Define Entities](Define-Entities) for the full `[ODataField]`/`[JsonPropertyName]` matrix.
 
 ## CQRS runs through MediatR
 
@@ -81,7 +81,9 @@ Generic `CreateCommand<T>`/`UpdateCommand<T>`/`DeleteCommand<T>` and `GetByKeyQu
 
 ## Result&lt;T&gt; never throws for business flow
 
-Every operation returns `Result<T>` (or non-generic `Result`) from FluentResults. Business failures return a failed `Result` carrying an `IntegrationError { string Code; ErrorType Type; Exception? Exception }`; they do not throw. `ErrorType` has four members: `Failure`, `Validation`, `NotFound`, `Conflict`. Exceptions are reserved for genuinely exceptional infrastructure faults (cancellation, socket resets).
+Every operation returns `Result<T>` (or non-generic `Result`) from FluentResults. Business failures return a failed `Result` carrying an `IntegrationError { string Code; ErrorType Type; Exception? Exception }`; they do not throw. `ErrorType` has four members: `Failure`, `Validation`, `NotFound`, `Conflict`.
+
+`ODataService<T>` also absorbs infrastructure faults on single-entity operations — a timeout, cancellation, or unrecognised exception comes back as `{Entity}.Timeout`, `{Entity}.Cancelled`, or `{Entity}.UnexpectedError`. The batch path turns a failed chunk send into failed items but lets cancellation and `HttpClient` timeouts propagate. The full list of what still throws is in [Handle Errors](Handle-Errors#what-still-throws).
 
 Read failures with `result.IsFailed` and `result.GetError()` — never `try`/`catch` on the pipeline, never the verbose `result.Errors.FirstOrDefault()` form. See [Handle Errors](Handle-Errors).
 
@@ -111,9 +113,9 @@ The codebase runs both System.Text.Json and Newtonsoft.Json, and `Result<T>` nee
 > [!NOTE]
 > `ResultJsonShape.Project` accepts any `IError`, falling back to `(Unknown, message, Failure)` for a plain `Result.Fail("message")`. That leniency is intentional public-API behaviour — external consumers may pass non-`IntegrationError` results. See [Set Up Azure Functions Host](Set-Up-Azure-Functions-Host) for the Newtonsoft snippet.
 
-## Composite-key writes bypass PanoramicData
+## Composite-key and batch writes bypass PanoramicData
 
-D365 F&O entities are composite-keyed, and PanoramicData's `Key(object)` cannot bind a dictionary key — it calls `.ToString()` on the dictionary and emits a malformed URL. So Update, Delete, and their batch variants route through an owned raw-`HttpClient` bypass in `ODataClientAdapter`. It builds the keyed URL by hand — `LedgerJournalHeaders(dataAreaId='USMF',JournalBatchNumber='B0001')` — using the `[JsonPropertyName]` wire names, and issues the request through the named `"ODataClient"` client so the write carries the same authentication, Polly resilience, and `BaseAddress` as every other call (since v2.0.0). Reads use a parallel `$filter` bypass over the same key fields.
+D365 F&O entities are composite-keyed, and PanoramicData's `Key(object)` cannot bind a dictionary key — it calls `.ToString()` on the dictionary and emits a malformed URL. So single-entity Update and Delete route through an owned raw-`HttpClient` bypass in `ODataClientAdapter` (since v2.0.0). It builds the keyed URL by hand — `LedgerJournalHeaders(dataAreaId='USMF',JournalBatchNumber='B0001')` — using the `[JsonPropertyName]` wire names, and issues the request through the named `"ODataClient"` client so the write carries the same authentication, Polly resilience, and `BaseAddress` as every other call. Reads use a parallel `$filter` bypass over the same key fields.
 
 > [!NOTE]
 > D365 returns `204 No Content` on a composite-key PATCH. `UpdateAsync` treats that as success and returns the caller's entity, so a successful `Result<TEntity>` never carries a null `Value`.
@@ -121,9 +123,18 @@ D365 F&O entities are composite-keyed, and PanoramicData's `Key(object)` cannot 
 > [!WARNING]
 > A single field marked `[ODataField(IgnoreOnUpdate = true)]` present in an update payload makes D365 reject the **whole** PATCH with HTTP 403 (`ODataSecurityException`), not only that field. On `LedgerJournalHeader` that set is `JournalName`, `AccountingCurrency`, `IsPosted`, `JournalTotalDebit`, and `JournalTotalCredit`. Audit every field against D365's update semantics before shipping an entity.
 
+No batch write uses PanoramicData either (since v3.0.0). Every chunk goes through the same named client in one of two shapes, chosen by `BatchFailureMode`:
+
+| Mode | Wire shape per chunk |
+|---|---|
+| `Atomic` (default) | One hand-rolled multipart `$batch` POST carrying a single changeset — all-or-nothing per chunk |
+| `ContinueOnError` | One POST / PATCH / DELETE per item, failures collected |
+
+`ODataService` splits the input at `ODataSettings.Batch.MaxOperationsPerChunk` and aggregates every chunk's per-item results into one `BatchOutcome`. Key values and the entity-set name are spliced into the `$batch` body as text, so a key value containing a control character, or an entity-set name that is not a plain OData identifier, is rejected before anything is sent. The batch write path is unit- and integration-tested but not yet verified against a live D365 environment.
+
 ## The composition root wires it in order
 
-`AddIntegratoR(configuration, configure)` runs these steps, and `ODataSettingsValidator : IValidateOptions<ODataSettings>` (auto-registered, with `ValidateOnStart`) fails the host at start-up on invalid connection or auth settings rather than at first request.
+`AddIntegratoR(configuration, configure)` runs these steps, and `ODataSettingsValidator : IValidateOptions<ODataSettings>` (auto-registered, with `ValidateOnStart`) fails the host at start-up on invalid auth settings or an out-of-range batch chunk size (1–200) rather than at first request.
 
 1. `AddApplicationServices()` — pipeline behaviours, MediatR, cache, OAuth authenticator.
 2. `AddODataClient(configuration)` — HTTP client, Polly policies, `ODataService<T>`, `ODataSettingsValidator`.
@@ -132,7 +143,7 @@ D365 F&O entities are composite-keyed, and PanoramicData's `Key(object)` cannot 
 5. The Durable Functions `Result<T>` converter on `DurableTaskWorkerOptions` (lazy — zero cost for non-Durable consumers).
 6. Closing and registering the open-generic and consumer validators so `ValidationBehaviour` resolves them.
 
-Step 4 exists because MediatR v12 closes open generics only within a single scanned assembly, and step 6 exists because FluentValidation's scanner skips open generics. Both cross-assembly closures happen once, here — a consumer's extended entities get closed generic handlers and validators exactly like the framework's own. The rationale lives in [ADR-0001](https://github.com/Mikeoso/IntegratoR/blob/main/docs/adr/0001-generic-handler-and-validator-registration.md); the Durable wiring in [ADR-0002](https://github.com/Mikeoso/IntegratoR/blob/main/docs/adr/0002-durable-functions-result-converter-wiring.md); the `[JsonPropertyName]`-aware translator fork in [ADR-0003](https://github.com/Mikeoso/IntegratoR/blob/main/docs/adr/0003-odata-expression-translator-fork.md).
+Step 4 exists because MediatR v12 closes open generics only within a single scanned assembly, and step 6 exists because FluentValidation's scanner skips open generics. Both cross-assembly closures happen once, here — a consumer's extended entities get closed generic handlers and validators exactly like the framework's own. The rationale lives in [ADR-0001](https://github.com/Mikeoso/IntegratoR/blob/main/docs/adr/0001-generic-handler-and-validator-registration.md); the Durable wiring in [ADR-0002](https://github.com/Mikeoso/IntegratoR/blob/main/docs/adr/0002-durable-functions-result-converter-wiring.md); the `[JsonPropertyName]`-aware translator fork in [ADR-0003](https://github.com/Mikeoso/IntegratoR/blob/main/docs/adr/0003-odata-expression-translator-fork.md); the configurable, chunked `$batch` write path in [ADR-0004](https://github.com/Mikeoso/IntegratoR/blob/main/docs/adr/0004-configurable-chunked-odata-batch.md).
 
 ## See Also
 
