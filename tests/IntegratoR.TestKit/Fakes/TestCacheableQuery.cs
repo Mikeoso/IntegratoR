@@ -18,7 +18,7 @@ public sealed class TestCacheableQuery<TResponse> : ICacheableQuery<TResponse>
     /// Initialises a new instance of <see cref="TestCacheableQuery{TResponse}"/>.
     /// </summary>
     /// <param name="cacheKey">The static cache key for this query.</param>
-    /// <param name="cacheDuration">The cache duration, or <c>null</c> to bypass caching.</param>
+    /// <param name="cacheDuration">The cache duration, or <c>null</c> for the cache service's default expiration.</param>
     /// <param name="cacheKeyValues">The values used to generate the cache key.</param>
     public TestCacheableQuery(string cacheKey, TimeSpan? cacheDuration = null, object[]? cacheKeyValues = null)
     {
@@ -34,7 +34,7 @@ public sealed class TestCacheableQuery<TResponse> : ICacheableQuery<TResponse>
     public TimeSpan? CacheDuration => _cacheDuration;
 
     // GetCacheKeyValues/GenerateCacheKey are [Obsolete] on ICacheableQuery but must still be
-    // implemented until the next MAJOR removes the interface members.
+    // implemented until a future major version removes the interface members.
 #pragma warning disable CS0618 // Type or member is obsolete
     /// <inheritdoc/>
     public object[] GetCacheKeyValues() => _cacheKeyValues;

@@ -15,7 +15,7 @@ public interface IAuthenticator
     /// <param name="tenantId">The Azure AD tenant ID where the application is registered.</param>
     /// <param name="resource">The URI of the target resource to which access is requested; for D365 F&amp;O this is the environment base URL without a trailing slash.</param>
     /// <returns>A <see cref="Result{TValue}"/> carrying the access token on success, or a structured error on failure.</returns>
-    [Obsolete("Since v1.4.0; use the overload that accepts a CancellationToken.")]
+    [Obsolete("Since v2.0.0; use the overload that accepts a CancellationToken.")]
     Task<Result<string>> GetAccessTokenAsync(string clientId, string clientSecret, string tenantId, string resource);
 
     /// <summary>

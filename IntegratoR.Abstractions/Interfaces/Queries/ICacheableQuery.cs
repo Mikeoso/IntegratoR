@@ -16,20 +16,23 @@ public interface ICacheableQuery<TResponse> : IQuery<TResponse>
     /// <summary>
     /// Gets the duration for which the query's response should be cached.
     /// </summary>
-    /// <remarks>A <see langword="null"/> value bypasses the cache for this query instance.</remarks>
+    /// <remarks>
+    /// A <see langword="null"/> value does not bypass the cache: the response is still stored, with the cache
+    /// service's default expiration (30 minutes for the built-in services).
+    /// </remarks>
     TimeSpan? CacheDuration { get; }
 
     /// <summary>
     /// Gets the values that uniquely define this query instance for caching purposes.
     /// </summary>
     /// <returns>An array of objects used to generate the cache key.</returns>
-    [Obsolete("since v1.4.0; CachingBehaviour uses CacheKey directly; removed next MAJOR")]
+    [Obsolete("since v2.0.0; CachingBehaviour uses CacheKey directly; planned for removal in a future major version")]
     object[] GetCacheKeyValues();
 
     /// <summary>
     /// Generates a stable cache key string from the query's defining values.
     /// </summary>
     /// <returns>The generated cache key.</returns>
-    [Obsolete("since v1.4.0; CachingBehaviour uses CacheKey directly; removed next MAJOR")]
+    [Obsolete("since v2.0.0; CachingBehaviour uses CacheKey directly; planned for removal in a future major version")]
     string GenerateCacheKey();
 }

@@ -25,7 +25,7 @@ SampleFunction (host/composition root)
 - **CQRS via MediatR**: Commands and queries are `record` types implementing `ICommand<TResponse>` or `IQuery<TResponse>`.
 - **Generic commands**: `CreateCommand<TEntity>`, `UpdateCommand<TEntity>`, `DeleteCommand<TEntity>` reusable with any `IEntity`.
 - **Batch commands**: `CreateBatchCommand<TEntity>`, `UpdateBatchCommand<TEntity>`, `DeleteBatchCommand<TEntity>` for bulk operations.
-- **Entity extensibility**: F&O entities inherit from the non-generic `BaseEntity` and must implement `GetCompositeKey()` (D365 uses composite keys like `DataAreaId` + business key). `BaseEntity<TKey>` is `[Obsolete]` (the `TKey` parameter was never used) and is removed next MAJOR.
+- **Entity extensibility**: F&O entities inherit from the non-generic `BaseEntity` and must implement `GetCompositeKey()` (D365 uses composite keys like `DataAreaId` + business key). `BaseEntity<TKey>` is `[Obsolete]` (since v2.0.0; the `TKey` parameter was never used) and is planned for removal in a future major version (v4 at the earliest).
 - **`ODataFieldAttribute`**: Controls property serialisation — `IgnoreOnCreate`, `IgnoreOnUpdate` for server-generated or read-only fields.
 - **Pipeline order**: Logging -> Validation -> Caching -> Handler (registration order matters in `AddApplicationServices()`).
 - **Each layer has its own `ApplicationDependencyInjection`** class with extension methods for DI setup.

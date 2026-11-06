@@ -11,7 +11,7 @@
 
 ## Entity Patterns
 
-- Entities inherit from the non-generic `BaseEntity` and must implement `GetCompositeKey()`. (`BaseEntity<TKey>` is `[Obsolete]` — the `TKey` parameter was never used; removed next MAJOR.)
+- Entities inherit from the non-generic `BaseEntity` and must implement `GetCompositeKey()`. (`BaseEntity<TKey>` is `[Obsolete]` — since v2.0.0, the `TKey` parameter was never used; planned for removal in a future major version, v4 at the earliest.)
 - D365 uses composite keys: typically `DataAreaId` + business key.
 - `[Table("EntitySetName")]` maps to OData entity sets.
 - `[ODataField(IgnoreOnCreate = true)]` for server-generated fields (e.g., `JournalBatchNumber`, `LineNumber`).

@@ -33,15 +33,6 @@ public class ODataBatchSettings
     /// <value>The default value is <c>true</c>.</value>
     public bool StopOnFirstFailedChunk { get; set; } = true;
 
-    /// <summary>
-    /// Gets or sets a value indicating whether <see cref="BatchFailureMode.ContinueOnError"/> is sent
-    /// as a single <c>$batch</c> with the <c>Prefer: odata.continue-on-error</c> header rather than as
-    /// independent per-item requests.
-    /// </summary>
-    /// <remarks>
-    /// D365 F&amp;O does not document support for <c>odata.continue-on-error</c>, so this is disabled
-    /// by default until verified against a live environment.
-    /// </remarks>
-    /// <value>The default value is <c>false</c>.</value>
-    public bool UseServerContinueOnError { get; set; }
+    // D365 F&O's enforced maximum operations per $batch (see MaxOperationsPerChunk).
+    internal const int MaxOperationsPerBatchLimit = 200;
 }
