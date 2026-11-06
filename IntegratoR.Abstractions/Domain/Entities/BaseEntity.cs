@@ -54,7 +54,7 @@ public abstract class BaseEntity : IEntity, IContext
 /// The <typeparamref name="TKey"/> type parameter is unused — the contract is expressed entirely through
 /// <see cref="BaseEntity.GetCompositeKey"/>. Derive from the non-generic <see cref="BaseEntity"/> instead.
 /// </remarks>
-[Obsolete("since v1.4.0; the TKey type parameter is unused — derive from the non-generic BaseEntity instead; removed next MAJOR")]
+[Obsolete("since v2.0.0; the TKey type parameter is unused — derive from the non-generic BaseEntity instead; planned for removal in a future major version")]
 public abstract class BaseEntity<TKey> : BaseEntity
 {
 }

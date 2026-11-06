@@ -24,7 +24,7 @@ public interface IODataService<TEntity> : IService<TEntity> where TEntity : IEnt
     /// <param name="top">The maximum number of entities to return. Corresponds to the OData <c>$top</c> query option.</param>
     /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
     /// <returns>A <see cref="Result{T}"/> containing a collection of entities that match the specified criteria.</returns>
-    [Obsolete("Since v1.4.0; the Func-based orderBy was never applied to the OData query (it was silently dropped). Use the overload taking IReadOnlyList<(Expression<Func<TEntity, object>> KeySelector, bool Descending)> orderBy.")]
+    [Obsolete("Since v2.0.0; the Func-based orderBy was never applied to the OData query (it was silently dropped). Use the overload taking IReadOnlyList<(Expression<Func<TEntity, object>> KeySelector, bool Descending)> orderBy.")]
     Task<Result<IEnumerable<TEntity>>> QueryAsync(
         Expression<Func<TEntity, bool>>? filter = null,
         Func<IQueryable<TEntity>, IOrderedQueryable<TEntity>>? orderBy = null,
@@ -72,7 +72,7 @@ public interface IODataService<TEntity> : IService<TEntity> where TEntity : IEnt
     Task<Result<IEnumerable<TEntity>>> FindAllAsync(CancellationToken cancellationToken = default);
 
     /// <inheritdoc cref="FindAllAsync"/>
-    [Obsolete("since v1.4.0; use FindAllAsync; removed next MAJOR")]
+    [Obsolete("since v2.0.0; use FindAllAsync; planned for removal in a future major version")]
     Task<Result<IEnumerable<TEntity>>> FindAll(CancellationToken cancellationToken = default);
 
     /// <summary>

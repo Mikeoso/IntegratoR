@@ -223,7 +223,7 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
     #region IODataService Implementation
 
     /// <inheritdoc />
-    [Obsolete("Since v1.4.0; the Func-based orderBy was never applied to the OData query (it was silently dropped). Use the overload taking IReadOnlyList<(Expression<Func<TEntity, object>> KeySelector, bool Descending)> orderBy.")]
+    [Obsolete("Since v2.0.0; the Func-based orderBy was never applied to the OData query (it was silently dropped). Use the overload taking IReadOnlyList<(Expression<Func<TEntity, object>> KeySelector, bool Descending)> orderBy.")]
     public Task<Result<IEnumerable<TEntity>>> QueryAsync(
         Expression<Func<TEntity, bool>>? filter = null,
         Func<IQueryable<TEntity>, IOrderedQueryable<TEntity>>? orderBy = null,
@@ -273,7 +273,7 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
     }
 
     /// <inheritdoc />
-    [Obsolete("since v1.4.0; use FindAllAsync; removed next MAJOR")]
+    [Obsolete("since v2.0.0; use FindAllAsync; planned for removal in a future major version")]
     public Task<Result<IEnumerable<TEntity>>> FindAll(CancellationToken cancellationToken = default)
         => FindAllAsync(cancellationToken);
 
@@ -301,9 +301,15 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
         CancellationToken cancellationToken = default)
     {
         var entityList = entities as IList<TEntity> ?? entities.ToList();
-        var payloads = entityList
-            .Select(e => (IDictionary<string, object>)CreatePayload(e, isCreateOperation: true))
-            .ToList();
+
+        Result<List<IDictionary<string, object>>> payloadsResult =
+            BuildBatchPayloads("AddBatch", entityList, isCreateOperation: true);
+        if (payloadsResult.IsFailed)
+        {
+            return Task.FromResult(Result.Fail<BatchOutcome>(payloadsResult.Errors));
+        }
+
+        List<IDictionary<string, object>> payloads = payloadsResult.Value;
         var keys = new IReadOnlyDictionary<string, object>?[entityList.Count]; // create: server-assigned, no key
 
         return RunBatchInChunksAsync(
@@ -357,10 +363,16 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
             return Task.FromResult(Result.Fail<BatchOutcome>(keysResult.Errors));
         }
 
+        Result<List<IDictionary<string, object>>> payloadsResult =
+            BuildBatchPayloads("UpdateBatch", entityList, isCreateOperation: false);
+        if (payloadsResult.IsFailed)
+        {
+            return Task.FromResult(Result.Fail<BatchOutcome>(payloadsResult.Errors));
+        }
+
         List<object> keyObjects = keysResult.Value;
-        var items = entityList
-            .Select((e, i) => (keyObjects[i], (IDictionary<string, object>)CreatePayload(e, isCreateOperation: false)))
-            .ToList();
+        List<IDictionary<string, object>> payloads = payloadsResult.Value;
+        var items = keyObjects.Select((key, i) => (key, payloads[i])).ToList();
         var keys = keyObjects.Select(KeyToResultDict).ToList();
 
         return RunBatchInChunksAsync(
@@ -486,6 +498,36 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
     }
 
     /// <summary>
+    /// Builds the payload for every entity in a batch, returning a <see cref="ErrorType.Validation"/>
+    /// failure (<c>{Entity}.RequiredFieldMissing</c>, as for a single write) before any HTTP traffic
+    /// when a required field is missing.
+    /// </summary>
+    private Result<List<IDictionary<string, object>>> BuildBatchPayloads(
+        string operationName,
+        IList<TEntity> entities,
+        bool isCreateOperation)
+    {
+        try
+        {
+            return Result.Ok(entities
+                .Select(e => (IDictionary<string, object>)CreatePayload(e, isCreateOperation))
+                .ToList());
+        }
+        catch (ODataPayloadValidationException ex)
+        {
+            _logger.LogWarning(ex,
+                "{Operation} on {EntityType} failed payload validation: {Message}",
+                operationName, typeof(TEntity).Name, ex.Message);
+
+            return Result.Fail<List<IDictionary<string, object>>>(new IntegrationError(
+                $"{typeof(TEntity).Name}.RequiredFieldMissing",
+                ex.Message,
+                ErrorType.Validation,
+                ex));
+        }
+    }
+
+    /// <summary>
     /// Projects a batch key to the wire-name dictionary carried by <see cref="BatchItemResult.Key"/>.
     /// A composite key is already a dictionary; a single scalar key is wrapped with its sole
     /// <c>[Key]</c> property's wire name so single-key (e.g. cross-company / global) entities still
@@ -596,7 +638,10 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
         CancellationToken cancellationToken)
     {
         BatchFailureMode mode = options?.Mode ?? _batchSettings.FailureMode;
-        int chunkSize = Math.Max(1, options?.MaxOperationsPerChunk ?? _batchSettings.MaxOperationsPerChunk);
+        int chunkSize = Math.Clamp(
+            options?.MaxOperationsPerChunk ?? _batchSettings.MaxOperationsPerChunk,
+            1,
+            ODataBatchSettings.MaxOperationsPerBatchLimit);
 
         var items = new List<BatchItemResult>(total);
         int chunkIndex = 0;
@@ -613,7 +658,8 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
                 // wrapped in the exception handler's retry policy, which would re-POST a processed batch.
                 chunkResults = await sendChunk(offset, count, mode, cancellationToken).ConfigureAwait(false);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            // An HttpClient timeout is an OperationCanceledException too; only the caller's own cancellation propagates.
+            catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
             {
                 _logger.LogError(ex, "{Operation} chunk {ChunkIndex} failed to send", operationName, chunkIndex);
                 chunkResults = Enumerable.Range(0, count)
@@ -659,7 +705,7 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
 
             if (mode == BatchFailureMode.Atomic && _batchSettings.StopOnFirstFailedChunk && chunkFailed)
             {
-                aborted = true;
+                aborted = offset + count < total;
                 break;
             }
         }

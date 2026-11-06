@@ -47,7 +47,7 @@ public class OAuthAuthenticator : IAuthenticator
     }
 
     /// <inheritdoc />
-    [Obsolete("Since v1.4.0; use the overload that accepts a CancellationToken.")]
+    [Obsolete("Since v2.0.0; use the overload that accepts a CancellationToken.")]
     public Task<Result<string>> GetAccessTokenAsync(string clientId, string clientSecret, string tenantId, string resource)
         => GetAccessTokenAsync(clientId, clientSecret, tenantId, resource, CancellationToken.None);
 

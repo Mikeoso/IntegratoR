@@ -6,7 +6,7 @@ namespace IntegratoR.OData.Domain.Settings;
 /// Validates <see cref="ODataSettings"/> at startup and on first use, failing fast on dangerous or incomplete configuration.
 /// </summary>
 /// <remarks>
-/// Rejects an authentication header carried in <see cref="ODataApiManagementSettings.DefaultHeaders"/> (the framework owns the auth header) and an authentication mode without its required credentials.
+/// Rejects an authentication header carried in <see cref="ODataApiManagementSettings.DefaultHeaders"/> (the framework owns the auth header), an authentication mode without its required credentials, and a <see cref="ODataBatchSettings.MaxOperationsPerChunk"/> outside 1–200.
 /// </remarks>
 public sealed class ODataSettingsValidator : IValidateOptions<ODataSettings>
 {
@@ -88,10 +88,10 @@ public sealed class ODataSettingsValidator : IValidateOptions<ODataSettings>
         }
 
         // Batch chunk size must stay within D365 F&O's enforced ceiling of 200 operations per $batch.
-        if (options.Batch.MaxOperationsPerChunk is < 1 or > 200)
+        if (options.Batch.MaxOperationsPerChunk is < 1 or > ODataBatchSettings.MaxOperationsPerBatchLimit)
         {
             failures.Add(
-                $"ODataSettings.Batch.MaxOperationsPerChunk must be between 1 and 200 (D365 F&O's enforced maximum " +
+                $"ODataSettings.Batch.MaxOperationsPerChunk must be between 1 and {ODataBatchSettings.MaxOperationsPerBatchLimit} (D365 F&O's enforced maximum " +
                 $"operations per $batch). The configured value was {options.Batch.MaxOperationsPerChunk}.");
         }
 

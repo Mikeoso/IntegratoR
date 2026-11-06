@@ -192,7 +192,7 @@ public class ApplicationDependencyInjectionTests
 
     /// <summary>
     /// Verifies that the obsolete, unused <see cref="ODataMetadataProvider"/> is NOT registered.
-    /// Its DI registration was removed (the type is dead at runtime and removed next MAJOR).
+    /// Its DI registration was removed (the type is dead at runtime and is planned for removal in a future major version).
     /// </summary>
     [Fact]
     public void AddODataClient_DoesNotRegisterObsoleteMetadataProvider()

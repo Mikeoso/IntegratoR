@@ -5,8 +5,8 @@ using IntegratoR.Abstractions.Interfaces.Entity;
 namespace IntegratoR.Abstractions.Interfaces.Services;
 
 /// <summary>
-/// Defines create, update, and delete operations over multiple entities, submitted as OData
-/// <c>$batch</c> requests and chunked automatically.
+/// Defines create, update, and delete operations over multiple entities, chunked automatically and
+/// submitted per chunk as an OData <c>$batch</c> changeset or as per-item requests, depending on the failure mode.
 /// </summary>
 /// <typeparam name="TEntity">The type of the entity for the batch operations.</typeparam>
 /// <remarks>
@@ -19,7 +19,7 @@ namespace IntegratoR.Abstractions.Interfaces.Services;
 public interface IBatchService<TEntity> where TEntity : IEntity
 {
     /// <summary>
-    /// Creates a collection of entities, chunked into one or more <c>$batch</c> requests.
+    /// Creates a collection of entities in one or more chunks.
     /// </summary>
     /// <param name="entities">The entity instances to create.</param>
     /// <param name="options">Optional per-call overrides for failure mode and chunk size; <see langword="null"/> uses the configured defaults.</param>
@@ -28,7 +28,7 @@ public interface IBatchService<TEntity> where TEntity : IEntity
     Task<Result<BatchOutcome>> AddBatchAsync(IEnumerable<TEntity> entities, BatchOptions? options = null, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Updates a collection of entities, chunked into one or more <c>$batch</c> requests. Each entity must have its key populated.
+    /// Updates a collection of entities in one or more chunks. Each entity must have its key populated.
     /// </summary>
     /// <param name="entities">The entity instances to update.</param>
     /// <param name="options">Optional per-call overrides for failure mode and chunk size; <see langword="null"/> uses the configured defaults.</param>
@@ -40,7 +40,7 @@ public interface IBatchService<TEntity> where TEntity : IEntity
     Task<Result<BatchOutcome>> UpdateBatchAsync(IEnumerable<TEntity> entities, BatchOptions? options = null, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Deletes a collection of entities, chunked into one or more <c>$batch</c> requests. Each entity must have its key populated.
+    /// Deletes a collection of entities in one or more chunks. Each entity must have its key populated.
     /// </summary>
     /// <param name="entities">The entity instances to delete.</param>
     /// <param name="options">Optional per-call overrides for failure mode and chunk size; <see langword="null"/> uses the configured defaults.</param>

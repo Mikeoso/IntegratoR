@@ -8,7 +8,7 @@ using Xunit;
 
 namespace IntegratoR.OData.Tests.Common.Services;
 
-// ODataMetadataProvider is [Obsolete] (unused at runtime, removed next MAJOR). These tests are
+// ODataMetadataProvider is [Obsolete] (unused at runtime, planned for removal in a future major version). These tests are
 // retained for coverage until the type is removed; suppress CS0618 for the type references here.
 #pragma warning disable CS0618 // Type or member is obsolete
 

@@ -46,7 +46,7 @@ Add your D365 connection settings:
 }
 ```
 
-See [Configure OData](https://github.com/Mikeoso/IntegratoR/wiki/Configure-OData) for all available settings (timeouts, retries, circuit breaker, local metadata).
+See [Configure OData](https://github.com/Mikeoso/IntegratoR/wiki/Configure-OData) for all available settings (timeouts, retries, circuit breaker, batch chunking).
 
 Send a command to create a journal header:
 
@@ -81,9 +81,8 @@ Every operation returns a `Result<T>` -- no exceptions for business logic errors
 | **IntegratoR.Application** | MediatR pipeline behaviours, generic handlers, OAuth, caching |
 | **IntegratoR.OData** | Generic OData client, resilience policies, field serialization control |
 | **IntegratoR.OData.FO** | D365 F&O entities, feature-specific handlers, financial dimensions |
-| **IntegratoR.TestKit** | Custom `Result` assertions, fakes, test entity builders |
 
-For most projects, add only `IntegratoR.Hosting` -- it pulls in all other packages as transitive dependencies. Add `IntegratoR.TestKit` to your test projects.
+For most projects, add only `IntegratoR.Hosting` -- it pulls in all other packages as transitive dependencies. `IntegratoR.TestKit` (Result assertions, fakes, builders) is not published to NuGet; reference it from source if you want it in your tests.
 
 ## What It Does
 
@@ -108,7 +107,7 @@ Full documentation is in the [wiki](https://github.com/Mikeoso/IntegratoR/wiki):
 - [Handle Errors](https://github.com/Mikeoso/IntegratoR/wiki/Handle-Errors) -- `Result<T>`, `IntegrationError`, pattern matching
 - [Configure OData](https://github.com/Mikeoso/IntegratoR/wiki/Configure-OData) -- auth, timeouts, retry and circuit breaker
 - [Work with Dimensions](https://github.com/Mikeoso/IntegratoR/wiki/Work-with-Dimensions) -- build financial dimension strings
-- [Write Tests](https://github.com/Mikeoso/IntegratoR/wiki/Write-Tests) -- TestKit assertions, fakes, builders
+- [Test with TestKit](https://github.com/Mikeoso/IntegratoR/wiki/Test-with-TestKit) -- TestKit assertions, fakes, builders
 
 ## Architecture
 
