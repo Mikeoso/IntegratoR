@@ -1,6 +1,6 @@
 # Define Entities
 
-> Last verified against v2.0.1
+> Last verified against v3.0.0
 
 Every D365 F&O data entity you read or write needs a C# class. Inherit the non-generic `BaseEntity`, map the class to its OData entity set with `[Table]`, declare the composite key with `[Key]` plus `GetCompositeKey()`, and control per-property serialisation with `[ODataField]` and `[JsonPropertyName]`.
 
@@ -61,7 +61,7 @@ public class DimensionParameters : BaseEntity
 ```
 
 > [!WARNING]
-> Never inherit `BaseEntity<TKey>`. Its `TKey` parameter was never used, it is `[Obsolete]` since v1.4.0, and it is removed in the next MAJOR. Derive every new entity from the non-generic `BaseEntity`.
+> Never inherit `BaseEntity<TKey>`. Its `TKey` parameter was never used and it has been `[Obsolete]` since v2.0.0. v3.0.0 still ships it; removal is planned for a future major version (v4 at the earliest). Derive every new entity from the non-generic `BaseEntity`.
 
 ## Declare the composite key
 

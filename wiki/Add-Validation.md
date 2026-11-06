@@ -1,5 +1,5 @@
 # Add Validation
-> Last verified against v2.0.1
+> Last verified against v3.0.0
 
 Validation runs as a pipeline behaviour: `ValidationBehaviour` executes every registered FluentValidation validator for a command or query before its handler runs, so the handler assumes valid input. A registered validator on the request type is all you write.
 

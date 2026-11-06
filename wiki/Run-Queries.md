@@ -1,6 +1,6 @@
 # Run Queries
 
-> Last verified against v2.0.1
+> Last verified against v3.0.0
 
 Read records from D365 F&O with two generic queries — by composite key and by LINQ filter — sent through `IMediator`. Both return a `Result<T>`; neither mutates the server. For `$orderby`, `$select`, `$expand`, paging, and `$count`, drop to the typed `IODataService<TEntity>` methods.
 
@@ -137,7 +137,7 @@ int openJournals = count.IsSuccess ? count.Value : 0;
 
 ## Cache a slow read
 
-For data that changes rarely — dimension formats, reference data — make the query implement `ICacheableQuery<TResponse>`. Supply `CacheKey` and `CacheDuration`; the `CachingBehaviour` reads and writes the cache around the handler.
+For data that changes rarely — dimension formats, reference data — make the query implement `ICacheableQuery<TResponse>`; the `CachingBehaviour` reads and writes the cache around the handler. The shipped `GetDimensionOrdersQuery` opts in like this:
 
 ```csharp
 using FluentResults;
@@ -152,6 +152,11 @@ public record GetDimensionOrdersQuery(string DimensionFormat, DimensionHierarchy
 
     public TimeSpan? CacheDuration => TimeSpan.FromMinutes(15);
 
+    // Still required by the interface while these [Obsolete] members exist; CachingBehaviour never calls them.
+    public string GenerateCacheKey() => CacheKey;
+
+    public object[] GetCacheKeyValues() => [nameof(GetDimensionOrdersQuery), DimensionFormat, HierarchyType];
+
     public IReadOnlyDictionary<string, object> GetLoggingContext() => new Dictionary<string, object>
     {
         { "DimensionFormat", DimensionFormat },
@@ -160,10 +165,10 @@ public record GetDimensionOrdersQuery(string DimensionFormat, DimensionHierarchy
 }
 ```
 
-The `CachingBehaviour` returns a cached `Result<T>` on a `CacheKey` hit and otherwise runs the handler, caching only a successful result for `CacheDuration` — failed results are never cached, so the next call retries. Set `CacheDuration` to `null` on an instance to skip the cache even when the type opts in. See [Cache Query Results](Cache-Query-Results) for distributed-cache wiring.
+The `CachingBehaviour` returns the cached `Result<T>` on a `CacheKey` hit and otherwise runs the handler, storing only a successful result — failed results are never cached, so the next call retries. `CacheDuration` sets the expiry; a `null` duration does not skip the cache, it stores the result for the cache service's 30-minute default. See [Cache Query Results](Cache-Query-Results) for distributed-cache wiring.
 
 > [!NOTE]
-> `CacheKey` is the only key member you implement. The `GenerateCacheKey()` and `GetCacheKeyValues()` members on `ICacheableQuery<T>` are `[Obsolete]` — the behaviour uses `CacheKey` directly and both are removed in the next MAJOR.
+> `CacheKey` is the only key the behaviour reads, but `ICacheableQuery<T>` still declares `GenerateCacheKey()` and `GetCacheKeyValues()`, so every implementation must provide them. Both are `[Obsolete]` since v2.0.0; v3.0.0 still requires them, and removal is planned for a future major version (v4 at the earliest).
 
 ## Compose a custom query
 

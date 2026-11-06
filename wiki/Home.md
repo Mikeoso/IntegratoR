@@ -10,7 +10,7 @@ A .NET 10 framework for building Microsoft Dynamics 365 Finance & Operations int
 | [Getting Started](Getting-Started) | Install, wire `AddIntegratoR`, and send your first command end to end |
 | [Configure OData](Configure-OData) | The full `ODataSettings` tree — connection, timeout, authentication, resilience — and fail-fast validation |
 | [Define Entities](Define-Entities) | `BaseEntity` + `GetCompositeKey()`, `[ODataField]`, `[JsonPropertyName]`, and extending a built-in entity |
-| [Send Commands](Send-Commands) | Create / Update / Delete singletons and batches, composite-key writes, and custom commands |
+| [Send Commands](Send-Commands) | Create / Update / Delete singletons, chunked batch writes (`Atomic` or `ContinueOnError`), composite-key writes, and custom commands |
 | [Run Queries](Run-Queries) | `GetByKeyQuery`, `GetByFilterQuery`, and typed LINQ-to-OData with `$orderby` |
 
 ### Use Cases

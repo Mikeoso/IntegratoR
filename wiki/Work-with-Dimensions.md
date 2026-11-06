@@ -1,5 +1,5 @@
 # Work with Dimensions
-> Last verified against v2.0.1
+> Last verified against v3.0.0
 
 D365 F&O encodes a financial dimension as a delimiter-separated string like `618160-001-PC42`. The segment order is per-environment metadata, so resolve the format from D365 first, then use `FinancialDimensionBuilder` to write a value and `FinancialDimensionReader` to read one back.
 
@@ -164,7 +164,7 @@ line.AccountDisplayValue = displayValue; // e.g. "618160-001-PC42"
 
 `AccountDisplayValue` is **also** `[ODataField(IgnoreOnCreate = true)]`, so the framework strips it from the POST body too. D365 resolves the main account and dimensions server-side from the journal template; whether it accepts the composite string on create depends on that template, so it is not a guaranteed round-trip. Read the value back from `result.Value` after the create, and see [Known Limitations](Known-Limitations) for the `required` + `IgnoreOnCreate` audit.
 
-`GetCharValue` currently maps only the `Hyphen` delimiter; any other `DimensionSegmentDelimiter` throws `ArgumentOutOfRangeException` inside the handler. If your environment uses a non-hyphen delimiter, that is a live gap — see [Known Limitations](Known-Limitations).
+`GetCharValue` currently maps only the `Hyphen` delimiter; any other `DimensionSegmentDelimiter` throws `ArgumentOutOfRangeException` inside the handler. If your environment uses a non-hyphen delimiter, that is a live gap — see [Known Limitations](Known-Limitations#dimension-segment-delimiters).
 
 The bundled smoke test proves this flow against a real D365 sandbox — `POST /api/smoke/financial-dimensions` runs `GetDimensionOrdersQuery` end to end and returns the live delimiter and segments. See [Run Smoke Tests](Run-Smoke-Tests).
 

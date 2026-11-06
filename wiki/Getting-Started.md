@@ -1,5 +1,5 @@
 # Getting Started
-> Last verified against v2.0.1
+> Last verified against v3.0.0
 
 By the end of this page you will have an Azure Functions isolated-worker host that sends a `CreateCommand<LedgerJournalHeader>` to D365 F&O and reads back the server-assigned `JournalBatchNumber`.
 
@@ -129,10 +129,10 @@ Every framework operation returns `Result<T>`. Business failures never throw —
 }
 ```
 
-On success, `result.Value.JournalBatchNumber` holds the number sequence value D365 assigned. On failure, `error.Code` and `error.Type` tell you what happened: bad OAuth credentials surface as code `Auth.Msal.{code}` with `ErrorType.Failure`; a validation failure surfaces as `Validation.Error` with `ErrorType.Validation`.
+On success, `result.Value.JournalBatchNumber` holds the number sequence value D365 assigned. On failure, `error.Code` and `error.Type` tell you what happened: bad OAuth credentials surface as code `LedgerJournalHeader.Unauthorized` with `ErrorType.Failure`; a validation failure surfaces as `Validation.Error` with `ErrorType.Validation`.
 
-> [!WARNING]
-> An OAuth token-acquisition failure short-circuits the HTTP pipeline with **401** and the generic `ReasonPhrase "Authentication failed"` — no tenant IDs or MSAL codes leak to the caller. The full MSAL detail stays server-side in the logged `IntegrationError`.
+> [!NOTE]
+> An OAuth token-acquisition failure short-circuits the HTTP pipeline with a bare **401** (`ReasonPhrase "Authentication failed"`) before any request reaches D365. The auth handler discards the MSAL error and nothing logs it, so the mediator result carries only `{Entity}.Unauthorized`. To see the MSAL error code, call `IAuthenticator.GetAccessTokenAsync` directly — see [Troubleshoot Common Issues](Troubleshoot-Common-Issues).
 
 ## What just happened
 
@@ -143,14 +143,15 @@ On success, `result.Value.JournalBatchNumber` holds the number sequence value D3
 3. `CachingBehaviour` checked for an `ICacheableQuery<T>` marker; commands are never cached, so it passed through.
 4. `CreateCommandHandler<LedgerJournalHeader>` serialised the entity (omitting `JournalBatchNumber`) and POSTed it to the `LedgerJournalHeaders` set.
 
-Before the request reached D365, the `ODataAuthenticationHandler` acquired an OAuth bearer token via MSAL (cached with proactive refresh), and Polly wrapped the call with retry on transient status codes and a circuit breaker. The response deserialised into a fresh `LedgerJournalHeader` — `JournalBatchNumber` populated — wrapped in a successful `Result<T>`.
+Before the request reached D365, the `ODataAuthenticationHandler` acquired an OAuth bearer token via MSAL (cached with proactive refresh), and Polly wrapped the call — this POST included — with retry on transient failures and a circuit breaker (see [Configure Resilience](Configure-Resilience)). The response deserialised into a fresh `LedgerJournalHeader` — `JournalBatchNumber` populated — wrapped in a successful `Result<T>`.
 
 ## Run the full sample
 
-`IntegratoR.SampleFunction` is a clone-and-run host with two HTTP triggers that exercise the pipeline against a live D365 sandbox:
+`IntegratoR.SampleFunction` is a clone-and-run host with three HTTP triggers that exercise the pipeline against a D365 sandbox:
 
 - `POST smoke/ledger-journal` runs create, get-by-key, filter, update, and delete across `LedgerJournalHeader` and `LedgerJournalLine`, returning a per-step JSON breakdown.
 - `POST smoke/financial-dimensions` runs `GetDimensionOrdersQuery` against the dimension metadata entities.
+- `POST smoke/ledger-journal-batch` exercises the chunked batch write path under one journal header: a chunked atomic create, an atomic rollback, a `ContinueOnError` partial accept, and a batch delete. v3.0.0 ships without a live D365 run of this trigger, so the batch path, `$batch` included, is not yet live-verified.
 
 See [Run Smoke Tests](Run-Smoke-Tests) for request bodies and expected responses.
 

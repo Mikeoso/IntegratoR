@@ -1,5 +1,5 @@
 # Troubleshoot Common Issues
-> Last verified against v2.0.1 (live-D365 items dated per run)
+> Last verified against v3.0.0 (live-D365 items dated per run)
 
 Each entry is keyed by the error you see. Match the symptom, read the one-line cause, apply the fix. Live-server behaviour is dated to the smoke run that proved it.
 
@@ -21,8 +21,9 @@ if (result.IsFailed)
     IntegrationError? error = result.GetError();
     // On a stray read-only field the OData layer surfaces the 403 as a failed Result.
     // error?.Type == ErrorType.Failure; error?.Code == "LedgerJournalHeader.Unauthorized".
-    // error?.Exception is the wrapped ODataClientException — its Message and response body
-    // carry D365's ODataSecurityException and the "update not allowed for field 'X'" detail.
+    // error?.Exception is the wrapped ODataClientException — its ResponseBody carries D365's
+    // ODataSecurityException and the "update not allowed for field 'X'" detail. The host log
+    // records the same body, truncated to 1,024 characters.
 }
 ```
 
@@ -32,27 +33,40 @@ Verified against live D365 (JFI) on 2026-07-01: the five `LedgerJournalHeader` f
 
 ## HTTP 401 with `ReasonPhrase "Authentication failed"`
 
-`ODataAuthenticationHandler` could not attach a bearer token, so it short-circuited the request before it reached D365. The 401 carries the fixed generic phrase and no MSAL detail — tenant IDs and AADSTS codes stay server-side in the logged `IntegrationError`.
-
-Check the failed `Result<T>` from the OAuth path — its `Code` is `Auth.Msal.{code}`, where `{code}` is the MSAL error code:
+`ODataAuthenticationHandler` could not acquire a bearer token, so it short-circuited the request before it reached D365. The 401 carries the fixed generic phrase and no MSAL detail. The handler discards the MSAL error and nothing logs it, so the mediator result says only that authentication failed:
 
 ```csharp
 if (result.IsFailed)
 {
     IntegrationError? error = result.GetError();
-    // error?.Code == "Auth.Msal.invalid_client"  (Auth.Msal.{MSAL error code})
-    // error?.Type == ErrorType.Failure; error?.Message == "Token acquisition failed".
-    // error?.Exception carries the full MSAL detail for server-side logging.
+    // error?.Code == "LedgerJournalHeader.Unauthorized"  ({Entity}.Unauthorized)
+    // error?.Type == ErrorType.Failure; error?.Message == "Authentication or authorisation failure".
 }
 ```
 
-Read the MSAL code on the inner exception in the host log and act on it:
+`{Entity}.Unauthorized` covers this short-circuit and a 401 or 403 returned by D365 itself. To see the MSAL error, call the injected `IAuthenticator` directly with the same credentials — only this path returns `Auth.Msal.{code}`:
 
-| MSAL code | Cause | Fix |
+```csharp
+ODataOAuthSettings oauth = odataOptions.Value.Authentication.OAuth;   // IOptions<ODataSettings>
+
+Result<string> token = await authenticator.GetAccessTokenAsync(
+    oauth.ClientId, oauth.ClientSecret, oauth.TenantId, oauth.Resource, cancellationToken);
+
+if (token.IsFailed)
+{
+    IntegrationError? error = token.GetError();
+    // error?.Code == "Auth.Msal.invalid_client"  (Auth.Msal.{MSAL error code})
+    // error?.Exception is the MsalException; its message carries the AADSTS code — log it server-side only.
+}
+```
+
+Read the AADSTS code from the exception message and act on it:
+
+| AADSTS code | Cause | Fix |
 |---|---|---|
 | `AADSTS7000215` | Invalid client secret | Rotate the secret in Azure AD, re-deploy via Key Vault |
 | `AADSTS50012` | Secret truncated or malformed | Re-copy the secret from Azure AD verbatim |
-| `AADSTS50034` | Wrong tenant | Set `TenantId` to the tenant where the app is registered |
+| `AADSTS700016` | App not found in the tenant | Set `TenantId` to the tenant where the app is registered |
 | `AADSTS70011` | Wrong resource | Set the resource to the environment URL **without** `/data` |
 
 If the token is acquired but D365 still returns 401, register the app as a service user in D365 F&O (*System administration -> Setup -> Azure Active Directory applications*). See [Authentication Modes](Authentication-Modes).
@@ -154,13 +168,39 @@ public class MyLedgerJournalLine : LedgerJournalLine
 
 The payload builder reflects on the runtime type, so an instance of the subclass picks up the re-declared attribute. The property must be `virtual` on the base entity.
 
+## `{Entity}.BatchFailed` from a batch command
+
+At least one operation in a `CreateBatchCommand<T>`, `UpdateBatchCommand<T>`, or `DeleteBatchCommand<T>` failed. The message carries only the count; the per-item detail is on the `BatchOutcome` inside the error. See [Send Commands](Send-Commands#send-a-batch) for the failure modes.
+
+```csharp
+Result<BatchOutcome> result = await mediator.Send(
+    new CreateBatchCommand<LedgerJournalLine>(lines), cancellationToken);
+
+if (result.IsFailed && result.GetError() is BatchIntegrationError batchError)
+{
+    // batchError.Code == "LedgerJournalLine.BatchFailed"; batchError.Message reports "{failed} of {total} AddBatch operations failed".
+    foreach (BatchItemResult failure in batchError.Outcome.Failures)
+    {
+        // failure.Index (position in your list), failure.StatusCode, failure.Key, failure.ErrorMessage (D365 inner error)
+    }
+}
+```
+
+Read the outcome with these rules:
+
+- **Atomic chunk rolled back.** Every operation in that chunk is reported failed with the status of the operation D365 rejected — the valid ones included, because nothing in the chunk committed. Fix the bad record and re-send the whole chunk.
+- **Chunks missing from the outcome.** In `Atomic` mode with `StopOnFirstFailedChunk` (default `true`), chunks after the failed one are never sent and do not appear in `Outcome.Items`. The message then ends "(remaining chunks skipped after a failed chunk in Atomic mode)" — even when the failed chunk was the last — so compare `Outcome.Total` with your input count to find what was never sent.
+- **`StatusCode` 0.** The chunk send threw — for example an open circuit breaker or a connection failure — and `ErrorMessage` holds the exception message. The real outcome is unknown: in `ContinueOnError` mode, items sent earlier in that chunk may already have committed. Check before re-sending.
+- **An exception instead of a result.** A chunk that hits the `HttpClient` timeout is not captured: its `TaskCanceledException` escapes `mediator.Send`, and the outcome of chunks already sent is lost. Query by a business key before re-sending.
+- **Every item `401`.** Authentication failed, so nothing ran — see the 401 entry above.
+
 ## When the diagnostic is not here
 
 For any error not listed above:
 
-1. Read the host log — the framework logs the normalised base URL, the OData request URL, the auth mode, and every retry attempt.
+1. Read the host log — the framework logs the normalised base URL at startup, every failed OData operation with its HTTP status and D365 response body (truncated), and every attempt of its two retry policies (see [Configure Resilience](Configure-Resilience)).
 2. Run the financial-dimension smoke test (read-only, low-risk); it surfaces auth, network, and OData configuration errors as typed `IntegrationError` codes without writing to D365. See [Run Smoke Tests](Run-Smoke-Tests).
-3. Match on the `IntegrationError.Code` prefix — codes follow the `<Subsystem>.<Cause>` convention (`Auth.Msal.{code}`, `Validation.Error`).
+3. Match on the `IntegrationError.Code` — OData failures follow `{Entity}.{Cause}` (`LedgerJournalHeader.Unauthorized`, `LedgerJournalHeader.NotFound`, `LedgerJournalLine.BatchFailed`); validation failures use `Validation.Error`.
 4. Open an issue at [the IntegratoR repository](https://github.com/Mikeoso/IntegratoR/issues) with the request URL, the `IntegrationError` shape, and the failing host-log lines.
 
 ## See Also
