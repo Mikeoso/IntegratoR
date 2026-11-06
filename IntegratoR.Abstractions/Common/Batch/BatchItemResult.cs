@@ -24,6 +24,11 @@ public sealed record BatchItemResult
     /// <summary>
     /// Gets the HTTP status code D365 returned for this operation.
     /// </summary>
+    /// <remarks>
+    /// Two values do not come from D365 for this operation: <c>0</c> means its chunk could not be sent or
+    /// the response was lost (a network failure or timeout), so whether D365 applied it is unknown;
+    /// <c>502</c> means a changeset failed but its response could not be matched to the operations sent.
+    /// </remarks>
     public required int StatusCode { get; init; }
 
     /// <summary>

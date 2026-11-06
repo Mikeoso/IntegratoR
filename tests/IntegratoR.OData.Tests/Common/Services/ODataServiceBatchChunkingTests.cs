@@ -110,6 +110,7 @@ public class ODataServiceBatchChunkingTests
         var error = (BatchIntegrationError)result.GetError()!;
         error.Outcome.ChunkCount.Should().Be(1);
         error.Outcome.Total.Should().Be(2); // only the first chunk was submitted
+        error.Message.Should().Contain("remaining chunks skipped"); // chunks 2 and 3 were never sent
     }
 
     [Fact]
@@ -220,6 +221,133 @@ public class ODataServiceBatchChunkingTests
 
         await _client.DidNotReceive().BatchDeleteAsync(Arg.Any<string>(),
             Arg.Any<IEnumerable<object>>(), Arg.Any<BatchFailureMode>(), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// <c>AddBatchAsync</c> builds every payload via <c>BuildBatchPayloads</c> before sending anything.
+    /// <see cref="TestEntityWithD365Attributes.JournalName"/> is <c>[ODataField(IsRequired = true)]</c>
+    /// but left null on create, so <c>CreatePayload</c> throws and the batch must fail validation
+    /// without ever reaching the adapter.
+    /// </summary>
+    [Fact]
+    public async Task AddBatchAsync_RequiredFieldMissing_ReturnsValidationFailureAndSendsNothing()
+    {
+        var client = Substitute.For<IODataClientAdapter>();
+        var sut = new ODataService<TestEntityWithD365Attributes>(client, NullLogger<ODataService<TestEntityWithD365Attributes>>.Instance);
+
+        var entities = new List<TestEntityWithD365Attributes>
+        {
+            new() { DataAreaId = "USMF", Amount = 100m, JournalName = null },
+        };
+
+        Result<BatchOutcome> result = await sut.AddBatchAsync(entities, cancellationToken: CancellationToken.None);
+
+        result.Should().BeFailed();
+        result.Should().HaveErrorType(ErrorType.Validation);
+        result.Should().HaveErrorCode("TestEntityWithD365Attributes.RequiredFieldMissing");
+
+        await client.DidNotReceive().BatchCreateAsync(Arg.Any<string>(),
+            Arg.Any<IEnumerable<IDictionary<string, object>>>(), Arg.Any<BatchFailureMode>(), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// <c>CreatePayload</c> only raises the missing-required-field error when <c>isCreateOperation</c>
+    /// is <see langword="true"/> (see <see cref="ODataService{TEntity}.UpdateAsync"/>'s matching
+    /// single-entity behaviour) — the same null <see cref="TestEntityWithD365Attributes.JournalName"/>
+    /// that fails a create must NOT fail an update now that both paths share <c>BuildBatchPayloads</c>.
+    /// </summary>
+    [Fact]
+    public async Task UpdateBatchAsync_NullRequiredField_SucceedsBecauseRequiredValidationIsCreateOnly()
+    {
+        var client = Substitute.For<IODataClientAdapter>();
+        var sut = new ODataService<TestEntityWithD365Attributes>(client, NullLogger<ODataService<TestEntityWithD365Attributes>>.Instance);
+        client.BatchUpdateAsync(Arg.Any<string>(),
+                Arg.Any<IEnumerable<(object Key, IDictionary<string, object> Payload)>>(),
+                Arg.Any<BatchFailureMode>(), Arg.Any<CancellationToken>())
+            .Returns(_ => ChunkResults(1));
+
+        var entities = new List<TestEntityWithD365Attributes>
+        {
+            new() { DataAreaId = "USMF", JournalBatchNumber = "JB-1", Amount = 100m, JournalName = null },
+        };
+
+        Result<BatchOutcome> result = await sut.UpdateBatchAsync(entities, cancellationToken: CancellationToken.None);
+
+        result.Should().BeSuccessful();
+    }
+
+    /// <summary>
+    /// A chunk send that throws <see cref="TaskCanceledException"/> while the caller's own token is NOT
+    /// cancelled is an HttpClient timeout, not a cancellation — its items must be reported as failed with
+    /// <c>StatusCode == 0</c> and earlier chunks' results kept, not lose the whole run to an escaping exception.
+    /// </summary>
+    [Fact]
+    public async Task AddBatchAsync_ChunkTimesOut_ReportsItsItemsAsStatusZeroAndKeepsEarlierChunks()
+    {
+        int callCount = 0;
+        _client.BatchCreateAsync(Arg.Any<string>(), Arg.Any<IEnumerable<IDictionary<string, object>>>(),
+                Arg.Any<BatchFailureMode>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                callCount++;
+                return callCount == 1
+                    ? Task.FromResult(ChunkResults(1))
+                    : throw new TaskCanceledException();
+            });
+
+        Result<BatchOutcome> result = await _sut.AddBatchAsync(
+            Entities(2),
+            new BatchOptions { MaxOperationsPerChunk = 1, Mode = BatchFailureMode.ContinueOnError },
+            CancellationToken.None);
+
+        result.Should().BeFailed();
+        var error = (BatchIntegrationError)result.GetError()!;
+        error.Outcome.Items.Should().HaveCount(2);
+        error.Outcome.Items[0].IsSuccess.Should().BeTrue();
+        error.Outcome.Items[1].IsSuccess.Should().BeFalse();
+        error.Outcome.Items[1].StatusCode.Should().Be(0);
+    }
+
+    /// <summary>
+    /// The caller's own cancellation must still propagate as an <see cref="OperationCanceledException"/>
+    /// rather than be swallowed and reported as a failed chunk — only an HttpClient timeout (the
+    /// caller's token still live) is converted into per-item failures.
+    /// </summary>
+    [Fact]
+    public async Task AddBatchAsync_CallerCancels_Propagates()
+    {
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        _client.BatchCreateAsync(Arg.Any<string>(), Arg.Any<IEnumerable<IDictionary<string, object>>>(),
+                Arg.Any<BatchFailureMode>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromException<IReadOnlyList<BatchOperationResult>>(new OperationCanceledException(cts.Token)));
+
+        Func<Task> act = () => _sut.AddBatchAsync(Entities(1), cancellationToken: cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    /// <summary>
+    /// When the LAST chunk is the one that fails in Atomic mode, no chunk was actually skipped — the
+    /// <see cref="BatchIntegrationError"/> message must not claim otherwise.
+    /// </summary>
+    [Fact]
+    public async Task AddBatchAsync_AtomicLastChunkFails_DoesNotClaimChunksWereSkipped()
+    {
+        int call = 0;
+        OnCreate(count =>
+        {
+            call++;
+            return ChunkResults(count, failLocalIndex: call == 2 ? 0 : null); // second (last) chunk fails
+        });
+
+        Result<BatchOutcome> result = await _sut.AddBatchAsync(
+            Entities(2), new BatchOptions { Mode = BatchFailureMode.Atomic, MaxOperationsPerChunk = 1 }, CancellationToken.None);
+
+        await ReceivedCreateCalls(2); // both chunks were sent — nothing was actually skipped
+        result.Should().BeFailed();
+        var error = (BatchIntegrationError)result.GetError()!;
+        error.Message.Should().NotContain("remaining chunks skipped");
     }
 
     private sealed class SingleKeyEntity : BaseEntity
