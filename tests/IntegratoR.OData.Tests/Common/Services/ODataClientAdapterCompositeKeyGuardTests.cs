@@ -62,8 +62,15 @@ public class ODataClientAdapterCompositeKeyGuardTests
         Func<Task> act = () => adapter.FindByKeyAsync<TestEntity>("TestEntities", compositeKey);
 
         // Assert
-        await act.Should().ThrowAsync<ArgumentException>()
-            .WithMessage("*is not a valid OData property identifier*");
+        ArgumentException exception = (await act.Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*is not a valid OData property identifier*")).Which;
+
+        // The raw field name must not be echoed back into the message (it could carry injected
+        // content); skip the empty-segment case, where every string trivially "contains" "".
+        if (!string.IsNullOrEmpty(taintedKey))
+        {
+            exception.Message.Should().NotContain(taintedKey);
+        }
     }
 
     [Theory]

@@ -454,15 +454,32 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
     private static Result<List<object>> BuildBatchKeys(IList<TEntity> entities)
     {
         var keys = new List<object>(entities.Count);
-        foreach (var entity in entities)
+        for (int index = 0; index < entities.Count; index++)
         {
-            var keyResult = BuildCompositeKeyObject(entity.GetCompositeKey());
+            var keyResult = BuildCompositeKeyObject(entities[index].GetCompositeKey());
             if (keyResult.IsFailed)
             {
                 return Result.Fail<List<object>>(keyResult.Errors);
             }
 
-            keys.Add(keyResult.Value);
+            object key = keyResult.Value;
+
+            // The adapter repeats this per call, but it only sees one chunk: by then earlier chunks are committed.
+            bool hasControlCharacters = key is IDictionary<string, object> compositeKey
+                ? compositeKey.Values.Any(ODataClientAdapter.HasControlCharacters)
+                : ODataClientAdapter.HasControlCharacters(key);
+
+            if (hasControlCharacters)
+            {
+                // The value is deliberately not echoed: it would carry the CR/LF into logs and results.
+                return Result.Fail<List<object>>(new IntegrationError(
+                    $"{typeof(TEntity).Name}.InvalidKey",
+                    $"The key of the entity at index {index} contains a control character, so the batch " +
+                    "was rejected before anything was sent.",
+                    ErrorType.Validation));
+            }
+
+            keys.Add(key);
         }
 
         return Result.Ok(keys);

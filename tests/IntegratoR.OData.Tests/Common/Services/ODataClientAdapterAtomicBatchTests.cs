@@ -213,7 +213,9 @@ public sealed class ODataClientAdapterAtomicBatchTests : IDisposable
         Func<Task> act = () => adapter.BatchCreateAsync(
             "LedgerJournalHeaders\r\nX-Injected: 1", payloads, BatchFailureMode.Atomic, CancellationToken.None);
 
-        await act.Should().ThrowAsync<ArgumentException>().WithMessage("*not a valid OData identifier*");
+        ArgumentException exception = (await act.Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*not a valid OData identifier*")).Which;
+        exception.Message.Should().NotContain("X-Injected").And.NotContain("\r").And.NotContain("\n");
         handler.SentRequests.Should().BeEmpty();
     }
 

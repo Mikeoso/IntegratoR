@@ -139,6 +139,68 @@ public class ODataServiceBatchChunkingTests
         failed.Key!["recId"].Should().Be(42L);
     }
 
+    /// <summary>
+    /// <see cref="ODataService{TEntity}.BuildBatchKeys"/> validates every entity's key up front, before
+    /// <c>RunBatchInChunksAsync</c> chunks the list. With chunk size 1 and the control character on the
+    /// SECOND entity, chunk 0 must never reach the adapter — the earlier per-chunk-only guard would have
+    /// let it through and committed it before the second chunk's key was even built.
+    /// </summary>
+    [Fact]
+    public async Task UpdateBatch_ControlCharacterInLaterKey_RejectsBatchBeforeAnyChunkIsSent()
+    {
+        _client.BatchUpdateAsync(Arg.Any<string>(),
+                Arg.Any<IEnumerable<(object Key, IDictionary<string, object> Payload)>>(),
+                Arg.Any<BatchFailureMode>(), Arg.Any<CancellationToken>())
+            .Returns(_ => ChunkResults(1)); // would look like a committed success if chunk 0 were sent
+
+        var entities = new List<TestEntity>
+        {
+            TestEntityBuilder.Default().WithId("id-0").Build(),
+            TestEntityBuilder.Default().WithId("B2\r\nX-Injected: 1").Build(),
+        };
+
+        Result<BatchOutcome> result = await _sut.UpdateBatchAsync(
+            entities, new BatchOptions { MaxOperationsPerChunk = 1 }, CancellationToken.None);
+
+        result.Should().BeFailed();
+        result.Should().HaveErrorType(ErrorType.Validation);
+        result.Should().HaveErrorCode("TestEntity.InvalidKey");
+        string message = result.GetError()!.Message;
+        message.Should().Contain("index 1");
+        message.Should().NotContain("\r").And.NotContain("\n").And.NotContain("X-Injected");
+
+        await _client.DidNotReceive().BatchUpdateAsync(Arg.Any<string>(),
+            Arg.Any<IEnumerable<(object Key, IDictionary<string, object> Payload)>>(),
+            Arg.Any<BatchFailureMode>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task DeleteBatch_ControlCharacterInLaterKey_RejectsBatchBeforeAnyChunkIsSent()
+    {
+        _client.BatchDeleteAsync(Arg.Any<string>(), Arg.Any<IEnumerable<object>>(),
+                Arg.Any<BatchFailureMode>(), Arg.Any<CancellationToken>())
+            .Returns(_ => ChunkResults(1)); // would look like a committed success if chunk 0 were sent
+
+        var entities = new List<TestEntity>
+        {
+            TestEntityBuilder.Default().WithId("id-0").Build(),
+            TestEntityBuilder.Default().WithId("B2\r\nX-Injected: 1").Build(),
+        };
+
+        Result<BatchOutcome> result = await _sut.DeleteBatchAsync(
+            entities, new BatchOptions { MaxOperationsPerChunk = 1 }, CancellationToken.None);
+
+        result.Should().BeFailed();
+        result.Should().HaveErrorType(ErrorType.Validation);
+        result.Should().HaveErrorCode("TestEntity.InvalidKey");
+        string message = result.GetError()!.Message;
+        message.Should().Contain("index 1");
+        message.Should().NotContain("\r").And.NotContain("\n").And.NotContain("X-Injected");
+
+        await _client.DidNotReceive().BatchDeleteAsync(Arg.Any<string>(),
+            Arg.Any<IEnumerable<object>>(), Arg.Any<BatchFailureMode>(), Arg.Any<CancellationToken>());
+    }
+
     private sealed class SingleKeyEntity : BaseEntity
     {
         [Key]

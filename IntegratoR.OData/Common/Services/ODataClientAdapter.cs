@@ -133,7 +133,7 @@ public class ODataClientAdapter : IODataClientAdapter
                 if (!IsValidODataFieldName(kv.Key))
                 {
                     throw new ArgumentException(
-                        $"Composite key field name '{kv.Key}' is not a valid OData property identifier. " +
+                        "A composite key field name is not a valid OData property identifier. " +
                         "Keys must match the pattern ^[A-Za-z_][A-Za-z0-9_.]*$ and come from entity " +
                         "reflection (attribute-derived wire names), not user input.",
                         nameof(key));
@@ -599,7 +599,7 @@ public class ODataClientAdapter : IODataClientAdapter
         if (!IsValidODataFieldName(entitySet))
         {
             throw new ArgumentException(
-                $"Entity set name '{entitySet}' is not a valid OData identifier. It is spliced into " +
+                "The entity set name is not a valid OData identifier. It is spliced into " +
                 "the batch request line verbatim, so it must match ^[A-Za-z_][A-Za-z0-9_.]*$ and " +
                 "come from entity metadata, not user input.",
                 nameof(entitySet));
@@ -624,22 +624,21 @@ public class ODataClientAdapter : IODataClientAdapter
     /// </remarks>
     private static string FormatKeyLiteral(object? value)
     {
-        string literal = IntegratoRODataExpressionTranslator.FormatValue(value);
-
-        foreach (char c in literal)
+        if (HasControlCharacters(value))
         {
-            if (char.IsControl(c))
-            {
-                throw new ArgumentException(
-                    "Key values must not contain control characters. The batch request line is " +
-                    "assembled as text, so a carriage return or line feed would terminate it early " +
-                    "and inject content into the sub-request.",
-                    nameof(value));
-            }
+            throw new ArgumentException(
+                "Key values must not contain control characters. The batch request line is " +
+                "assembled as text, so a carriage return or line feed would terminate it early " +
+                "and inject content into the sub-request.",
+                nameof(value));
         }
 
-        return literal;
+        return IntegratoRODataExpressionTranslator.FormatValue(value);
     }
+
+    // Shared with ODataService, which rejects a whole batch with this before its first chunk is sent.
+    internal static bool HasControlCharacters(object? value) =>
+        IntegratoRODataExpressionTranslator.FormatValue(value).Any(char.IsControl);
 
     private static string SerializePayload(object payload) =>
         System.Text.Json.JsonSerializer.Serialize(payload, CaseInsensitiveOptions);
@@ -697,7 +696,7 @@ public class ODataClientAdapter : IODataClientAdapter
             if (!IsValidODataFieldName(kv.Key))
             {
                 throw new ArgumentException(
-                    $"Composite key field name '{kv.Key}' is not a valid OData property identifier. " +
+                    "A composite key field name is not a valid OData property identifier. " +
                     "Keys must match the pattern ^[A-Za-z_][A-Za-z0-9_.]*$ and come from entity " +
                     "reflection (attribute-derived wire names), not user input.",
                     nameof(key));
