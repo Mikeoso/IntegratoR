@@ -83,7 +83,7 @@ Generic `CreateCommand<T>`/`UpdateCommand<T>`/`DeleteCommand<T>` and `GetByKeyQu
 
 Every operation returns `Result<T>` (or non-generic `Result`) from FluentResults. Business failures return a failed `Result` carrying an `IntegrationError { string Code; ErrorType Type; Exception? Exception }`; they do not throw. `ErrorType` has four members: `Failure`, `Validation`, `NotFound`, `Conflict`.
 
-`ODataService<T>` also absorbs infrastructure faults on single-entity operations — a timeout, cancellation, or unrecognised exception comes back as `{Entity}.Timeout`, `{Entity}.Cancelled`, or `{Entity}.UnexpectedError`. The batch path turns a failed chunk send into failed items but lets cancellation and `HttpClient` timeouts propagate. The full list of what still throws is in [Handle Errors](Handle-Errors#what-still-throws).
+`ODataService<T>` also absorbs infrastructure faults on single-entity operations — a timeout, cancellation, or unrecognised exception comes back as `{Entity}.Timeout`, `{Entity}.Cancelled`, or `{Entity}.UnexpectedError`. The batch path turns a failed chunk send — an `HttpClient` timeout included — into failed items with `StatusCode` 0; only your own cancellation propagates. The full list of what still throws is in [Handle Errors](Handle-Errors#what-still-throws).
 
 Read failures with `result.IsFailed` and `result.GetError()` — never `try`/`catch` on the pipeline, never the verbose `result.Errors.FirstOrDefault()` form. See [Handle Errors](Handle-Errors).
 

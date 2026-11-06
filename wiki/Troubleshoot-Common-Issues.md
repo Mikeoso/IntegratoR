@@ -189,9 +189,8 @@ if (result.IsFailed && result.GetError() is BatchIntegrationError batchError)
 Read the outcome with these rules:
 
 - **Atomic chunk rolled back.** Every operation in that chunk is reported failed with the status of the operation D365 rejected — the valid ones included, because nothing in the chunk committed. Fix the bad record and re-send the whole chunk.
-- **Chunks missing from the outcome.** In `Atomic` mode with `StopOnFirstFailedChunk` (default `true`), chunks after the failed one are never sent and do not appear in `Outcome.Items`. The message then ends "(remaining chunks skipped after a failed chunk in Atomic mode)" — even when the failed chunk was the last — so compare `Outcome.Total` with your input count to find what was never sent.
-- **`StatusCode` 0.** The chunk send threw — for example an open circuit breaker or a connection failure — and `ErrorMessage` holds the exception message. The real outcome is unknown: in `ContinueOnError` mode, items sent earlier in that chunk may already have committed. Check before re-sending.
-- **An exception instead of a result.** A chunk that hits the `HttpClient` timeout is not captured: its `TaskCanceledException` escapes `mediator.Send`, and the outcome of chunks already sent is lost. Query by a business key before re-sending.
+- **Chunks missing from the outcome.** In `Atomic` mode with `StopOnFirstFailedChunk` (default `true`), chunks after the failed one are never sent and do not appear in `Outcome.Items`. The message then ends "(remaining chunks skipped after a failed chunk in Atomic mode)", so compare `Outcome.Total` with your input count to find what was never sent.
+- **`StatusCode` 0.** The chunk could not be sent or its response was lost — for example an open circuit breaker, a connection failure, or an `HttpClient` timeout — and `ErrorMessage` holds the exception message. The real outcome is unknown: an atomic changeset may have committed before the response was lost, and in `ContinueOnError` mode items sent earlier in that chunk may already have committed. Query by a business key before re-sending.
 - **Every item `401`.** Authentication failed, so nothing ran — see the 401 entry above.
 
 ## When the diagnostic is not here

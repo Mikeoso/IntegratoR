@@ -178,8 +178,7 @@ if (upstream.IsFailed)
 
 These still reach you as exceptions:
 
-- **Cancellation or an `HttpClient` timeout during a batch.** The batch path turns a failed chunk send into failed items (`StatusCode` 0) but lets `OperationCanceledException` — and the `TaskCanceledException` an `HttpClient.Timeout` raises — propagate.
-- **A null `[ODataField(IsRequired = true)]` field in a batch create.** `ODataPayloadValidationException` is thrown before any chunk is sent; the single `CreateCommand<T>` returns `{Entity}.RequiredFieldMissing` (`Validation`) instead.
+- **Your own cancellation during a batch.** Cancelling the `CancellationToken` you passed propagates `OperationCanceledException`. A failed chunk send does not throw — an `HttpClient` timeout included, it comes back as failed items with `StatusCode` 0.
 - **`GetDimensionOrdersQuery` against a non-hyphen delimiter.** `ArgumentOutOfRangeException` — see [Known Limitations](Known-Limitations#dimension-segment-delimiters).
 - **Direct `IODataClientAdapter` calls.** The adapter throws `ArgumentException` for a key value containing a control character, an invalid entity-set name, or a malformed composite-key field name (since v3.0.0 for control characters and entity sets).
 - **Genuine bugs** — a `NullReferenceException` in your own handler.

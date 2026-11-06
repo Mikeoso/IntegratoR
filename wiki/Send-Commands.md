@@ -173,13 +173,14 @@ Not every failure carries an outcome:
 
 - **Null or empty list** — `ValidationBehaviour` returns `Validation.Error` before the handler runs.
 - **Bad key on update or delete** — a null key element or one containing a control character returns `{Entity}.InvalidKey`; a key whose value count does not match the `[Key]` properties returns `{Entity}.KeyCountMismatch`. Both are `ErrorType.Validation`, and every entity is checked before the first chunk is sent (control-character rejection since v3.0.0).
+- **Missing required field on create or update** — a null `[ODataField(IsRequired = true)]` field returns `{Entity}.RequiredFieldMissing` (`ErrorType.Validation`) before anything is sent, as a single write does.
 
 Inside an outcome, two status codes need reading:
 
-- **`StatusCode` 0** — sending the chunk threw (for example a socket failure that outlasted the retries); every item in that chunk is marked failed with the exception message.
+- **`StatusCode` 0** — the chunk could not be sent or its response was lost (a socket failure that outlasted the retries, an open circuit breaker, or an `HttpClient` timeout). Every item in that chunk is marked failed with the exception message, and whether D365 applied it is unknown.
 - **`StatusCode` 502** — an atomic changeset did not commit and its sub-responses could not be matched to the operations sent (since v3.0.0).
 
-Cancellation and `HttpClient` timeouts do not become failed items — they propagate as exceptions. See [Handle Errors](Handle-Errors#what-still-throws).
+Only your own cancellation propagates as an exception. See [Handle Errors](Handle-Errors#what-still-throws).
 
 | Command | HTTP method | Use |
 |---|---|---|

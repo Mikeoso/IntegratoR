@@ -69,30 +69,17 @@ public virtual required string AccountDisplayValue { get; set; }
 
 ## Writes are retried
 
-The named `"ODataClient"` retry policy has no HTTP-method guard. It retries POST, PATCH, DELETE, and every `$batch` chunk POST exactly like a read — on a 5xx, 408, or 429 response, a network failure, or a `TaskCanceledException`. Single-entity writes are retried again by the operation-level policy inside `ODataService` (a transient `ODataClientException` or a `TaskCanceledException`), so the two layers compound.
+The named `"ODataClient"` retry policy has no HTTP-method guard. It retries POST, PATCH, DELETE, and every `$batch` chunk POST exactly like a read — on a 5xx, 408, or 429 response, a network failure, or a `TaskCanceledException`. Single-entity writes are retried again by the operation-level policy inside `ODataService` (a transient `ODataClientException` or a `TaskCanceledException`), so the two layers compound. Calls routed through PanoramicData.OData.Client — creates, reads, counts, and single-key updates and deletes — also pass through that library's own retry loop, which `EnableRetries` does not switch off; see [Configure Resilience](Configure-Resilience).
 
 A retry is safe only when the write is idempotent. A create that D365 committed but answered with a 5xx — or too late for the client — is sent again, and the repeat creates a duplicate: a second journal header, or a second set of lines from a retried `Atomic` chunk. A repeated update re-applies the same values; a repeated batch delete reports HTTP 404 failures for rows that are already gone.
 
 ```csharp
-// Turns off both retry layers. Reads lose their retries too.
+// Turns off IntegratoR's two retry policies; reads lose them too. PanoramicData's own loop still runs.
 services.AddIntegratoR(configuration, integrator =>
     integrator.ConfigureOData(settings => settings.Resilience.EnableRetries = false));
 ```
 
 **Workaround status:** a fix that limits retries to idempotent requests is planned after v3.0.0. Until then, either disable retries as above or make creates detectable — set a value you can filter on (for example `Description` or `IntegrationKey` on `LedgerJournalHeader`) and query for it before re-running a failed import.
-
-## Polly may retry HTTP 400 from APIM
-
-The HTTP retry policy handles transient errors plus `TaskCanceledException` (`.HandleTransientHttpError().Or<TaskCanceledException>()`). APIM surfaces some gateway timeouts as HTTP 400 rather than 408 or 504, so a chronic 400 can be retried up to `RetryCount` times before the request fails.
-
-The retries are visible, not silent — each one logs a warning to the `IntegratoR.OData.HttpRetry` logger with a rising attempt count:
-
-```text
-warn: IntegratoR.OData.HttpRetry
-      HTTP retry attempt 3 after 4000ms. Reason: BadRequest
-```
-
-**Workaround status:** uninvestigated. The likely fix tightens the retry predicate — drop `Or<TaskCanceledException>` for HTTP retries (an `HttpClient.Timeout` cancellation is already 408-equivalent) or add an explicit status-code filter that excludes 400.
 
 ## `RetryCount` range 1–10 is documented, not enforced
 
@@ -121,6 +108,12 @@ if (result.IsFailed && result.GetError() is BatchIntegrationError batchError)
 > The `$batch` write path (both modes) is covered by unit and integration tests but has not yet been verified against a live D365 environment; v3.0.0 ships without that run. `ContinueOnError` applies operations as individual requests — a single-`$batch` transport (`Prefer: odata.continue-on-error`) is undocumented for D365 F&O and not implemented.
 
 **Workaround status:** inherent to D365's `$batch` operation cap. Size imports to the chunk limit and keep retries idempotent on the composite key.
+
+## A failed send in `ContinueOnError` mode fails the whole chunk
+
+`ContinueOnError` sends each item in a chunk as its own request. If one of those requests throws — an open circuit breaker, a connection failure, an `HttpClient` timeout — every item in the chunk is reported failed with `StatusCode` 0, including items sent earlier in the chunk that D365 already committed.
+
+**Workaround status:** reporting each item's own outcome is planned after v3.0.0. Until then, query by a business key before re-sending a chunk that came back with `StatusCode` 0, or use a smaller `MaxOperationsPerChunk` to limit how many items one failure can misreport.
 
 ## A failed batch loses its outcome when serialised
 
