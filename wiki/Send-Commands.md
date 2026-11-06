@@ -173,7 +173,7 @@ Not every failure carries an outcome:
 
 - **Null or empty list** — `ValidationBehaviour` returns `Validation.Error` before the handler runs.
 - **Bad key on update or delete** — a null key element or one containing a control character returns `{Entity}.InvalidKey`; a key whose value count does not match the `[Key]` properties returns `{Entity}.KeyCountMismatch`. Both are `ErrorType.Validation`, and every entity is checked before the first chunk is sent (control-character rejection since v3.0.0).
-- **Missing required field on create or update** — a null `[ODataField(IsRequired = true)]` field returns `{Entity}.RequiredFieldMissing` (`ErrorType.Validation`) before anything is sent, as a single write does.
+- **Missing required field on create** — a null `[ODataField(IsRequired = true)]` field returns `{Entity}.RequiredFieldMissing` (`ErrorType.Validation`) before anything is sent, as a single create does. Required fields are not checked on update.
 
 Inside an outcome, two status codes need reading:
 
