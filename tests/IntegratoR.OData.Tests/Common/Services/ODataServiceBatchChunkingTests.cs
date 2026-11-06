@@ -71,6 +71,27 @@ public class ODataServiceBatchChunkingTests
     }
 
     [Fact]
+    public async Task AddBatchAsync_PerCallChunkSizeAbove200_IsClampedTo200()
+    {
+        OnCreate(count => ChunkResults(count));
+
+        Result<BatchOutcome> result = await _sut.AddBatchAsync(
+            Entities(450), new BatchOptions { MaxOperationsPerChunk = 500 }, CancellationToken.None);
+
+        await ReceivedCreateCalls(3); // 200 + 200 + 50, clamped from the requested 500
+        List<int> chunkSizes = [.. _client.ReceivedCalls()
+            .Where(call => call.GetMethodInfo().Name == nameof(IODataClientAdapter.BatchCreateAsync))
+            .Select(call => ((IEnumerable<IDictionary<string, object>>)call.GetArguments()[1]!).Count())];
+        chunkSizes.Should().Equal(200, 200, 50);
+
+        result.Should().BeSuccessful();
+        BatchOutcome outcome = result.Value;
+        outcome.Total.Should().Be(450);
+        outcome.ChunkCount.Should().Be(3);
+        outcome.AllSucceeded.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task AddBatch_Atomic_StopsAfterFirstFailedChunk()
     {
         int call = 0;

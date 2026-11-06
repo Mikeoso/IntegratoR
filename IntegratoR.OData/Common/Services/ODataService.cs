@@ -596,7 +596,10 @@ public class ODataService<TEntity> : IODataService<TEntity>, IODataBatchService<
         CancellationToken cancellationToken)
     {
         BatchFailureMode mode = options?.Mode ?? _batchSettings.FailureMode;
-        int chunkSize = Math.Max(1, options?.MaxOperationsPerChunk ?? _batchSettings.MaxOperationsPerChunk);
+        int chunkSize = Math.Clamp(
+            options?.MaxOperationsPerChunk ?? _batchSettings.MaxOperationsPerChunk,
+            1,
+            ODataBatchSettings.MaxOperationsPerBatchLimit);
 
         var items = new List<BatchItemResult>(total);
         int chunkIndex = 0;
