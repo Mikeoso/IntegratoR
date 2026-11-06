@@ -33,7 +33,10 @@ public interface IBatchService<TEntity> where TEntity : IEntity
     /// <param name="entities">The entity instances to update.</param>
     /// <param name="options">Optional per-call overrides for failure mode and chunk size; <see langword="null"/> uses the configured defaults.</param>
     /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
-    /// <returns>A <see cref="BatchOutcome"/> on full success; a failed result carrying the outcome otherwise.</returns>
+    /// <returns>
+    /// A <see cref="BatchOutcome"/> on full success; a failed result carrying the outcome when any operation
+    /// fails; or a failed result with <c>ErrorType.Validation</c>, with nothing sent, when any entity's key is invalid.
+    /// </returns>
     Task<Result<BatchOutcome>> UpdateBatchAsync(IEnumerable<TEntity> entities, BatchOptions? options = null, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -42,6 +45,9 @@ public interface IBatchService<TEntity> where TEntity : IEntity
     /// <param name="entities">The entity instances to delete.</param>
     /// <param name="options">Optional per-call overrides for failure mode and chunk size; <see langword="null"/> uses the configured defaults.</param>
     /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
-    /// <returns>A <see cref="BatchOutcome"/> on full success; a failed result carrying the outcome otherwise.</returns>
+    /// <returns>
+    /// A <see cref="BatchOutcome"/> on full success; a failed result carrying the outcome when any operation
+    /// fails; or a failed result with <c>ErrorType.Validation</c>, with nothing sent, when any entity's key is invalid.
+    /// </returns>
     Task<Result<BatchOutcome>> DeleteBatchAsync(IEnumerable<TEntity> entities, BatchOptions? options = null, CancellationToken cancellationToken = default);
 }

@@ -198,6 +198,56 @@ public sealed class ODataClientAdapterCompositeKeyWriteTests : IDisposable
         results.Should().AllSatisfy(r => r.IsSuccess.Should().BeTrue());
     }
 
+    /// <summary>
+    /// Every key must be validated before any item is sent: otherwise an earlier, valid item would
+    /// already be applied by D365 by the time a later key's control character is rejected.
+    /// </summary>
+    [Fact]
+    public async Task BatchUpdate_ContinueOnError_ControlCharacterInLaterKey_ThrowsBeforeSendingAnything()
+    {
+        // Arrange
+        var (provider, handler) = BuildHarness();
+        handler.Queue(HttpStatusCode.OK, "{}");
+        var adapter = ResolveAdapter(provider);
+
+        var items = new List<(object Key, IDictionary<string, object> Payload)>
+        {
+            (new Dictionary<string, object> { ["dataAreaId"] = "1210", ["JournalBatchNumber"] = "LNR0000266" },
+                new Dictionary<string, object> { ["Description"] = "A" }),
+            (new Dictionary<string, object> { ["dataAreaId"] = "1210\r\nX-Injected: 1", ["JournalBatchNumber"] = "LNR0000267" },
+                new Dictionary<string, object> { ["Description"] = "B" })
+        };
+
+        // Act
+        Func<Task> act = () => adapter.BatchUpdateAsync(EntitySet, items, BatchFailureMode.ContinueOnError, CancellationToken.None);
+
+        // Assert
+        await act.Should().ThrowAsync<ArgumentException>().WithMessage("*control characters*");
+        handler.SentRequests.Should().BeEmpty(because: "every key is validated before the first item is sent");
+    }
+
+    [Fact]
+    public async Task BatchDelete_ContinueOnError_ControlCharacterInLaterKey_ThrowsBeforeSendingAnything()
+    {
+        // Arrange
+        var (provider, handler) = BuildHarness();
+        handler.Queue(HttpStatusCode.NoContent);
+        var adapter = ResolveAdapter(provider);
+
+        var keys = new List<object>
+        {
+            new Dictionary<string, object> { ["dataAreaId"] = "1210", ["JournalBatchNumber"] = "LNR0000266" },
+            new Dictionary<string, object> { ["dataAreaId"] = "1210\r\nX-Injected: 1", ["JournalBatchNumber"] = "LNR0000267" }
+        };
+
+        // Act
+        Func<Task> act = () => adapter.BatchDeleteAsync(EntitySet, keys, BatchFailureMode.ContinueOnError, CancellationToken.None);
+
+        // Assert
+        await act.Should().ThrowAsync<ArgumentException>().WithMessage("*control characters*");
+        handler.SentRequests.Should().BeEmpty(because: "every key is validated before the first item is sent");
+    }
+
     public static TheoryData<Dictionary<string, object>, string> KeyValueFormattingCases()
     {
         var guid = Guid.Parse("11111111-2222-3333-4444-555555555555");

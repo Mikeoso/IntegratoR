@@ -33,6 +33,13 @@ public class ODataClientAdapter : IODataClientAdapter
             Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() }
         };
 
+    /// <summary>
+    /// Reported against every operation of a batch whose outcome the response does not explain:
+    /// HTTP 502, because the failure is that the server's answer could not be used, not that any
+    /// particular operation was rejected.
+    /// </summary>
+    private const int IndeterminateBatchStatus = 502;
+
     private readonly ODataClient _client;
     private readonly IHttpClientFactory? _httpClientFactory;
 
@@ -126,7 +133,7 @@ public class ODataClientAdapter : IODataClientAdapter
                 if (!IsValidODataFieldName(kv.Key))
                 {
                     throw new ArgumentException(
-                        $"Composite key field name '{kv.Key}' is not a valid OData property identifier. " +
+                        "A composite key field name is not a valid OData property identifier. " +
                         "Keys must match the pattern ^[A-Za-z_][A-Za-z0-9_.]*$ and come from entity " +
                         "reflection (attribute-derived wire names), not user input.",
                         nameof(key));
@@ -209,8 +216,8 @@ public class ODataClientAdapter : IODataClientAdapter
     /// without an <see cref="IHttpClientFactory"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// Thrown when a composite-key dictionary is empty or contains a field name that is not a valid
-    /// OData property identifier.
+    /// Thrown when a composite-key dictionary is empty, names a field that is not a valid OData
+    /// property identifier, or has a value containing control characters.
     /// </exception>
     public async Task<TEntity> UpdateAsync<TEntity>(
         string entitySet,
@@ -246,8 +253,8 @@ public class ODataClientAdapter : IODataClientAdapter
     /// without an <see cref="IHttpClientFactory"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// Thrown when a composite-key dictionary is empty or contains a field name that is not a valid
-    /// OData property identifier.
+    /// Thrown when a composite-key dictionary is empty, names a field that is not a valid OData
+    /// property identifier, or has a value containing control characters.
     /// </exception>
     public async Task DeleteAsync(
         string entitySet,
@@ -281,12 +288,17 @@ public class ODataClientAdapter : IODataClientAdapter
     }
 
     /// <inheritdoc />
+    /// <exception cref="ArgumentException">
+    /// Thrown when <paramref name="entitySet"/> is not a valid OData identifier.
+    /// </exception>
     public async Task<IReadOnlyList<BatchOperationResult>> BatchCreateAsync(
         string entitySet,
         IEnumerable<IDictionary<string, object>> payloads,
         BatchFailureMode mode,
         CancellationToken cancellationToken = default)
     {
+        EnsureValidEntitySet(entitySet);
+
         var payloadList = payloads as IList<IDictionary<string, object>> ?? payloads.ToList();
 
         if (mode == BatchFailureMode.Atomic)
@@ -305,50 +317,73 @@ public class ODataClientAdapter : IODataClientAdapter
     }
 
     /// <inheritdoc />
+    /// <exception cref="ArgumentException">
+    /// Thrown when <paramref name="entitySet"/> is not a valid OData identifier.
+    /// -or-
+    /// Thrown when a key is an empty composite-key dictionary, names a field that is not a valid OData
+    /// property identifier, or has a value containing control characters. Every key is checked before
+    /// anything is sent.
+    /// </exception>
     public async Task<IReadOnlyList<BatchOperationResult>> BatchUpdateAsync(
         string entitySet,
         IEnumerable<(object Key, IDictionary<string, object> Payload)> items,
         BatchFailureMode mode,
         CancellationToken cancellationToken = default)
     {
+        EnsureValidEntitySet(entitySet);
+
         var itemList = items as IList<(object Key, IDictionary<string, object> Payload)> ?? items.ToList();
+
+        // Built up front so a rejected key fails the call before any item is applied.
+        List<string> urls = itemList.Select(item => BuildKeyUrl(entitySet, item.Key)).ToList();
 
         if (mode == BatchFailureMode.Atomic)
         {
             List<BatchWriteOperation> operations = itemList
                 .Select((item, index) => new BatchWriteOperation(
-                    index + 1, HttpMethod.Patch, BuildKeyUrl(entitySet, item.Key), SerializePayload(item.Payload)))
+                    index + 1, HttpMethod.Patch, urls[index], SerializePayload(item.Payload)))
                 .ToList();
             return await SendAtomicBatchAsync(operations, cancellationToken).ConfigureAwait(false);
         }
 
         return await SendPerItemBatchAsync(
             itemList.Count,
-            (index, ct) => SendRawAsync(HttpMethod.Patch, BuildKeyUrl(entitySet, itemList[index].Key), itemList[index].Payload, ct),
+            (index, ct) => SendRawAsync(HttpMethod.Patch, urls[index], itemList[index].Payload, ct),
             cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
+    /// <exception cref="ArgumentException">
+    /// Thrown when <paramref name="entitySet"/> is not a valid OData identifier.
+    /// -or-
+    /// Thrown when a key is an empty composite-key dictionary, names a field that is not a valid OData
+    /// property identifier, or has a value containing control characters. Every key is checked before
+    /// anything is sent.
+    /// </exception>
     public async Task<IReadOnlyList<BatchOperationResult>> BatchDeleteAsync(
         string entitySet,
         IEnumerable<object> keys,
         BatchFailureMode mode,
         CancellationToken cancellationToken = default)
     {
+        EnsureValidEntitySet(entitySet);
+
         var keyList = keys as IList<object> ?? keys.ToList();
+
+        // Built up front so a rejected key fails the call before any item is applied.
+        List<string> urls = keyList.Select(key => BuildKeyUrl(entitySet, key)).ToList();
 
         if (mode == BatchFailureMode.Atomic)
         {
-            List<BatchWriteOperation> operations = keyList
-                .Select((key, index) => new BatchWriteOperation(
-                    index + 1, HttpMethod.Delete, BuildKeyUrl(entitySet, key), JsonBody: null))
+            List<BatchWriteOperation> operations = urls
+                .Select((url, index) => new BatchWriteOperation(index + 1, HttpMethod.Delete, url, JsonBody: null))
                 .ToList();
             return await SendAtomicBatchAsync(operations, cancellationToken).ConfigureAwait(false);
         }
 
         return await SendPerItemBatchAsync(
             keyList.Count,
-            (index, ct) => SendRawAsync(HttpMethod.Delete, BuildKeyUrl(entitySet, keyList[index]), payload: null, ct),
+            (index, ct) => SendRawAsync(HttpMethod.Delete, urls[index], payload: null, ct),
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -516,7 +551,12 @@ public class ODataClientAdapter : IODataClientAdapter
         // Changeset rolled back: surface the failing sub-response against every operation.
         ODataBatchResponseParser.BatchSubResponse? failure =
             subResponses.FirstOrDefault(sub => sub.StatusCode is < 200 or > 299);
-        int failStatus = failure?.StatusCode ?? (subResponses.Count > 0 ? subResponses[0].StatusCode : outerStatus);
+
+        // The changeset did not commit, yet no sub-response explains why — either none parsed, or
+        // they are all 2xx but cannot be reconciled with the operations sent. A non-2xx outer status
+        // already returned above, so anything borrowed from here would be a success code stamped on
+        // a failed operation. Report the response as unusable instead of contradicting ourselves.
+        int failStatus = failure?.StatusCode ?? IndeterminateBatchStatus;
         return FailAll(operations, failStatus, failure?.Body ?? responseBody);
     }
 
@@ -543,7 +583,55 @@ public class ODataClientAdapter : IODataClientAdapter
     private static string BuildKeyUrl(string entitySet, object key) =>
         key is IDictionary<string, object> compositeKey
             ? BuildCompositeKeyUrl(entitySet, compositeKey)
-            : $"{entitySet}({IntegratoRODataExpressionTranslator.FormatValue(key)})";
+            : $"{entitySet}({FormatKeyLiteral(key)})";
+
+    /// <summary>
+    /// Validates the entity-set name before it is spliced into a batch request line.
+    /// </summary>
+    /// <remarks>
+    /// For a batch create the entity set IS the whole relative URL, and for keyed operations it is
+    /// its leading segment; either way it reaches the embedded request line unescaped. The only
+    /// production caller passes <c>ODataService</c>'s <c>[Table]</c>-derived name, but this adapter
+    /// is public API and the parameter is a bare string, so a direct caller could otherwise inject.
+    /// </remarks>
+    private static void EnsureValidEntitySet(string entitySet)
+    {
+        if (!IsValidODataFieldName(entitySet))
+        {
+            throw new ArgumentException(
+                "The entity set name is not a valid OData identifier. It is spliced into " +
+                "the batch request line verbatim, so it must match ^[A-Za-z_][A-Za-z0-9_.]*$ and " +
+                "come from entity metadata, not user input.",
+                nameof(entitySet));
+        }
+    }
+
+    /// <summary>
+    /// Formats a key value as an OData literal, rejecting control characters.
+    /// </summary>
+    /// <remarks>
+    /// The atomic <c>$batch</c> body is assembled as text, so a CR or LF in a key would end the embedded
+    /// <c>METHOD url HTTP/1.1</c> request line early and inject content into the part. The guard sits
+    /// here rather than in the shared formatter because its <c>$filter</c> callers go through
+    /// <see cref="Uri"/>, which percent-encodes these characters.
+    /// </remarks>
+    private static string FormatKeyLiteral(object? value)
+    {
+        if (HasControlCharacters(value))
+        {
+            throw new ArgumentException(
+                "Key values must not contain control characters. The batch request line is " +
+                "assembled as text, so a carriage return or line feed would terminate it early " +
+                "and inject content into the sub-request.",
+                nameof(value));
+        }
+
+        return IntegratoRODataExpressionTranslator.FormatValue(value);
+    }
+
+    // Shared with ODataService, which rejects a whole batch with this before its first chunk is sent.
+    internal static bool HasControlCharacters(object? value) =>
+        IntegratoRODataExpressionTranslator.FormatValue(value).Any(char.IsControl);
 
     private static string SerializePayload(object payload) =>
         System.Text.Json.JsonSerializer.Serialize(payload, CaseInsensitiveOptions);
@@ -601,7 +689,7 @@ public class ODataClientAdapter : IODataClientAdapter
             if (!IsValidODataFieldName(kv.Key))
             {
                 throw new ArgumentException(
-                    $"Composite key field name '{kv.Key}' is not a valid OData property identifier. " +
+                    "A composite key field name is not a valid OData property identifier. " +
                     "Keys must match the pattern ^[A-Za-z_][A-Za-z0-9_.]*$ and come from entity " +
                     "reflection (attribute-derived wire names), not user input.",
                     nameof(key));
@@ -610,7 +698,7 @@ public class ODataClientAdapter : IODataClientAdapter
 
         string segments = string.Join(
             ",",
-            key.Select(kv => $"{kv.Key}={IntegratoRODataExpressionTranslator.FormatValue(kv.Value)}"));
+            key.Select(kv => $"{kv.Key}={FormatKeyLiteral(kv.Value)}"));
 
         return $"{entitySet}({segments})";
     }
